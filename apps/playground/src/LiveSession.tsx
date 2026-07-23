@@ -56,13 +56,12 @@ export default function LiveSession() {
   const [mode, setMode] = useState<'auto' | 'manual' | 'checking'>('checking')
   const [confidence, setConfidence] = useState<number | null>(null)
 
-  // Shared config (zustand). Live-tunable; async callbacks read getState().
-  const vadParams = useConfig((s) => ({
-    speechThreshold: s.speechThreshold,
-    exitThreshold: s.exitThreshold,
-    minSilenceDurationMs: s.minSilenceDurationMs,
-    minSpeechDurationMs: s.minSpeechDurationMs,
-  }))
+  // Shared config (zustand). Subscribe per-field — never return a fresh object
+  // from the selector (Zustand/useSyncExternalStore loops → white screen).
+  const speechThreshold = useConfig((s) => s.speechThreshold)
+  const exitThreshold = useConfig((s) => s.exitThreshold)
+  const minSilenceDurationMs = useConfig((s) => s.minSilenceDurationMs)
+  const minSpeechDurationMs = useConfig((s) => s.minSpeechDurationMs)
   const prePadMs = useConfig((s) => s.prePadMs)
   const postPadMs = useConfig((s) => s.postPadMs)
   const otherPauseMs = useConfig((s) => s.otherPauseMs)
@@ -87,8 +86,14 @@ export default function LiveSession() {
 
   // Live-tune VAD knobs and speaker threshold without restarting the session.
   useEffect(() => {
-    vadRef.current?.updateConfig({ ...vadParams, speechPadMs: 0 })
-  }, [vadParams])
+    vadRef.current?.updateConfig({
+      speechThreshold,
+      exitThreshold,
+      minSilenceDurationMs,
+      minSpeechDurationMs,
+      speechPadMs: 0,
+    })
+  }, [speechThreshold, exitThreshold, minSilenceDurationMs, minSpeechDurationMs])
   useEffect(() => {
     verifierRef.current?.setThreshold(speakerThreshold)
   }, [speakerThreshold])
@@ -133,7 +138,14 @@ export default function LiveSession() {
       const infer = await createSileroInfer(vadVariant, audio.sampleRate)
       // VAD cuts stay tight (speechPadMs = 0); padding is applied at ASR-send
       // time in the ProxySttClient (mirrors the VAD panel's ASR-preprocessing model).
-      const vad = createVAD(infer, { ...vadParams, speechPadMs: 0, sampleRate: audio.sampleRate })
+      const vad = createVAD(infer, {
+        speechThreshold,
+        exitThreshold,
+        minSilenceDurationMs,
+        minSpeechDurationMs,
+        speechPadMs: 0,
+        sampleRate: audio.sampleRate,
+      })
       vadRef.current = vad
       const stt = new ProxySttClient(audio.sampleRate)
       stt.configurePadding(prePadMs, postPadMs)
@@ -366,17 +378,37 @@ export default function LiveSession() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>最新候选</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {latestCandidates && latestCandidates.length > 0 ? (
+              <ul className="space-y-2">
+                {latestCandidates.map((c) => (
+                  <ReplyCandidateCard key={c.id} candidate={c} />
+                ))}
+              </ul>
+            ) : state === 'LLM_STREAMING' ? (
+              <p className="text-sm text-muted-foreground">正在流式生成…</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">（还没有候选）</p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>时间轴</CardTitle>
+            <CardDescription>最新在上</CardDescription>
           </CardHeader>
           <CardContent>
             {turns.length === 0 ? (
               <p className="text-sm text-muted-foreground">（还没有对话轮次）</p>
             ) : (
               <ol className="space-y-2">
-                {turns.map((t) => (
+                {[...turns].reverse().map((t) => (
                   <li
                     key={t.id}
                     className={`border-l-4 pl-3 py-2 rounded-r-md ${
@@ -397,25 +429,6 @@ export default function LiveSession() {
                   </li>
                 ))}
               </ol>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>最新候选</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {latestCandidates && latestCandidates.length > 0 ? (
-              <ul className="space-y-2">
-                {latestCandidates.map((c) => (
-                  <ReplyCandidateCard key={c.id} candidate={c} />
-                ))}
-              </ul>
-            ) : state === 'LLM_STREAMING' ? (
-              <p className="text-sm text-muted-foreground">正在流式生成…</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">（还没有候选）</p>
             )}
           </CardContent>
         </Card>

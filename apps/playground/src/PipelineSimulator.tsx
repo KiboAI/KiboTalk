@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PipelineEvent } from '@kibotalk/pipeline'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kibotalk/ui'
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@kibotalk/ui'
 import { createSession } from './session'
 import type { SessionHandle } from './session'
 import { ReplyCandidateCard } from './components/ReplyCandidateCard'
@@ -138,47 +138,12 @@ export default function PipelineSimulator() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>时间轴</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {turns.length === 0 ? (
-              <p className="text-sm text-muted-foreground">（还没有对话轮次）</p>
-            ) : (
-              <ol className="space-y-2">
-                {turns.map((t) => (
-                  <li
-                    key={t.id}
-                    className={`border-l-4 pl-3 py-2 rounded-r-md ${
-                      t.speaker === 'other' ? 'border-blue-500' : 'border-emerald-500'
-                    } ${t.sttFailed ? 'bg-red-50' : 'bg-muted/50'}`}
-                  >
-                    <div className="font-semibold text-sm">
-                      {t.speaker === 'other' ? '对方' : '我'}
-                      {t.sttFailed ? ' · STT 失败' : ''}
-                    </div>
-                    <div className="text-sm">{t.sttFailed ? '（空·转写失败）' : t.text}</div>
-                    {t.candidates && t.candidates.length > 0 && (
-                      <ul className="mt-1 ml-4 list-disc space-y-1">
-                        {t.candidates.map((c) => (
-                          <ReplyCandidateCard key={c.id} candidate={c} compact />
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
-
+      <div className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>最新候选</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             {latestCandidates && latestCandidates.length > 0 ? (
               <ul className="space-y-2">
                 {latestCandidates.map((c) => (
@@ -192,15 +157,57 @@ export default function PipelineSimulator() {
             ) : (
               <p className="text-sm text-muted-foreground">（还没有候选）</p>
             )}
+          </CardContent>
+        </Card>
 
-            <div>
-              <h3 className="text-sm font-semibold mb-2">事件日志</h3>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>时间轴</CardTitle>
+              <CardDescription>最新在上</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {turns.length === 0 ? (
+                <p className="text-sm text-muted-foreground">（还没有对话轮次）</p>
+              ) : (
+                <ol className="space-y-2">
+                  {[...turns].reverse().map((t) => (
+                    <li
+                      key={t.id}
+                      className={`border-l-4 pl-3 py-2 rounded-r-md ${
+                        t.speaker === 'other' ? 'border-blue-500' : 'border-emerald-500'
+                      } ${t.sttFailed ? 'bg-red-50' : 'bg-muted/50'}`}
+                    >
+                      <div className="font-semibold text-sm">
+                        {t.speaker === 'other' ? '对方' : '我'}
+                        {t.sttFailed ? ' · STT 失败' : ''}
+                      </div>
+                      <div className="text-sm">{t.sttFailed ? '（空·转写失败）' : t.text}</div>
+                      {t.candidates && t.candidates.length > 0 && (
+                        <ul className="mt-1 ml-4 list-disc space-y-1">
+                          {t.candidates.map((c) => (
+                            <ReplyCandidateCard key={c.id} candidate={c} compact />
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>事件日志</CardTitle>
+            </CardHeader>
+            <CardContent>
               <pre className="bg-slate-950 text-slate-200 rounded-md p-3 text-xs overflow-auto max-h-60">
 {log.join('\n') || '（无事件）'}
               </pre>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

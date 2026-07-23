@@ -45,27 +45,27 @@ app.post('/stt', async (c) => {
 // by the client (per spec §1.4 "以 STT 为准").
 app.post('/llm', (c) =>
   streamSSE(c, async (stream) => {
-    const signal = c.req.raw.signal
-    const body = (await c.req.json().catch(() => null)) as {
-      context?: ConversationTurn[]
-      level?: string
-    } | null
-    const messages = await buildReplySuggestionsMessages({
-      context: body?.context ?? [],
-      level: body?.level ?? 'N5',
-    })
-    const prompt = messages
-      .map((m) => `${m.role.toUpperCase()}:\n${m.content}`)
-      .join('\n\n')
-    await stream.writeSSE({ event: 'prompt', data: prompt })
-    let llmClient
     try {
-      llmClient = createLlmClient(llmConfigFromEnv(process.env))
-    } catch (e) {
-      await stream.writeSSE({ event: 'error', data: (e as Error).message })
-      return
-    }
-    try {
+      const signal = c.req.raw.signal
+      const body = (await c.req.json().catch(() => null)) as {
+        context?: ConversationTurn[]
+        level?: string
+      } | null
+      const messages = await buildReplySuggestionsMessages({
+        context: body?.context ?? [],
+        level: body?.level ?? 'N5',
+      })
+      const prompt = messages
+        .map((m) => `${m.role.toUpperCase()}:\n${m.content}`)
+        .join('\n\n')
+      await stream.writeSSE({ event: 'prompt', data: prompt })
+      let llmClient
+      try {
+        llmClient = createLlmClient(llmConfigFromEnv(process.env))
+      } catch (e) {
+        await stream.writeSSE({ event: 'error', data: (e as Error).message })
+        return
+      }
       const tokenStream = llmClient.streamChat({
         messages,
         signal,
@@ -74,7 +74,7 @@ app.post('/llm', (c) =>
         await stream.writeSSE({ event: 'token', data: token })
       }
     } catch {
-      // upstream error or client abort — end the stream silently
+      // upstream error or client abort (incl. writeSSE after disconnect) — end silently
     }
   }),
 )

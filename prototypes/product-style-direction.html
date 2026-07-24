@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway, not production code.
+  Question being answered: what does the "evolved sticky note" direction
+  look like once extended to buttons / cards / toolbars / the Island
+  container — now with a yellow primary (Tailwind `yellow` scale, closest
+  stop to #ffc900 is `yellow-400`), real line icons instead of emoji, and
+  more tactile/3D depth (raised buttons, embossed panels), while keeping
+  the translucent white borders on dark (Island / caption) surfaces.
+
+  Open directly in a browser (double-click, or serve the folder). No build
+  step. Switch pages with the top pill bar or ← / → keys.
+
+  Pages: Onboarding · Session window (apps/web) · Desktop Island (apps/desktop)
+  · Settings · History (multi-session list — NOTE: this is a deliberate
+  scope add vs. the current live-reply-coach-mvp.md §2.4, which says MVP
+  keeps only the single active session; spec needs updating alongside this)
+  · Session detail (past-session transcript) · Summary (F09 end-of-session
+  review).
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Product style direction prototype — KiboTalk</title>
+<style>
+  :root {
+    /* Tailwind `yellow` scale — #ffc900 sits almost exactly on yellow-400. */
+    --yellow-50: #fefce8;
+    --yellow-100: #fef9c3;
+    --yellow-200: #fef08a;
+    --yellow-300: #fde047;
+    --yellow-400: #facc15; /* ≈ #ffc900 — primary */
+    --yellow-500: #eab308;
+    --yellow-600: #ca8a04;
+    --yellow-700: #a16207;
+    --yellow-800: #854d0e;
+    --yellow-900: #713f12;
+
+    --primary: var(--yellow-400);
+    --primary-ink: var(--yellow-900);    /* text sitting on yellow */
+    --primary-soft: var(--yellow-100);
+    --primary-soft-strong: var(--yellow-200);
+
+    --paper-bg: #f7f5ef;
+    --paper-panel: #fffefb;
+    --ink: #2b2620;
+    --ink-soft: rgba(43,38,32,0.62);
+    --ink-faint: rgba(43,38,32,0.40);
+
+    --border-glass: rgba(255,255,255,0.16); /* kept: translucent border on dark surfaces */
+
+    --radius-lg: 22px;
+    --radius-md: 15px;
+    --radius-sm: 10px;
+
+    --shadow-panel: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 2px rgba(43,38,32,0.06), 0 16px 32px rgba(43,38,32,0.09);
+
+    /* one shared elevation grammar for every "selectable token" (chip / seg
+       / switch / icon-btn / pill-tag / btn) — tier 0 = resting, tier 1 =
+       active or primary. Both are flat: color/contrast carries the state,
+       not embossed thickness. Nothing outside these two should invent a third. */
+    --shadow-tier0: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(161,98,7,0.10);
+    --shadow-tier1: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 3px rgba(161,98,7,0.20);
+    --shadow-tier1-lg: inset 0 1px 0 rgba(255,255,255,0.6), 0 2px 8px rgba(161,98,7,0.24);
+    --track-bg: rgba(43,38,32,0.06);
+    /* the one "filled active" surface — big buttons no longer get their own
+       extra gradient stop, they use exactly what every small control uses. */
+    --surface-active: linear-gradient(180deg, var(--yellow-300), var(--yellow-400));
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, 'SF Pro Text', 'Hiragino Sans', sans-serif;
+    color: var(--ink);
+    background: var(--paper-bg);
+    min-height: 100vh;
+  }
+  h1, h2, button { font-family: ui-rounded, -apple-system, 'Hiragino Maru Gothic ProN', sans-serif; }
+  svg.ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+  /* ---------- prototype switcher ---------- */
+  .switcher {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 200;
+    display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px;
+    background: rgba(30,26,20,0.88); box-shadow: 0 8px 24px rgba(0,0,0,0.28); font-size: 12.5px;
+  }
+  .switcher button.nav { appearance: none; border: none; background: rgba(255,255,255,0.12); color: #fff; width: 24px; height: 24px; border-radius: 999px; cursor: pointer; font-size: 13px; }
+  .switcher .pill { appearance: none; border: none; background: transparent; color: rgba(255,255,255,0.6); padding: 6px 12px; border-radius: 999px; font-weight: 600; cursor: pointer; font-size: 12.5px; }
+  .switcher .pill.active { background: #fff; color: #1a1610; }
+
+  .page { display: none; min-height: 100vh; }
+  .page.active { display: block; }
+
+  /* =====================================================================
+     shared primitives — this is what "extend everywhere" + "more 3D" +
+     "yellow primary, tailwind scale" + "icons not emoji" means in practice
+     ===================================================================== */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 11px 20px; border-radius: 999px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 700; letter-spacing: 0.01em;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+  .btn-primary {
+    background: var(--surface-active);
+    color: var(--primary-ink);
+    box-shadow: var(--shadow-tier1-lg);
+  }
+  .btn-primary:hover { filter: brightness(1.02); }
+  .btn-primary:active { filter: brightness(0.97); }
+  .btn-ghost {
+    background: var(--primary-soft); color: var(--yellow-800);
+    box-shadow: var(--shadow-tier0);
+  }
+  .btn-ghost:hover { background: var(--primary-soft-strong); }
+  .btn-ghost:active { filter: brightness(0.97); }
+
+  .panel { background: var(--paper-panel); border-radius: var(--radius-lg); box-shadow: var(--shadow-panel); }
+
+  /* pill-tag / seg / chip / switch / icon-btn are all "selectable token"
+     controls — one track color, one resting shadow, one active/on shadow. */
+  .pill-tag {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 600; background: var(--primary-soft); color: var(--yellow-800);
+    box-shadow: var(--shadow-tier0);
+  }
+  .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--track-bg); }
+  .seg button { border: none; background: transparent; padding: 8px 16px; border-radius: 999px; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
+  .seg button.active {
+    background: var(--surface-active);
+    color: var(--primary-ink);
+    box-shadow: var(--shadow-tier1);
+  }
+
+  /* evolved sticky note — same paper metaphor, now with a touch more depth */
+  .note {
+    position: relative;
+    background: linear-gradient(165deg, var(--yellow-200) 0%, var(--yellow-300) 55%, var(--yellow-400) 100%);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px 22px;
+    color: #3a2c05;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.4),
+      0 1px 2px rgba(0,0,0,0.08),
+      0 16px 30px rgba(120,90,0,0.26);
+    transform: rotate(-1deg);
+  }
+  .note-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  .note-list li + li { border-top: 1px dashed rgba(58,44,5,0.25); padding-top: 14px; }
+  .note-target { font-size: 21px; font-weight: 700; line-height: 2; }
+  .note-meaning { font-size: 14px; margin-top: 5px; color: rgba(58,44,5,0.72); font-weight: 500; }
+  .note-particle { background: rgba(58,44,5,0.20); border-bottom: 2px solid rgba(58,44,5,0.55); border-radius: 4px; padding: 0 3px; font-weight: 700; }
+  .note ruby rt { font-size: 0.68em; font-weight: 600; color: rgba(58,44,5,0.68); }
+  .note.is-old { opacity: 0.55; transform: rotate(0.6deg) scale(0.98); }
+
+  /* =====================================================================
+     PAGE 1 — Onboarding
+     ===================================================================== */
+  #onboarding { display: flex; align-items: center; justify-content: center; padding: 100px 20px 40px; }
+  .ob-card { width: min(440px, 100%); padding: 32px 30px; }
+  .ob-card h1 { font-size: 22px; margin: 0 0 6px; }
+  .ob-card p.sub { margin: 0 0 22px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; }
+  .ob-field { margin-bottom: 20px; }
+  .ob-field label { display: block; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; }
+  .chip-row { display: flex; gap: 8px; }
+  .chip {
+    flex: 1; text-align: center; padding: 10px 0; border-radius: 999px;
+    background: var(--track-bg); font-size: 13.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer;
+    transition: transform 120ms ease;
+  }
+  .chip.active {
+    background: var(--surface-active);
+    color: var(--primary-ink);
+    box-shadow: var(--shadow-tier1);
+  }
+  .ob-cta { width: 100%; justify-content: center; padding: 13px 0; font-size: 15px; margin-top: 6px; }
+
+  /* =====================================================================
+     PAGE 1b — Enrollment (声纹注册, follows onboarding)
+     three real states of the same wizard, stacked so all can be reviewed
+     at once — the shipped screen only ever shows one at a time.
+     ===================================================================== */
+  #enroll { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 90px 20px 48px; }
+  .enroll-frame { width: min(440px, 100%); }
+  .enroll-frame .frame-label { font-size: 12px; font-weight: 700; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 4px 8px; }
+  .enroll-card { padding: 28px 26px; }
+  .steps { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .step-dot {
+    width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; background: var(--track-bg); color: var(--ink-faint);
+  }
+  .step-dot.done { background: var(--ink); color: #fff; }
+  .step-dot.active { background: var(--surface-active); color: var(--primary-ink); box-shadow: var(--shadow-tier1); }
+  .step-line { flex: 1; height: 2px; background: var(--track-bg); }
+  .step-label { font-size: 12.5px; font-weight: 600; color: var(--ink-faint); }
+  .step-label.current { color: var(--ink); }
+  .enroll-card h2 { font-size: 18px; margin: 0 0 6px; }
+  .enroll-card p.sub { margin: 0 0 16px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; }
+  .phrase-box { background: var(--track-bg); border-radius: var(--radius-md); padding: 16px 18px; margin-bottom: 16px; }
+  .phrase-box .cap { font-size: 12px; color: var(--ink-faint); margin-bottom: 6px; }
+  .phrase-box .text { font-size: 19px; font-weight: 700; line-height: 1.5; }
+  .enroll-actions { display: flex; gap: 8px; }
+  .enroll-actions .btn { flex: 1; justify-content: center; }
+
+  /* =====================================================================
+     PAGE 2 — Session window (apps/web window mode)
+     ===================================================================== */
+  #session { padding: 90px 24px 40px; max-width: 980px; margin: 0 auto; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; margin-bottom: 16px; }
+  .toolbar-left { display: flex; align-items: center; gap: 10px; }
+  .status-dot { width: 9px; height: 9px; border-radius: 999px; background: #2f9e5c; box-shadow: 0 0 0 3px rgba(47,158,92,0.18); }
+  .status-dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .session-body { display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 16px; }
+  .rail { padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rail .btn-ghost { width: 30px; height: 30px; padding: 0; border-radius: var(--radius-sm); justify-content: center; }
+  .btn-ghost.active { background: var(--surface-active); color: var(--primary-ink); box-shadow: var(--shadow-tier1); }
+  .stage { padding: 20px; min-height: 420px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+  /* session window with the history sidebar open — same toolbar/rail/stage
+     classes as #session, just an extra column; same trimmed session-card
+     from the History page (§ History) so there's one card style, not two. */
+  #session-sidebar { padding: 90px 24px 40px; max-width: 980px; margin: 0 auto; }
+  #session-sidebar .session-body { grid-template-columns: 44px 230px minmax(0,1fr); }
+  .history-sidebar { padding: 8px; overflow: auto; }
+  .history-sidebar-head { padding: 8px 10px 10px; font-size: 12px; font-weight: 700; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .session-card.current { background: var(--primary-soft); cursor: default; }
+
+  /* =====================================================================
+     PAGE 3 — Desktop Island (in context)
+     ===================================================================== */
+  #desktop {
+    min-height: 100vh; padding: 90px 24px 40px; display: flex; justify-content: flex-end;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,255,255,0.06), transparent 40%),
+      radial-gradient(circle at 80% 75%, rgba(120,140,255,0.10), transparent 45%),
+      linear-gradient(160deg, #14151b 0%, #1c1e27 55%, #101116 100%);
+  }
+  .dock { width: min(360px, 92vw); display: flex; flex-direction: column; gap: 14px; }
+  .caption-strip {
+    align-self: flex-end; padding: 8px 14px; border-radius: 999px;
+    background: rgba(28,28,34,0.78); color: rgba(255,255,255,0.85); font-size: 12.5px;
+    backdrop-filter: blur(10px); border: 1px solid var(--border-glass);
+  }
+  .island {
+    align-self: flex-end; display: flex; align-items: center; gap: 8px;
+    padding: 9px 11px; border-radius: var(--radius-lg);
+    background: rgba(30,27,22,0.82); border: 1px solid var(--border-glass);
+    box-shadow: 0 14px 32px rgba(0,0,0,0.48); backdrop-filter: blur(16px);
+  }
+  .island .dot { width: 9px; height: 9px; border-radius: 999px; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,0.18); }
+  .island .status { font-size: 12px; color: #eee; margin-right: 4px; }
+  /* two families of icon in the Island, and they must not look alike:
+     .ibtn.on = a state toggle that is currently ON (转写 / AI 回复提示 / 播放),
+     turns off (back to the plain .ibtn look) when tapped again.
+     plain .ibtn with no .on = either a toggle that's OFF right now, or a
+     one-shot nav button (设置/历史) that has no on/off state at all — nav
+     buttons live in their own group, cut off by a divider, so their icon
+     never needs to borrow the "on" yellow fill to make sense. */
+  .island .ibtn {
+    width: 32px; height: 32px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.08); border: 1px solid transparent; color: #eee;
+  }
+  .island .ibtn.on {
+    background: var(--surface-active);
+    color: var(--primary-ink);
+    border-color: var(--border-glass);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 4px rgba(0,0,0,0.35);
+  }
+  .island .sep { width: 1px; height: 20px; background: var(--border-glass); margin: 0 2px; flex-shrink: 0; }
+  .round-tag { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.45); margin: 0 2px; }
+
+  /* =====================================================================
+     shared: page header with back button (Settings / History / Detail /
+     Summary all hang off the session view, not the Island)
+     ===================================================================== */
+  .page-shell { max-width: 640px; margin: 0 auto; padding: 90px 20px 48px; }
+  .page-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .page-head h1 { font-size: 20px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 34px; height: 34px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+    background: var(--primary-soft); color: var(--yellow-800); border: none; cursor: pointer;
+    box-shadow: var(--shadow-tier0);
+  }
+  .row { display: flex; align-items: center; gap: 12px; }
+
+  /* ---------- Settings ---------- */
+  .settings-group { padding: 6px 4px 18px; }
+  .settings-group + .settings-group { margin-top: 4px; padding-top: 14px; border-top: 1px solid rgba(43,38,32,0.08); }
+  .settings-group h2 { font-size: 12.5px; font-weight: 700; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 4px 10px; }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 14px; border-radius: var(--radius-md);
+  }
+  .settings-row:hover { background: rgba(43,38,32,0.03); }
+  .settings-row .meta { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+  .switch {
+    width: 42px; height: 26px; border-radius: 999px; background: rgba(43,38,32,0.14); position: relative; cursor: pointer; flex-shrink: 0;
+  }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: transform 150ms ease; }
+  .switch.on { background: var(--surface-active); box-shadow: var(--shadow-tier1); }
+  .switch.on::after { transform: translateX(16px); }
+  .desktop-only-tag { font-size: 10.5px; font-weight: 700; color: var(--yellow-700); background: var(--primary-soft); padding: 2px 7px; border-radius: 999px; margin-left: 6px; box-shadow: var(--shadow-tier0); }
+
+  /* ---------- History (multi-session list) ----------
+     deliberately light on info — this same card doubles as the in-session
+     history sidebar (see #session-sidebar below), not just a full page. */
+  .session-card {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md);
+    cursor: pointer; margin-bottom: 4px;
+  }
+  .session-card:hover { background: rgba(43,38,32,0.03); }
+  .session-info { flex: 1; min-width: 0; }
+  .session-info .title { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-info .sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+
+  /* ---------- Session detail (transcript) ---------- */
+  .turn { display: flex; gap: 10px; margin-bottom: 14px; }
+  .turn.user { flex-direction: row-reverse; }
+  .turn-bubble { max-width: 78%; padding: 10px 13px; border-radius: var(--radius-md); font-size: 13.5px; line-height: 1.55; }
+  .turn.other .turn-bubble { background: rgba(43,38,32,0.05); border-top-left-radius: 4px; }
+  .turn.user .turn-bubble { background: var(--primary-soft); border-top-right-radius: 4px; }
+  .turn-speaker { font-size: 10.5px; font-weight: 700; color: var(--ink-faint); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .turn-candidates { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(43,38,32,0.15); font-size: 12px; color: var(--yellow-800); }
+  .turn-candidates .cand-line { margin-top: 4px; }
+
+  /* ---------- Summary (F09) ---------- */
+  .summary-hero { padding: 22px 22px 20px; text-align: center; margin-bottom: 16px; }
+  .summary-hero .stat-row { display: flex; justify-content: center; gap: 26px; margin-top: 14px; }
+  .summary-hero .stat b { display: block; font-size: 20px; }
+  .summary-hero .stat span { font-size: 11.5px; color: var(--ink-faint); }
+  .summary-block { padding: 18px 20px; margin-bottom: 14px; }
+  .summary-block h2 { font-size: 13.5px; margin: 0 0 10px; }
+  .summary-block p { font-size: 13.5px; line-height: 1.7; margin: 0 0 8px; }
+  .summary-block p.meaning { color: var(--ink-soft); font-size: 12.5px; }
+  .phrase-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--primary-soft); color: var(--yellow-800); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; margin: 0 6px 6px 0; }
+</style>
+</head>
+<body>
+  <div class="switcher">
+    <button class="nav" id="prev">←</button>
+    <button class="pill" data-page="onboarding">引导</button>
+    <button class="pill" data-page="enroll">声纹注册</button>
+    <button class="pill" data-page="session">会话窗口 (web)</button>
+    <button class="pill" data-page="session-sidebar">会话窗口 + 历史侧栏</button>
+    <button class="pill" data-page="desktop">桌面 Island</button>
+    <button class="pill" data-page="settings">设置</button>
+    <button class="pill" data-page="history">历史</button>
+    <button class="pill" data-page="detail">会话详情</button>
+    <button class="pill" data-page="summary">总结</button>
+    <button class="nav" id="next">→</button>
+  </div>
+
+  <!-- ================= PAGE 1: Onboarding ================= -->
+  <div class="page" id="onboarding">
+    <div class="panel ob-card">
+      <h1>选择语言</h1>
+      <p class="sub">首次使用请确认对话语言、翻译语言和当前水平。进入后仍可在设置里改；进行中的会话会锁定。</p>
+      <div class="ob-field">
+        <label>对话语言（双方说的语言）</label>
+        <div class="chip-row">
+          <div class="chip active">日语</div>
+          <div class="chip">英语</div>
+          <div class="chip">中文</div>
+        </div>
+      </div>
+      <div class="ob-field">
+        <label>翻译语言（候选释义）</label>
+        <div class="chip-row">
+          <div class="chip">日语</div>
+          <div class="chip">英语</div>
+          <div class="chip active">中文</div>
+        </div>
+      </div>
+      <div class="ob-field">
+        <label>当前水平（日语）</label>
+        <div class="seg">
+          <button class="active">初级</button>
+          <button>中级</button>
+          <button>高级</button>
+        </div>
+      </div>
+      <button class="btn btn-primary ob-cta">
+        确认并继续 · 录声纹
+        <svg class="ic" viewBox="0 0 24 24" data-icon="arrow-right"></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 1b: Enrollment (3 states stacked) ================= -->
+  <div class="page" id="enroll">
+
+    <div class="enroll-frame">
+      <div class="frame-label">状态 1 · 说明</div>
+      <div class="panel enroll-card">
+        <div class="steps">
+          <span class="step-dot active">1</span>
+          <span class="step-line"></span>
+          <span class="step-dot">2</span>
+          <span class="step-line"></span>
+          <span class="step-dot">3</span>
+        </div>
+        <h2>录一下声音</h2>
+        <p class="sub">读一段短口令，让教练分清哪句是你说的。大约 15 秒，只保存在这台设备上。</p>
+        <button class="btn btn-primary ob-cta">
+          <svg class="ic" viewBox="0 0 24 24" data-icon="mic"></svg>
+          开始录音
+        </button>
+      </div>
+    </div>
+
+    <div class="enroll-frame">
+      <div class="frame-label">状态 2 · 录音中 / 处理中</div>
+      <div class="panel enroll-card">
+        <div class="steps">
+          <span class="step-dot done"><svg class="ic" viewBox="0 0 24 24" data-icon="check" style="width:12px;height:12px;"></svg></span>
+          <span class="step-line"></span>
+          <span class="step-dot active">2</span>
+          <span class="step-line"></span>
+          <span class="step-dot">3</span>
+        </div>
+        <div class="phrase-box">
+          <div class="cap">请朗读：</div>
+          <div class="text">今日はいい天気ですね。</div>
+        </div>
+        <div class="enroll-actions">
+          <button class="btn btn-primary"><svg class="ic" viewBox="0 0 24 24" data-icon="square"></svg>结束录音</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="enroll-frame">
+      <div class="frame-label">状态 3 · 完成</div>
+      <div class="panel enroll-card">
+        <div class="steps">
+          <span class="step-dot done"><svg class="ic" viewBox="0 0 24 24" data-icon="check" style="width:12px;height:12px;"></svg></span>
+          <span class="step-line"></span>
+          <span class="step-dot done"><svg class="ic" viewBox="0 0 24 24" data-icon="check" style="width:12px;height:12px;"></svg></span>
+          <span class="step-line"></span>
+          <span class="step-dot active">3</span>
+        </div>
+        <h2>声纹已保存</h2>
+        <p class="sub">这台设备已经能认出你的声音了，可以开始真实会话，教练会自动分清谁在说话。</p>
+        <div class="enroll-actions">
+          <button class="btn btn-primary"><svg class="ic" viewBox="0 0 24 24" data-icon="arrow-right"></svg>进入会话</button>
+          <button class="btn btn-ghost"><svg class="ic" viewBox="0 0 24 24" data-icon="rotate-ccw"></svg>重新录制</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================= PAGE 2: Session window ================= -->
+  <div class="page" id="session">
+    <div class="panel toolbar">
+      <div class="toolbar-left">
+        <span class="status-dot pulse"></span>
+        <span style="font-size:13.5px;font-weight:600;">听写中</span>
+        <span class="pill-tag">实时转写</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost"><svg class="ic" viewBox="0 0 24 24" data-icon="panel-left"></svg>对话记录</button>
+        <button class="btn btn-primary"><svg class="ic" viewBox="0 0 24 24" data-icon="square"></svg>停止会话</button>
+      </div>
+    </div>
+    <div class="session-body">
+      <div class="panel rail">
+        <button class="btn btn-ghost" title="展开对话记录"><svg class="ic" viewBox="0 0 24 24" data-icon="panel-left"></svg></button>
+        <button class="btn btn-ghost" title="调试（仅 playground 有）" style="opacity:0.3; cursor:not-allowed;"><svg class="ic" viewBox="0 0 24 24" data-icon="sliders"></svg></button>
+      </div>
+      <div class="panel stage">
+        <div class="note" style="width:min(420px,100%);">
+          <ol class="note-list">
+            <li>
+              <div class="note-target">すみません、それ<span class="note-particle">は</span>いくらです<span class="note-particle">か</span>？</div>
+              <div class="note-meaning">不好意思，那个多少钱？</div>
+            </li>
+            <li>
+              <div class="note-target">はい、<ruby>お願<rt>おねが</rt></ruby>いします。</div>
+              <div class="note-meaning">好的，麻烦你了。</div>
+            </li>
+            <li>
+              <div class="note-target"><ruby>少々<rt>しょうしょう</rt></ruby><ruby>お待<rt>まち</rt></ruby>ちください。</div>
+              <div class="note-meaning">请稍等一下。</div>
+            </li>
+          </ol>
+        </div>
+        <div class="note is-old" style="width:min(420px,100%);">
+          <ol class="note-list">
+            <li>
+              <div class="note-target">いらっしゃいませ！</div>
+              <div class="note-meaning">欢迎光临！</div>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 2b: Session window, history sidebar open ================= -->
+  <div class="page" id="session-sidebar">
+    <div class="panel toolbar">
+      <div class="toolbar-left">
+        <span class="status-dot pulse"></span>
+        <span style="font-size:13.5px;font-weight:600;">听写中</span>
+        <span class="pill-tag">实时转写</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost"><svg class="ic" viewBox="0 0 24 24" data-icon="panel-left"></svg>对话记录</button>
+        <button class="btn btn-primary"><svg class="ic" viewBox="0 0 24 24" data-icon="square"></svg>停止会话</button>
+      </div>
+    </div>
+    <div class="session-body">
+      <div class="panel rail">
+        <button class="btn btn-ghost" title="展开对话记录"><svg class="ic" viewBox="0 0 24 24" data-icon="panel-left"></svg></button>
+        <button class="btn btn-ghost active" title="历史会话（已展开）"><svg class="ic" viewBox="0 0 24 24" data-icon="history"></svg></button>
+        <button class="btn btn-ghost" title="调试（仅 playground 有）" style="opacity:0.3; cursor:not-allowed;"><svg class="ic" viewBox="0 0 24 24" data-icon="sliders"></svg></button>
+      </div>
+      <div class="panel history-sidebar">
+        <div class="history-sidebar-head">历史会话</div>
+        <div class="session-card current">
+          <div class="session-info">
+            <div class="title">日语 · 便利店</div>
+            <div class="sub">进行中</div>
+          </div>
+        </div>
+        <div class="session-card">
+          <div class="session-info">
+            <div class="title">日语 · 电话预约</div>
+            <div class="sub">昨天 09:05 · 7 分钟</div>
+          </div>
+        </div>
+        <div class="session-card">
+          <div class="session-info">
+            <div class="title">英语 · 面试练习</div>
+            <div class="sub">3 天前 · 24 分钟</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel stage">
+        <div class="note" style="width:min(420px,100%);">
+          <ol class="note-list">
+            <li>
+              <div class="note-target">すみません、それ<span class="note-particle">は</span>いくらです<span class="note-particle">か</span>？</div>
+              <div class="note-meaning">不好意思，那个多少钱？</div>
+            </li>
+            <li>
+              <div class="note-target">はい、<ruby>お願<rt>おねが</rt></ruby>いします。</div>
+              <div class="note-meaning">好的，麻烦你了。</div>
+            </li>
+            <li>
+              <div class="note-target"><ruby>少々<rt>しょうしょう</rt></ruby><ruby>お待<rt>まち</rt></ruby>ちください。</div>
+              <div class="note-meaning">请稍等一下。</div>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 3: Desktop Island ================= -->
+  <div class="page" id="desktop">
+    <div class="dock">
+      <div class="caption-strip">「すみません、それは……」 <span style="opacity:0.5;">草稿中…</span></div>
+      <div class="round-tag">本轮</div>
+      <div class="note" style="align-self:flex-end;">
+        <ol class="note-list">
+          <li>
+            <div class="note-target">すみません、それ<span class="note-particle">は</span>いくらです<span class="note-particle">か</span>？</div>
+            <div class="note-meaning">不好意思，那个多少钱？</div>
+          </li>
+          <li>
+            <div class="note-target">はい、<ruby>お願<rt>おねが</rt></ruby>いします。</div>
+            <div class="note-meaning">好的，麻烦你了。</div>
+          </li>
+          <li>
+            <div class="note-target"><ruby>少々<rt>しょうしょう</rt></ruby><ruby>お待<rt>まち</rt></ruby>ちください。</div>
+            <div class="note-meaning">请稍等一下。</div>
+          </li>
+        </ol>
+      </div>
+      <div class="island">
+        <span class="dot"></span>
+        <span class="status">听写中</span>
+        <span class="sep"></span>
+        <span class="ibtn on" title="暂停会话（开）"><svg class="ic" viewBox="0 0 24 24" data-icon="play"></svg></span>
+        <span class="ibtn on" title="转写（开）"><svg class="ic" viewBox="0 0 24 24" data-icon="mic"></svg></span>
+        <span class="ibtn on" title="AI 回复提示（开）"><svg class="ic" viewBox="0 0 24 24" data-icon="sparkles"></svg></span>
+        <span class="sep"></span>
+        <span class="ibtn" title="历史会话"><svg class="ic" viewBox="0 0 24 24" data-icon="history"></svg></span>
+        <span class="ibtn" title="设置"><svg class="ic" viewBox="0 0 24 24" data-icon="settings"></svg></span>
+        <span class="sep"></span>
+        <span class="ibtn" title="拖动"><svg class="ic" viewBox="0 0 24 24" data-icon="move"></svg></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 4: Settings ================= -->
+  <div class="page" id="settings">
+    <div class="page-shell">
+      <div class="page-head">
+        <button class="icon-btn"><svg class="ic" viewBox="0 0 24 24" data-icon="chevron-left"></svg></button>
+        <h1>设置</h1>
+      </div>
+      <div class="panel" style="padding: 6px 10px;">
+        <div class="settings-group">
+          <h2>语言</h2>
+          <div class="settings-row">
+            <div>对话语言<div class="meta">双方说的语言 · 会话中锁定</div></div>
+            <div class="chip-row" style="width:auto; gap:6px;">
+              <div class="chip active" style="flex:none; padding:8px 14px;">日语</div>
+              <div class="chip" style="flex:none; padding:8px 14px;">英语</div>
+              <div class="chip" style="flex:none; padding:8px 14px;">中文</div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>翻译语言<div class="meta">候选释义使用的语言</div></div>
+            <div class="chip-row" style="width:auto; gap:6px;">
+              <div class="chip" style="flex:none; padding:8px 14px;">日语</div>
+              <div class="chip" style="flex:none; padding:8px 14px;">英语</div>
+              <div class="chip active" style="flex:none; padding:8px 14px;">中文</div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>日语水平<div class="meta">切换对话语言会带出该语言上次的水平</div></div>
+            <div class="seg">
+              <button class="active">初级</button>
+              <button>中级</button>
+              <button>高级</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h2>声纹</h2>
+          <div class="settings-row">
+            <div class="row"><svg class="ic" viewBox="0 0 24 24" data-icon="fingerprint" style="width:20px;height:20px;color:var(--yellow-700);"></svg>
+              <div>已录入声纹<div class="meta">上次录制：3 天前</div></div>
+            </div>
+            <button class="btn btn-ghost">重新录制</button>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h2>外观</h2>
+          <div class="settings-row">
+            <div class="row"><svg class="ic" viewBox="0 0 24 24" data-icon="sun" style="width:20px;height:20px;color:var(--yellow-700);"></svg>浅色纸面</div>
+            <div class="switch"></div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h2>桌面端 <span class="desktop-only-tag">仅 apps/desktop</span></h2>
+          <div class="settings-row">
+            <div>Island 常驻置顶<div class="meta">切到其他 App 时仍浮在最上层</div></div>
+            <div class="switch on"></div>
+          </div>
+          <div class="settings-row">
+            <div>系统声音输入<div class="meta">同时听麦克风与系统播放的声音（如视频通话）</div></div>
+            <div class="switch"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 5: History (multi-session list) ================= -->
+  <div class="page" id="history">
+    <div class="page-shell">
+      <div class="page-head">
+        <button class="icon-btn"><svg class="ic" viewBox="0 0 24 24" data-icon="chevron-left"></svg></button>
+        <h1>历史会话</h1>
+      </div>
+      <div class="panel" style="padding: 8px;">
+        <div class="session-card">
+          <div class="session-info">
+            <div class="title">日语 · 便利店</div>
+            <div class="sub">今天 14:20 · 18 分钟</div>
+          </div>
+          <svg class="ic" viewBox="0 0 24 24" data-icon="chevron-right" style="color:var(--ink-faint);"></svg>
+        </div>
+        <div class="session-card">
+          <div class="session-info">
+            <div class="title">日语 · 电话预约</div>
+            <div class="sub">昨天 09:05 · 7 分钟</div>
+          </div>
+          <svg class="ic" viewBox="0 0 24 24" data-icon="chevron-right" style="color:var(--ink-faint);"></svg>
+        </div>
+        <div class="session-card">
+          <div class="session-info">
+            <div class="title">英语 · 面试练习</div>
+            <div class="sub">3 天前 · 24 分钟</div>
+          </div>
+          <svg class="ic" viewBox="0 0 24 24" data-icon="chevron-right" style="color:var(--ink-faint);"></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 6: Session detail (past-session transcript) ================= -->
+  <div class="page" id="detail">
+    <div class="page-shell">
+      <div class="page-head">
+        <button class="icon-btn"><svg class="ic" viewBox="0 0 24 24" data-icon="chevron-left"></svg></button>
+        <h1>日语 · 便利店</h1>
+        <span class="pill-tag"><svg class="ic" viewBox="0 0 24 24" data-icon="clock" style="width:13px;height:13px;"></svg>18 分钟</span>
+      </div>
+      <div class="panel" style="padding: 18px 16px;">
+        <div class="turn other">
+          <div class="turn-bubble">
+            <div class="turn-speaker">对方</div>
+            いらっしゃいませ！
+          </div>
+        </div>
+        <div class="turn user">
+          <div class="turn-bubble">
+            <div class="turn-speaker">我</div>
+            すみません、それはいくらですか？
+            <div class="turn-candidates">
+              <svg class="ic" viewBox="0 0 24 24" data-icon="sparkle" style="width:11px;height:11px;"></svg>
+              当时的建议
+              <div class="cand-line">· はい、お願いします。</div>
+              <div class="cand-line">· 少々お待ちください。</div>
+            </div>
+          </div>
+        </div>
+        <div class="turn other">
+          <div class="turn-bubble">
+            <div class="turn-speaker">对方</div>
+            少々お待ちください。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 7: Summary (F09 end-of-session review) ================= -->
+  <div class="page" id="summary">
+    <div class="page-shell">
+      <div class="page-head">
+        <button class="icon-btn"><svg class="ic" viewBox="0 0 24 24" data-icon="chevron-left"></svg></button>
+        <h1>会话小结</h1>
+        <button class="icon-btn"><svg class="ic" viewBox="0 0 24 24" data-icon="copy"></svg></button>
+      </div>
+      <div class="panel summary-hero">
+        <div class="pill-tag">日语 · 初级 · 便利店场景</div>
+        <div class="stat-row">
+          <div class="stat"><b>18</b><span>分钟</span></div>
+          <div class="stat"><b>26</b><span>轮对话</span></div>
+          <div class="stat"><b>12</b><span>次教练提示</span></div>
+        </div>
+      </div>
+      <div class="panel summary-block">
+        <h2>这场对话讲了什么</h2>
+        <p>你在便利店完成了一次结账对话：询问价格、确认支付方式、并请店员稍等确认。</p>
+        <p class="meaning">你用日语完成了问价与请求等待的表达，店员的应答你也基本听懂。</p>
+      </div>
+      <div class="panel summary-block">
+        <h2>本场学到的句型</h2>
+        <span class="phrase-chip">それはいくらですか？</span>
+        <span class="phrase-chip">お願いします</span>
+        <span class="phrase-chip">少々お待ちください</span>
+      </div>
+      <button class="btn btn-primary ob-cta">
+        开始新会话
+        <svg class="ic" viewBox="0 0 24 24" data-icon="arrow-right"></svg>
+      </button>
+    </div>
+  </div>
+
+<script>
+  // ---- inline icon set (lucide-style paths — matches the icon set already
+  // used in apps/playground, so this maps 1:1 onto real lucide-react icons
+  // later instead of introducing a second icon language) ----
+  const ICONS = {
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    square: '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+    sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+    move: '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/>',
+    'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+    'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    'arrow-left': '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    'loader-2': '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    'rotate-ccw': '<path d="M3 12a9 9 0 1 0 2.636-6.364L3 8"/><path d="M3 3v5h5"/>',
+    'chevron-left': '<path d="m15 18-6-6 6-6"/>',
+    'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    fingerprint: '<path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    sparkle: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+  };
+  document.querySelectorAll('[data-icon]').forEach((svg) => {
+    svg.innerHTML = ICONS[svg.dataset.icon] || '';
+  });
+
+  const order = ['onboarding', 'enroll', 'session', 'session-sidebar', 'desktop', 'settings', 'history', 'detail', 'summary'];
+  function currentKey() {
+    const h = location.hash.replace('#', '');
+    return order.includes(h) ? h : 'onboarding';
+  }
+  function render(key) {
+    document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === key));
+    document.querySelectorAll('.switcher .pill').forEach((b) => b.classList.toggle('active', b.dataset.page === key));
+  }
+  function setKey(key) { location.hash = key; render(key); }
+  function step(delta) {
+    const i = order.indexOf(currentKey());
+    setKey(order[(i + delta + order.length) % order.length]);
+  }
+  document.getElementById('prev').addEventListener('click', () => step(-1));
+  document.getElementById('next').addEventListener('click', () => step(1));
+  document.querySelectorAll('.switcher .pill').forEach((b) => b.addEventListener('click', () => setKey(b.dataset.page)));
+  window.addEventListener('hashchange', () => render(currentKey()));
+  window.addEventListener('keydown', (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'ArrowLeft') step(-1);
+    if (e.key === 'ArrowRight') step(1);
+  });
+  render(currentKey());
+
+  document.querySelectorAll('.ob-card .chip-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      row.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
+  document.querySelectorAll('.ob-card .seg').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      row.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

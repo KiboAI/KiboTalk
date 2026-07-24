@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway, not production code.
+  Question being answered: what should the candidate "sticky note" card look
+  like — evolve the current paper/sticky metaphor, or move to a flatter
+  Days-Matter-style pastel card, or a bold Duolingo-style chunky card?
+
+  Open directly in a browser (double-click or `open prototypes/sticky-note-styles.html`).
+  No build step, no server. Switch variants with the top pill bar or ← / → keys.
+  The Island + stacking layout (newest round on top, older dimmed) is shared
+  across variants on purpose — that part is already decided; only the
+  candidate-card look is under test here.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sticky note style prototype — KiboTalk</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: -apple-system, 'SF Pro Text', 'Hiragino Sans', sans-serif;
+  }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,255,255,0.06), transparent 40%),
+      radial-gradient(circle at 80% 75%, rgba(120,140,255,0.10), transparent 45%),
+      linear-gradient(160deg, #14151b 0%, #1c1e27 55%, #101116 100%);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* ---------- prototype switcher (top, not part of the design under test) ---------- */
+  .switcher {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(20,20,26,0.92);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    font-size: 13px;
+    color: #eee;
+  }
+  .switcher button {
+    appearance: none;
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .switcher button:hover { background: rgba(255,255,255,0.18); }
+  .switcher .label { min-width: 190px; text-align: center; font-weight: 600; }
+  .switcher .hint { opacity: 0.55; font-size: 11px; margin-left: 4px; }
+
+  /* ---------- scene: fake desktop with Island anchored bottom-right ---------- */
+  .scene {
+    min-height: 100vh;
+    padding: 90px 24px 40px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .dock {
+    width: min(360px, 92vw);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .round-tag {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(255,255,255,0.45);
+    margin: 0 2px 2px;
+  }
+  .round.is-old { opacity: 0.55; transform: scale(0.98); }
+
+  /* ---------- shared Island mock (bottom, fixed anchor point) ---------- */
+  .island {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 16px;
+    background: rgba(28,28,34,0.85);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    backdrop-filter: blur(14px);
+  }
+  .island .dot {
+    width: 9px; height: 9px; border-radius: 999px;
+    background: #34d399;
+    box-shadow: 0 0 0 3px rgba(52,211,153,0.18);
+  }
+  .island .status { font-size: 12px; color: #ddd; margin-right: 4px; }
+  .island .btn {
+    width: 30px; height: 30px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.08); color: #eee; font-size: 14px;
+  }
+
+  /* =====================================================================
+     VARIANT A — evolved sticky note (keep the paper/post-it metaphor,
+     but modernize the craft: bigger radius, layered soft shadow, gentle
+     fold as a refined accent instead of a torn-paper corner).
+     ===================================================================== */
+  .a-note {
+    position: relative;
+    background: linear-gradient(165deg, #ffe27a 0%, #ffd23f 60%, #ffc93c 100%);
+    border-radius: 18px;
+    padding: 18px 20px 20px;
+    color: #3a2c05;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.08),
+      0 10px 24px rgba(120, 90, 0, 0.22),
+      0 2px 6px rgba(120, 90, 0, 0.12);
+    transform: rotate(var(--tilt, -1deg));
+    transition: transform 220ms cubic-bezier(.2,.8,.2,1), box-shadow 220ms;
+  }
+  .a-note::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 26px; height: 26px;
+    background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.55) 50%);
+    border-radius: 0 18px 0 0;
+    opacity: 0.5;
+  }
+  .a-note:hover { transform: rotate(0deg) translateY(-2px); box-shadow: 0 16px 30px rgba(120,90,0,0.26); }
+  .a-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .a-list li + li { border-top: 1px dashed rgba(58,44,5,0.25); padding-top: 12px; }
+  .a-target { font-size: 17px; font-weight: 700; line-height: 1.5; font-family: ui-rounded, -apple-system, 'Hiragino Maru Gothic ProN', sans-serif; }
+  .a-meaning { font-size: 12.5px; margin-top: 4px; color: rgba(58,44,5,0.72); font-weight: 500; }
+  .a-particle { background: rgba(58,44,5,0.10); border-radius: 4px; padding: 0 2px; }
+  .a-note ruby rt { font-size: 0.5em; color: rgba(58,44,5,0.62); }
+
+  /* =====================================================================
+     VARIANT B — Days Matter style: flat, generously rounded pastel
+     cards, one per candidate, calm and minimal, huge whitespace.
+     ===================================================================== */
+  .b-round {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .b-card {
+    border-radius: 22px;
+    padding: 16px 18px;
+    background: var(--bg);
+    color: #21232b;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .b-card:nth-of-type(1) { --bg: linear-gradient(150deg, #ffe6d8, #ffd4c2); }
+  .b-card:nth-of-type(2) { --bg: linear-gradient(150deg, #dcf6e8, #c7ecd9); }
+  .b-card:nth-of-type(3) { --bg: linear-gradient(150deg, #e6e3ff, #d6d1fb); }
+  .b-index { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; opacity: 0.5; text-transform: uppercase; margin-bottom: 6px; }
+  .b-target { font-size: 18px; font-weight: 600; line-height: 1.45; letter-spacing: -0.01em; font-family: -apple-system, 'Hiragino Sans', sans-serif; }
+  .b-meaning { font-size: 13px; margin-top: 6px; color: rgba(33,35,43,0.55); }
+  .b-particle { color: rgba(33,35,43,0.45); }
+  .b-card ruby rt { font-size: 0.52em; color: rgba(33,35,43,0.5); }
+
+  /* =====================================================================
+     VARIANT C — Duolingo style: bold outline, hard offset shadow,
+     saturated color-coded accent bar, chunky rounded type, playful.
+     ===================================================================== */
+  .c-round {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .c-card {
+    position: relative;
+    border-radius: 16px;
+    padding: 14px 16px 14px 18px;
+    background: #2b2f38;
+    border: 2px solid var(--edge);
+    box-shadow: 0 4px 0 var(--edge);
+    color: #f4f6fb;
+  }
+  .c-card:nth-of-type(1) { --edge: #58cc02; }
+  .c-card:nth-of-type(2) { --edge: #1cb0f6; }
+  .c-card:nth-of-type(3) { --edge: #ff9600; }
+  .c-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 10px; bottom: 10px;
+    width: 4px;
+    border-radius: 4px;
+    background: var(--edge);
+  }
+  .c-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--edge);
+    margin-bottom: 6px;
+  }
+  .c-target { font-size: 17px; font-weight: 800; line-height: 1.4; font-family: ui-rounded, -apple-system, 'Hiragino Maru Gothic ProN', sans-serif; }
+  .c-meaning { font-size: 12.5px; margin-top: 5px; color: rgba(244,246,251,0.6); font-weight: 600; }
+  .c-particle { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 3px; }
+  .c-card ruby rt { font-size: 0.5em; color: rgba(244,246,251,0.55); }
+  .c-card:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--edge); }
+
+  footer.note {
+    max-width: 360px;
+    margin-top: 18px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.45);
+  }
+</style>
+</head>
+<body>
+  <div class="switcher">
+    <button id="prev" aria-label="上一个风格">←</button>
+    <span class="label" id="label">A — 进化版便利贴</span>
+    <button id="next" aria-label="下一个风格">→</button>
+    <span class="hint">← → 切换 · #variant</span>
+  </div>
+
+  <div class="scene">
+    <div class="dock">
+      <div class="stack" id="stack"></div>
+      <div class="island">
+        <span class="dot"></span>
+        <span class="status">听写中</span>
+        <span class="btn">▶</span>
+        <span class="btn">🎙</span>
+        <span class="btn">✨</span>
+      </div>
+      <footer class="note" id="footnote"></footer>
+    </div>
+  </div>
+
+<script>
+  // ---- shared candidate data (2 rounds: latest + previous, dimmed) ----
+  const rounds = [
+    {
+      id: 'r2', old: false,
+      candidates: [
+        { targetText: 'すみません、それはいくらですか？', meaning: '不好意思，那个多少钱？',
+          segments: [
+            { surface: 'すみません', role: 'content' }, { surface: '、', role: 'punct' },
+            { surface: 'それ', role: 'content' }, { surface: 'は', role: 'particle' },
+            { surface: 'いくら', role: 'content' }, { surface: 'です', role: 'content' },
+            { surface: 'か', role: 'particle' }, { surface: '？', role: 'punct' },
+          ] },
+        { targetText: 'はい、お願いします。', meaning: '好的，麻烦你了。',
+          segments: [
+            { surface: 'はい', role: 'content' }, { surface: '、', role: 'punct' },
+            { surface: 'お願い', reading: 'おねが', role: 'content' },
+            { surface: 'します', role: 'content' }, { surface: '。', role: 'punct' },
+          ] },
+        { targetText: '少々お待ちください。', meaning: '请稍等一下。',
+          segments: [
+            { surface: '少々', reading: 'しょうしょう', role: 'content' },
+            { surface: 'お待ち', reading: 'まち', role: 'content' },
+            { surface: 'ください', role: 'content' }, { surface: '。', role: 'punct' },
+          ] },
+      ],
+    },
+    {
+      id: 'r1', old: true,
+      candidates: [
+        { targetText: 'いらっしゃいませ！', meaning: '欢迎光临！',
+          segments: [ { surface: 'いらっしゃいませ', role: 'content' }, { surface: '！', role: 'punct' } ] },
+        { targetText: '何名様ですか？', meaning: '请问几位？',
+          segments: [
+            { surface: '何名様', reading: 'なんめいさま', role: 'content' },
+            { surface: 'です', role: 'content' }, { surface: 'か', role: 'particle' },
+            { surface: '？', role: 'punct' },
+          ] },
+        { targetText: 'こちらへどうぞ。', meaning: '这边请。',
+          segments: [
+            { surface: 'こちら', role: 'content' }, { surface: 'へ', role: 'particle' },
+            { surface: 'どうぞ', role: 'content' }, { surface: '。', role: 'punct' },
+          ] },
+      ],
+    },
+  ];
+
+  function segmentsHtml(segments, particleClass) {
+    return segments.map((s) => {
+      if (s.reading) return `<ruby>${s.surface}<rt>${s.reading}</rt></ruby>`;
+      if (s.role === 'particle') return `<span class="${particleClass}">${s.surface}</span>`;
+      return s.surface;
+    }).join('');
+  }
+
+  // ---- Variant A: one note per round, 3 lines stacked inside ----
+  function renderA(round, idx) {
+    const el = document.createElement('div');
+    el.className = 'a-note round' + (round.old ? ' is-old' : '');
+    el.style.setProperty('--tilt', (idx % 2 === 0 ? -1.4 : 1.1) + 'deg');
+    const items = round.candidates.map((c) => `
+      <li>
+        <div class="a-target">${segmentsHtml(c.segments, 'a-particle')}</div>
+        <div class="a-meaning">${c.meaning}</div>
+      </li>`).join('');
+    el.innerHTML = `<ol class="a-list">${items}</ol>`;
+    return el;
+  }
+
+  // ---- Variant B: 3 separate flat pastel cards per round ----
+  function renderB(round) {
+    const wrap = document.createElement('div');
+    wrap.className = 'b-round round' + (round.old ? ' is-old' : '');
+    round.candidates.forEach((c, i) => {
+      const card = document.createElement('div');
+      card.className = 'b-card';
+      card.innerHTML = `
+        <div class="b-index">选项 ${i + 1}</div>
+        <div class="b-target">${segmentsHtml(c.segments, 'b-particle')}</div>
+        <div class="b-meaning">${c.meaning}</div>`;
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  // ---- Variant C: bold outlined cards, color-coded, hard shadow ----
+  const TAGS = ['随口一说', '礼貌一点', '更正式'];
+  function renderC(round) {
+    const wrap = document.createElement('div');
+    wrap.className = 'c-round round' + (round.old ? ' is-old' : '');
+    round.candidates.forEach((c, i) => {
+      const card = document.createElement('div');
+      card.className = 'c-card';
+      card.innerHTML = `
+        <div class="c-tag">${TAGS[i] || '候选'}</div>
+        <div class="c-target">${segmentsHtml(c.segments, 'c-particle')}</div>
+        <div class="c-meaning">${c.meaning}</div>`;
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  const VARIANTS = {
+    A: { label: 'A — 进化版便利贴', render: renderA, note: '保留便利贴纸感与折角，但圆角更大、阴影更柔和分层、字体更圆润；折角从"撕纸感"改成精致的高光角。' },
+    B: { label: 'B — Days Matter 卡片', render: renderB, note: '放弃纸质隐喻：每条候选自己一张扁平大圆角卡，柔和渐变色块区分选项，留白大、字号大，克制安静。' },
+    C: { label: 'C — 多邻国式', render: renderC, note: '粗描边 + 实色硬阴影（按压会"塌下去"），左侧色条区分语气强度，圆润加粗字体，带一点游戏化的活泼标签。' },
+  };
+  const order = ['A', 'B', 'C'];
+
+  function renderStack(key) {
+    const stack = document.getElementById('stack');
+    stack.innerHTML = '';
+    const v = VARIANTS[key];
+    rounds.forEach((round, idx) => {
+      if (round.old) {
+        const tag = document.createElement('div');
+        tag.className = 'round-tag';
+        tag.textContent = '上一轮';
+        stack.appendChild(tag);
+      }
+      stack.appendChild(v.render(round, idx));
+    });
+    document.getElementById('label').textContent = v.label;
+    document.getElementById('footnote').textContent = v.note;
+  }
+
+  function currentKey() {
+    const h = location.hash.replace('#', '').toUpperCase();
+    return VARIANTS[h] ? h : 'A';
+  }
+  function setKey(key) {
+    location.hash = key;
+    renderStack(key);
+  }
+  function step(delta) {
+    const i = order.indexOf(currentKey());
+    setKey(order[(i + delta + order.length) % order.length]);
+  }
+
+  document.getElementById('prev').addEventListener('click', () => step(-1));
+  document.getElementById('next').addEventListener('click', () => step(1));
+  window.addEventListener('hashchange', () => renderStack(currentKey()));
+  window.addEventListener('keydown', (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'ArrowLeft') step(-1);
+    if (e.key === 'ArrowRight') step(1);
+  });
+
+  renderStack(currentKey());
+</script>
+</body>
+</html>

@@ -17,9 +17,8 @@ import {
   Square,
   Trash2,
 } from 'lucide-react'
-import { AudioSource } from './audio/audio-source'
-import { createWorkerEmbedAudio } from './audio/speaker-embed'
-import { useConfig, PASSPHRASE_BY_LANG } from './config-store'
+import { AudioSource, createWorkerEmbedAudio, PASSPHRASE_BY_LANG } from '@kibotalk/app-shared'
+import { useConfig } from './config-store'
 import { ThresholdSlider } from './components/ConfigFields'
 import { StageShell } from './components/StageShell'
 

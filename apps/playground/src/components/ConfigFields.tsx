@@ -17,7 +17,7 @@ import {
   LEARNER_LEVEL_OPTIONS,
   useConfig,
 } from '../config-store'
-import { SILERO_VARIANTS } from '../audio/silero-vad'
+import { SILERO_VARIANTS } from '@kibotalk/app-shared'
 import { SttProviderSelect } from '../SttProviderSelect'
 import { useTranscribeProvider } from '../SttProviderSelect'
 import type { TranscribeMode } from '../config-store'

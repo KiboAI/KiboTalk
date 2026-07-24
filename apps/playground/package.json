@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
+    "@kibotalk/app-shared": "workspace:*",
     "@kibotalk/audio": "workspace:*",
     "@kibotalk/conversation": "workspace:*",
     "@kibotalk/observability": "workspace:*",

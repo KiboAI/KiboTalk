@@ -21,8 +21,7 @@ import {
   Settings2,
   Square,
 } from 'lucide-react'
-import { AudioSource } from './audio/audio-source'
-import { createSileroInfer, SILERO_VARIANTS } from './audio/silero-vad'
+import { AudioSource, createSileroInfer, SILERO_VARIANTS } from '@kibotalk/app-shared'
 import {
   VadParamsFields,
   AsrPadFields,

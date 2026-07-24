@@ -10,10 +10,18 @@ import type { VAD } from '@kibotalk/audio/vad'
 import { createSegmentAggregator } from '@kibotalk/audio/aggregator'
 import type { SegmentAggregator, AggregatedSegment } from '@kibotalk/audio/aggregator'
 import { Button, Separator, toast } from '@kibotalk/ui'
-import { AudioSource } from './audio/audio-source'
-import { createSileroInfer, SILERO_VARIANTS } from './audio/silero-vad'
-import { createWorkerEmbedAudio } from './audio/speaker-embed'
-import { ProxySttClient, ProxyLlmClient } from './proxy-clients'
+import {
+  AudioSource,
+  createSileroInfer,
+  SILERO_VARIANTS,
+  createWorkerEmbedAudio,
+  ProxySttClient,
+  ProxyLlmClient,
+  connectRealtimeSttWithRetry,
+  type RealtimeSttClient,
+  providerMode,
+  type SttProvider,
+} from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
 import {
   CandidateRoundStack,
@@ -32,15 +40,7 @@ import {
   startSpan,
 } from '@kibotalk/observability'
 import { useIoTracerStore } from './io-tracer/store'
-import {
-  useTranscribeProvider,
-  providerMode,
-  type SttProvider,
-} from './SttProviderSelect'
-import {
-  connectRealtimeSttWithRetry,
-  type RealtimeSttClient,
-} from './realtime-stt-client'
+import { useTranscribeProvider } from './SttProviderSelect'
 
 type TurnView = ConversationTurn & { candidates?: ReplyCandidate[] }
 
@@ -317,11 +317,16 @@ export default function LiveSession({
       })
       vadRef.current = vad
 
-      const stt = new ProxySttClient(audio.sampleRate, cfg.conversationLang)
+      const stt = new ProxySttClient(
+        audio.sampleRate,
+        cfg.conversationLang,
+        () => useConfig.getState().islandSttEnabled,
+        () => useConfig.getState().transcribeProvider,
+      )
       stt.configurePadding(prePadMs, postPadMs)
       stt.setProviderOverride(null)
       sttRef.current = stt
-      const llm = new ProxyLlmClient(readLanguageSnapshot())
+      const llm = new ProxyLlmClient(readLanguageSnapshot(), () => useConfig.getState().islandReplyEnabled)
       llmRef.current = llm
       const storage = storageRef.current
       const pipeline = new Pipeline({ stt, llm, conversation: storage })
@@ -657,7 +662,7 @@ export default function LiveSession({
       }
       stage={
         productSurfaceMode === 'floating' ? (
-          <div className="floating-sim relative flex h-full min-h-0 flex-col">
+          <div className="floating-sim island-stage relative flex h-full min-h-0 flex-col">
             <p className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium tracking-wide text-muted-foreground/80">
               悬浮模拟 · Island + 便利贴
             </p>

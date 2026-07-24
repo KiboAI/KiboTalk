@@ -1,9 +1,16 @@
 import { create } from 'zustand'
 import type { AppLanguage, LearnerLevel, LevelByLang } from '@kibotalk/conversation'
 import { defaultVadConfig } from '@kibotalk/audio/vad'
-import { SILERO_VARIANTS } from './audio/silero-vad'
-import type { SttProvider } from './stt-providers'
-import { defaultSttProvider } from './stt-providers'
+import {
+  SILERO_VARIANTS,
+  defaultSttProvider,
+  defaultLanguagePrefs as defaultAppLanguagePrefs,
+  APP_LANGUAGE_OPTIONS,
+  LEARNER_LEVEL_OPTIONS,
+} from '@kibotalk/app-shared'
+import type { SttProvider } from '@kibotalk/app-shared'
+
+export { APP_LANGUAGE_OPTIONS, LEARNER_LEVEL_OPTIONS }
 
 export type TranscribeMode = 'perSegment' | 'aggregated'
 
@@ -20,13 +27,7 @@ export type LanguagePrefs = {
 }
 
 const defaultLanguagePrefs: LanguagePrefs = {
-  conversationLang: 'ja',
-  meaningLang: 'zh',
-  levelByLang: {
-    ja: 'beginner',
-    en: 'intermediate',
-    zh: 'intermediate',
-  },
+  ...defaultAppLanguagePrefs,
   languagesConfirmed: false,
 }
 
@@ -227,20 +228,3 @@ export function readLanguageSnapshot(): SessionLanguageSnapshot {
   }
 }
 
-export const APP_LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
-  { value: 'ja', label: '日语' },
-  { value: 'en', label: '英语' },
-  { value: 'zh', label: '中文' },
-]
-
-export const LEARNER_LEVEL_OPTIONS: Array<{ value: LearnerLevel; label: string }> = [
-  { value: 'beginner', label: '初级' },
-  { value: 'intermediate', label: '中级' },
-  { value: 'advanced', label: '高级' },
-]
-
-export const PASSPHRASE_BY_LANG: Record<AppLanguage, string> = {
-  ja: 'こんにちは。今日もよろしくお願いします。',
-  en: 'Hello. Nice to meet you. Please take care of me today.',
-  zh: '你好，今天也请多多关照。',
-}

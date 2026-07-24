@@ -1,18 +1,11 @@
-import type { ReactNode } from 'react'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  cn,
+  IslandBar as SharedIslandBar,
+  IslandDragHandle,
+  IslandSeparator,
+  IslandStatus,
+  IslandToggleButton,
 } from '@kibotalk/ui'
-import {
-  Loader2,
-  Mic,
-  MicOff,
-  Play,
-  Sparkles,
-  Square,
-} from 'lucide-react'
+import { Loader2, Mic, MicOff, Play, Sparkles, Square } from 'lucide-react'
 
 export type IslandBarProps = {
   running: boolean
@@ -30,61 +23,23 @@ export type IslandBarProps = {
 function statusTone(state: string, vadStatus: IslandBarProps['vadStatus']): {
   label: string
   pulse: boolean
-  className: string
+  toneClassName: string
 } {
   if (state === 'LLM_STREAMING') {
-    return { label: '生成中', pulse: true, className: 'bg-foreground/80' }
+    return { label: '生成中', pulse: true, toneClassName: 'bg-white/70' }
   }
   if (vadStatus === 'speech' || state === 'USER_SPEAKING' || state === 'OTHER_SPEAKING') {
-    return { label: '听写中', pulse: true, className: 'bg-emerald-700' }
+    return { label: '听写中', pulse: true, toneClassName: 'bg-emerald-400' }
   }
   if (state !== 'IDLE') {
-    return { label: state, pulse: false, className: 'bg-foreground/50' }
+    return { label: state, pulse: false, toneClassName: 'bg-white/50' }
   }
-  return { label: '空闲', pulse: false, className: 'bg-foreground/35' }
-}
-
-function IslandIconButton({
-  pressed,
-  disabled,
-  label,
-  onClick,
-  children,
-}: {
-  pressed?: boolean
-  disabled?: boolean
-  label: string
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          aria-pressed={pressed}
-          disabled={disabled}
-          onClick={onClick}
-          className={cn(
-            'relative flex size-10 items-center justify-center rounded-md transition-colors',
-            'text-island-foreground disabled:opacity-40',
-            pressed
-              ? 'bg-foreground text-background shadow-sm'
-              : 'bg-black/8 hover:bg-black/12',
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
-  )
+  return { label: '空闲', pulse: false, toneClassName: 'bg-white/35' }
 }
 
 /**
- * Playground preview of the desktop Island: icon-first yellow bar with
- * session control + STT / reply-suggestion toggles (each with live status).
+ * Playground preview of the desktop Island: session control + STT / reply
+ * toggles composed from the shared @kibotalk/ui Island primitives.
  */
 export function IslandBar({
   running,
@@ -103,75 +58,31 @@ export function IslandBar({
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
-      <div
-        className="island-bar pointer-events-auto flex items-center gap-2 px-2.5 py-2"
-        role="toolbar"
-        aria-label="悬浮岛"
-      >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-1.5">
-              <span
-                className={cn(
-                  'size-2.5 shrink-0 rounded-full',
-                  tone.className,
-                  tone.pulse && 'animate-pulse',
-                )}
-              />
-              <span className="max-w-[5.5rem] truncate text-xs font-medium text-island-foreground">
-                {busy ? loading : tone.label}
-              </span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top">会话状态 · {state}</TooltipContent>
-        </Tooltip>
-
-        <div className="h-6 w-px bg-black/15" aria-hidden />
-
+      <SharedIslandBar className="pointer-events-auto">
+        <IslandStatus label={busy ? (loading as string) : tone.label} pulse={tone.pulse} toneClassName={tone.toneClassName} />
+        <IslandSeparator />
         {busy ? (
-          <IslandIconButton label={loading || '加载中'} disabled onClick={() => {}}>
+          <IslandToggleButton on={false} disabled label={loading || '加载中'}>
             <Loader2 className="size-4 animate-spin" />
-          </IslandIconButton>
+          </IslandToggleButton>
         ) : !running ? (
-          <IslandIconButton label="开始会话" onClick={onStart}>
+          <IslandToggleButton on={false} label="开始会话" onClick={onStart}>
             <Play className="size-4" />
-          </IslandIconButton>
+          </IslandToggleButton>
         ) : (
-          <IslandIconButton label="停止会话" pressed onClick={onStop}>
+          <IslandToggleButton on label="停止会话" onClick={onStop}>
             <Square className="size-4" />
-          </IslandIconButton>
+          </IslandToggleButton>
         )}
-
-        <div className="h-6 w-px bg-black/15" aria-hidden />
-
-        <IslandIconButton
-          label={sttEnabled ? '转写：开' : '转写：关'}
-          pressed={sttEnabled}
-          onClick={onToggleStt}
-        >
+        <IslandToggleButton on={sttEnabled} label={sttEnabled ? '转写：开' : '转写：关'} onClick={onToggleStt}>
           {sttEnabled ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-          <span
-            className={cn(
-              'absolute right-1 top-1 size-1.5 rounded-full',
-              sttEnabled ? 'bg-emerald-600' : 'bg-foreground/30',
-            )}
-          />
-        </IslandIconButton>
-
-        <IslandIconButton
-          label={replyEnabled ? 'AI 提示：开' : 'AI 提示：关'}
-          pressed={replyEnabled}
-          onClick={onToggleReply}
-        >
-          <Sparkles className={cn('size-4', !replyEnabled && 'opacity-50')} />
-          <span
-            className={cn(
-              'absolute right-1 top-1 size-1.5 rounded-full',
-              replyEnabled ? 'bg-emerald-600' : 'bg-foreground/30',
-            )}
-          />
-        </IslandIconButton>
-      </div>
+        </IslandToggleButton>
+        <IslandToggleButton on={replyEnabled} label={replyEnabled ? 'AI 提示：开' : 'AI 提示：关'} onClick={onToggleReply}>
+          <Sparkles className="size-4" />
+        </IslandToggleButton>
+        <IslandSeparator />
+        <IslandDragHandle />
+      </SharedIslandBar>
     </div>
   )
 }

@@ -7,8 +7,8 @@ import {
 } from '@kibotalk/ui'
 import { useEffect, useState } from 'react'
 import { useConfig } from './config-store'
-import type { SttProvider } from './stt-providers'
-import { defaultSttProvider, providerMode, sttUrl } from './stt-providers'
+import type { SttProvider } from '@kibotalk/app-shared'
+import { defaultSttProvider, providerMode, sttUrl } from '@kibotalk/app-shared'
 
 export type { SttProvider }
 export { defaultSttProvider, providerMode, sttUrl }

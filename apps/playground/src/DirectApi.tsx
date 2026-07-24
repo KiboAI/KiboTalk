@@ -5,16 +5,15 @@ import {
   Button,
   Label,
   ScrollArea,
+  StickyNoteCard,
+  StickyNoteCardPlaceholder,
   Textarea,
   toast,
 } from '@kibotalk/ui'
 import { Cable, Loader2, Mic, Sparkles, Square, StopCircle } from 'lucide-react'
-import { extractCandidates } from './partial-json'
-import { parseSseStream } from './sse'
-import { AudioSource } from './audio/audio-source'
-import { SttProviderSelect, useTranscribeProvider, sttUrl } from './SttProviderSelect'
+import { extractCandidates, parseSseStream, AudioSource, sttUrl } from '@kibotalk/app-shared'
+import { SttProviderSelect, useTranscribeProvider } from './SttProviderSelect'
 import { readLanguageSnapshot, useConfig } from './config-store'
-import { StickyNote, StickyNotePlaceholder } from './components/StickyNote'
 import { WindowRoundCard, WindowRoundPlaceholder } from './components/WindowRoundCard'
 import { StageShell } from './components/StageShell'
 
@@ -297,18 +296,18 @@ export default function DirectApi() {
   const replyPreview =
     candidates.length > 0 ? (
       productSurfaceMode === 'floating' ? (
-        <StickyNote candidates={candidates} />
+        <StickyNoteCard candidates={candidates} />
       ) : (
         <WindowRoundCard candidates={candidates} label="本轮建议" />
       )
     ) : busy ? (
       productSurfaceMode === 'floating' ? (
-        <StickyNotePlaceholder label="正在流式生成…" />
+        <StickyNoteCardPlaceholder label="正在流式生成…" />
       ) : (
         <WindowRoundPlaceholder label="正在流式生成…" />
       )
     ) : productSurfaceMode === 'floating' ? (
-      <StickyNotePlaceholder label="（还没有候选）" />
+      <StickyNoteCardPlaceholder label="（还没有候选）" />
     ) : (
       <WindowRoundPlaceholder label="（还没有候选）" />
     )

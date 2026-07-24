@@ -1,6 +1,5 @@
 import type { ReplyCandidate, ReplySegment } from '@kibotalk/conversation'
-import { cn } from '@kibotalk/ui'
-import { StickyNote } from './StickyNote'
+import { cn, StickyNoteCard } from '@kibotalk/ui'
 
 function SegmentSpan({ segment }: { segment: ReplySegment }) {
   const className = cn(
@@ -58,7 +57,7 @@ export function ReplyCandidateCard({
   }
 
   return (
-    <StickyNote
+    <StickyNoteCard
       candidates={roundCandidates ?? [candidate]}
       className={className}
     />

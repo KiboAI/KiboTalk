@@ -5,6 +5,31 @@
  * interface or other adapters.
  */
 
+import {
+  dashscopeRealtimeModel,
+  isDashscopeRealtimeConfigured,
+} from "./dashscope-realtime";
+
+export {
+  dashscopeRealtimeConfigFromEnv,
+  dashscopeRealtimeHeaders,
+  dashscopeRealtimeUpstreamUrl,
+  isDashscopeRealtimeConfigured,
+  dashscopeRealtimeModel,
+  thinClientToUpstream,
+  upstreamToThinServer,
+  parseThinClientMessage,
+  buildSessionUpdateEvent,
+  buildAppendEvent,
+  buildCommitEvent,
+  buildSessionFinishEvent,
+} from "./dashscope-realtime";
+export type {
+  ThinClientMessage,
+  ThinServerMessage,
+  DashscopeRealtimeConfig,
+} from "./dashscope-realtime";
+
 export interface SttClientConfig {
   provider: string;
   baseUrl: string;
@@ -15,7 +40,8 @@ export interface SttClientConfig {
 export interface TranscribeOptions {
   signal?: AbortSignal;
   /** Optional language hint (e.g. "ja", "en"). Honored by OpenAI-compatible
-   * servers (mlx-qwen3-asr, vLLM, Groq); ignored by the OpenRouter adapter. */
+   * multipart servers (mlx-qwen3-asr, vLLM, Groq) and DashScope batch
+   * (`asr_options.language`); ignored by the OpenRouter adapter. */
   language?: string;
 }
 
@@ -45,6 +71,11 @@ export function registerAdapter(
 }
 
 export function createSttClient(config: SttClientConfig): SttClient {
+  if (config.provider === "dashscope-realtime") {
+    throw new Error(
+      'Provider "dashscope-realtime" is realtime-only; use WS /stt-realtime',
+    );
+  }
   const registration = adapters[config.provider];
   if (!registration) {
     throw new Error(`Unknown STT provider: ${config.provider}`);
@@ -59,7 +90,11 @@ export function createSttClient(config: SttClientConfig): SttClient {
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter（云端）",
   openai: "OpenAI 兼容（本地 Qwen3-ASR 等）",
+  dashscope: "阿里云 DashScope（Qwen3-ASR batch）",
+  "dashscope-realtime": "阿里云 DashScope Realtime",
 };
+
+export type SttMode = "batch" | "realtime";
 
 export type SttProviderInfo = {
   id: string;
@@ -67,17 +102,17 @@ export type SttProviderInfo = {
   model: string;
   active: boolean;
   configured: boolean;
+  mode: SttMode;
 };
 
 /**
- * Enumerate registered STT providers and report which are fully configured in
- * `env` (have BASE_URL + API_KEY + MODEL/default). Used by the proxy to tell
- * the browser which providers it can offer. Keys are never included — only ids.
+ * Enumerate batch adapters + realtime providers and report which are fully
+ * configured in `env`. Keys are never included — only ids.
  */
 export function listSttProviders(
   env: Record<string, string | undefined>,
 ): SttProviderInfo[] {
-  return Object.keys(adapters).map((id) => {
+  const batch = Object.keys(adapters).map((id) => {
     const prefix = `STT_${id.toUpperCase()}_`;
     const baseUrl = env[`${prefix}BASE_URL`];
     const apiKey = env[`${prefix}API_KEY`];
@@ -88,8 +123,22 @@ export function listSttProviders(
       model: model ?? "",
       active: env.STT_ACTIVE === id,
       configured: Boolean(baseUrl && apiKey && model),
+      mode: "batch" as const,
     };
   });
+
+  const realtimeModel = dashscopeRealtimeModel(env);
+  const realtimeConfigured = isDashscopeRealtimeConfigured(env);
+  const realtime: SttProviderInfo = {
+    id: "dashscope-realtime",
+    label: PROVIDER_LABELS["dashscope-realtime"],
+    model: realtimeModel,
+    active: env.STT_ACTIVE === "dashscope-realtime",
+    configured: realtimeConfigured,
+    mode: "realtime",
+  };
+
+  return [...batch, realtime];
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -176,6 +225,70 @@ registerAdapter("openai", createOpenAiCompatAdapter, {
 });
 
 /**
+ * Alibaba Cloud Model Studio (DashScope) batch ASR via OpenAI-compatible
+ * chat/completions + input_audio. Realtime uses dashscope-realtime + WS
+ * (see dashscope-realtime.ts / ADR 0004).
+ */
+function createDashScopeAdapter(config: SttClientConfig): SttAdapter {
+  return {
+    async transcribe(audio, opts) {
+      const dataUri = `data:audio/wav;base64,${arrayBufferToBase64(audio)}`;
+      const asrOptions: { enable_itn: boolean; language?: string } = {
+        enable_itn: false,
+      };
+      if (opts.language) asrOptions.language = opts.language;
+      const body = JSON.stringify({
+        model: config.model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_audio",
+                input_audio: { data: dataUri },
+              },
+            ],
+          },
+        ],
+        stream: false,
+        asr_options: asrOptions,
+      });
+      const response = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body,
+        signal: opts.signal,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `STT request failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      const json = (await response.json()) as {
+        choices?: Array<{
+          message?: { content?: string | Array<{ text?: string; type?: string }> };
+        }>;
+      };
+      const content = json.choices?.[0]?.message?.content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .map((part) => (typeof part.text === "string" ? part.text : ""))
+          .join("");
+      }
+      return "";
+    },
+  };
+}
+
+registerAdapter("dashscope", createDashScopeAdapter, {
+  model: "qwen3-asr-flash",
+});
+
+/**
  * Pure helper that reads the active provider's env group
  * (`STT_<PROVIDER>_BASE_URL`, `STT_<PROVIDER>_API_KEY`, `STT_<PROVIDER>_MODEL`)
  * and returns factory args. The active provider is `providerOverride` if given
@@ -191,6 +304,11 @@ export function sttConfigFromEnv(
   const provider = providerOverride ?? env.STT_ACTIVE;
   if (!provider) {
     throw new Error("STT_ACTIVE is not set");
+  }
+  if (provider === "dashscope-realtime") {
+    throw new Error(
+      'Provider "dashscope-realtime" is realtime-only; use WS /stt-realtime',
+    );
   }
   const registration = adapters[provider];
   if (!registration) {

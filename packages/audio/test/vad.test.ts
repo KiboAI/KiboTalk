@@ -97,8 +97,8 @@ describe('createVAD', () => {
 
   it('defaultVadConfig has expected shape', () => {
     expect(defaultVadConfig.sampleRate).toBe(16000)
-    expect(defaultVadConfig.minSilenceDurationMs).toBe(400)
-    expect(defaultVadConfig.minSpeechDurationMs).toBe(250)
+    expect(defaultVadConfig.minSilenceDurationMs).toBe(200)
+    expect(defaultVadConfig.minSpeechDurationMs).toBe(200)
   })
 
   it('serializes inference so chunks process in order', async () => {

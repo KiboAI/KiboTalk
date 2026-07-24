@@ -114,8 +114,8 @@ type Gate = {
   resolveEnter: () => void
 }
 
-export function candidate(index: number, meaningZh: string, targetText: string, reading: string): CandidateStreamEvent {
-  const candidate: ReplyCandidate = { id: `c${index}`, meaningZh, targetText, reading }
+export function candidate(index: number, meaning: string, targetText: string, reading: string): CandidateStreamEvent {
+  const candidate: ReplyCandidate = { id: `c${index}`, meaning, targetText, reading }
   return { type: 'candidate-done', index, candidate }
 }
 

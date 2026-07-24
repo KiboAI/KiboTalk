@@ -1,5 +1,10 @@
 import { Input, Label } from '@kibotalk/ui'
-import { useConfig } from '../config-store'
+import type { AppLanguage, LearnerLevel } from '@kibotalk/conversation'
+import {
+  APP_LANGUAGE_OPTIONS,
+  LEARNER_LEVEL_OPTIONS,
+  useConfig,
+} from '../config-store'
 import { SILERO_VARIANTS } from '../audio/silero-vad'
 import { SttProviderSelect } from '../SttProviderSelect'
 import { useTranscribeProvider } from '../SttProviderSelect'
@@ -56,9 +61,9 @@ export function VadParamsFields() {
         onChange={(v) => patch({ speechThreshold: v })} />
       <NumberField label="退出阈值（0.3）" value={exitThreshold} step={0.01} min={0} max={1}
         onChange={(v) => patch({ exitThreshold: v })} />
-      <NumberField label="静音结束 ms（400）" value={minSilenceDurationMs} step={50} min={0}
+      <NumberField label="静音结束 ms（200）" value={minSilenceDurationMs} step={50} min={0}
         onChange={(v) => patch({ minSilenceDurationMs: v })} />
-      <NumberField label="最短语音 ms（250）" value={minSpeechDurationMs} step={50} min={0}
+      <NumberField label="最短语音 ms（200）" value={minSpeechDurationMs} step={50} min={0}
         onChange={(v) => patch({ minSpeechDurationMs: v })} />
     </>
   )
@@ -79,20 +84,16 @@ export function AsrPadFields() {
   )
 }
 
-/** Merge / scheduling: per-speaker pause + max length. Only meaningful when
- *  transcribeMode is 'aggregated' (or merge enabled in the live session). */
+/** Merge / scheduling: single pause + max speech length (TurnGate). */
 export function MergeParamsFields({ disabled }: { disabled?: boolean }) {
-  const otherPauseMs = useConfig((s) => s.otherPauseMs)
-  const userPauseMs = useConfig((s) => s.userPauseMs)
+  const pauseMs = useConfig((s) => s.pauseMs)
   const mergeMaxMs = useConfig((s) => s.mergeMaxMs)
   const patch = useConfig((s) => s.patch)
   return (
     <>
-      <NumberField label="对方暂停 ms（1000）·合并" value={otherPauseMs} step={100} min={0} disabled={disabled}
-        onChange={(v) => patch({ otherPauseMs: v })} />
-      <NumberField label="我方暂停 ms（1000）·合并" value={userPauseMs} step={100} min={0} disabled={disabled}
-        onChange={(v) => patch({ userPauseMs: v })} />
-      <NumberField label="合并上限 ms（30000）·合并" value={mergeMaxMs} step={1000} min={0} disabled={disabled}
+      <NumberField label="暂停 ms（500）·成句" value={pauseMs} step={100} min={0} disabled={disabled}
+        onChange={(v) => patch({ pauseMs: v })} />
+      <NumberField label="合并上限 ms（30000）·语音" value={mergeMaxMs} step={1000} min={0} disabled={disabled}
         onChange={(v) => patch({ mergeMaxMs: v })} />
     </>
   )
@@ -140,18 +141,102 @@ export function TranscribeModeSelect({ disabled }: { disabled?: boolean }) {
 }
 
 /** STT provider selector wired to the shared store (auto-bootstraps to active). */
-export function TranscribeProviderSelect({ allowOff = true }: { allowOff?: boolean }) {
+export function TranscribeProviderSelect({
+  allowOff = true,
+  /** When set, only providers of this mode are listed (VAD/DirectApi = batch). */
+  modeFilter,
+}: {
+  allowOff?: boolean
+  modeFilter?: 'batch' | 'realtime'
+}) {
   const { providers, provider } = useTranscribeProvider()
   const patch = useConfig((s) => s.patch)
+  const filtered = modeFilter
+    ? providers.filter((p) => (p.mode ?? 'batch') === modeFilter)
+    : providers
+  const value =
+    provider && filtered.some((p) => p.id === provider) ? provider : null
   return (
     <span className="flex items-center gap-2 text-sm">
       <span className="font-medium">自动转写：</span>
       <SttProviderSelect
-        providers={providers}
-        value={provider}
+        providers={filtered}
+        value={value}
         onChange={(p) => patch({ transcribeProvider: p })}
         allowOff={allowOff}
       />
+      {modeFilter === 'batch' && provider && (providers.find((p) => p.id === provider)?.mode === 'realtime') && (
+        <span className="text-xs text-amber-700">
+          当前为实时 provider，本页仅 batch；请另选 batch，或到「实时会话」使用
+        </span>
+      )}
     </span>
+  )
+}
+
+const selectClass =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50'
+
+/** Conversation / meaning language + current conversation-lang level. */
+export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
+  const conversationLang = useConfig((s) => s.conversationLang)
+  const meaningLang = useConfig((s) => s.meaningLang)
+  const levelByLang = useConfig((s) => s.levelByLang)
+  const setConversationLang = useConfig((s) => s.setConversationLang)
+  const setMeaningLang = useConfig((s) => s.setMeaningLang)
+  const setCurrentLevel = useConfig((s) => s.setCurrentLevel)
+  const level = levelByLang[conversationLang]
+
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="conversation-lang" className="text-xs text-muted-foreground whitespace-nowrap">
+          对话语言
+        </Label>
+        <select
+          id="conversation-lang"
+          value={conversationLang}
+          disabled={disabled}
+          onChange={(e) => setConversationLang(e.target.value as AppLanguage)}
+          className={selectClass}
+        >
+          {APP_LANGUAGE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <Label htmlFor="meaning-lang" className="text-xs text-muted-foreground whitespace-nowrap">
+          翻译语言
+        </Label>
+        <select
+          id="meaning-lang"
+          value={meaningLang}
+          disabled={disabled}
+          onChange={(e) => setMeaningLang(e.target.value as AppLanguage)}
+          className={selectClass}
+        >
+          {APP_LANGUAGE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <Label htmlFor="learner-level" className="text-xs text-muted-foreground whitespace-nowrap">
+          水平
+        </Label>
+        <select
+          id="learner-level"
+          value={level}
+          disabled={disabled}
+          onChange={(e) => setCurrentLevel(e.target.value as LearnerLevel)}
+          className={selectClass}
+        >
+          {LEARNER_LEVEL_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
   )
 }

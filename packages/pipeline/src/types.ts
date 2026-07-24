@@ -26,7 +26,18 @@ export type Segment = {
   interrupted?: boolean
 }
 
-export type CandidateField = 'meaningZh' | 'targetText' | 'reading'
+/** Pre-transcribed turn for realtime STT (ADR 0004). Skips pipeline STT. */
+export type FinalizedTurnInput = {
+  speaker: 'user' | 'other'
+  text: string
+  startedAt: number
+  endedAt: number
+  interrupted?: boolean
+  /** When true, append empty text and emit sttFailed (same as batch STT failure). */
+  sttFailed?: boolean
+}
+
+export type CandidateField = 'meaning' | 'targetText' | 'reading'
 
 /**
  * What an LLM client streams back. T3 will map real SSE tokens onto this; T4

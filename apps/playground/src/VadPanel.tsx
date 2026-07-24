@@ -5,7 +5,7 @@ import { encodeWav, padBuffer } from '@kibotalk/audio'
 import { createSegmentAggregator } from '@kibotalk/audio/aggregator'
 import type { SegmentAggregator, AggregatedSegment } from '@kibotalk/audio/aggregator'
 import { useConfig } from './config-store'
-import { sttUrl } from './SttProviderSelect'
+import { sttUrl, providerMode, useSttProviders } from './SttProviderSelect'
 import {
   Badge,
   Button,
@@ -65,11 +65,13 @@ export default function VadPanel() {
   const exitThreshold = useConfig((s) => s.exitThreshold)
   const minSilenceDurationMs = useConfig((s) => s.minSilenceDurationMs)
   const minSpeechDurationMs = useConfig((s) => s.minSpeechDurationMs)
-  const otherPauseMs = useConfig((s) => s.otherPauseMs)
-  const userPauseMs = useConfig((s) => s.userPauseMs)
+  const pauseMs = useConfig((s) => s.pauseMs)
   const transcribeProvider = useConfig((s) => s.transcribeProvider)
   const transcribeMode = useConfig((s) => s.transcribeMode)
   const mergeMaxMs = useConfig((s) => s.mergeMaxMs)
+  const sttProviders = useSttProviders()
+  const sttProvidersRef = useRef(sttProviders)
+  sttProvidersRef.current = sttProviders
 
   const audioRef = useRef<AudioSource | null>(null)
   const vadRef = useRef<VAD | null>(null)
@@ -93,8 +95,8 @@ export default function VadPanel() {
 
   // Live-tune the aggregator's merge/scheduling knobs.
   useEffect(() => {
-    aggregatorRef.current?.updateConfig({ otherPauseMs, userPauseMs, maxMs: mergeMaxMs })
-  }, [otherPauseMs, userPauseMs, mergeMaxMs])
+    aggregatorRef.current?.updateConfig({ pauseMs, maxMs: mergeMaxMs })
+  }, [pauseMs, mergeMaxMs])
 
   // Stop playback when the panel unmounts.
   useEffect(() => {
@@ -123,11 +125,28 @@ export default function VadPanel() {
   async function transcribeSegment(id: number, buffer: Float32Array) {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, transcribing: true } : s)))
     const { prePadMs, postPadMs, transcribeProvider } = useConfig.getState()
+    if (providerMode(sttProvidersRef.current, transcribeProvider) === 'realtime') {
+      setSegments((prev) =>
+        prev.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                transcribing: false,
+                sttError: '实时 STT 请用「实时会话」页；本页仅支持 batch provider',
+              }
+            : s,
+        ),
+      )
+      return
+    }
     const padded = padBuffer(buffer, prePadMs, postPadMs, sampleRateRef.current)
     const _wav = encodeWav(padded, sampleRateRef.current)
     const startedAt = performance.now()
     try {
-      const res = await fetch(sttUrl(transcribeProvider), { method: 'POST', body: _wav })
+      const res = await fetch(
+        sttUrl(transcribeProvider, useConfig.getState().conversationLang),
+        { method: 'POST', body: _wav },
+      )
       const json = (await res.json()) as { text?: string; error?: string }
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
       const sttMs = Math.round(performance.now() - startedAt)
@@ -147,10 +166,27 @@ export default function VadPanel() {
   async function transcribeMerged(id: number, buffer: Float32Array) {
     setMergedSegments((prev) => prev.map((s) => (s.id === id ? { ...s, transcribing: true } : s)))
     const { transcribeProvider } = useConfig.getState()
+    if (providerMode(sttProvidersRef.current, transcribeProvider) === 'realtime') {
+      setMergedSegments((prev) =>
+        prev.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                transcribing: false,
+                sttError: '实时 STT 请用「实时会话」页；本页仅支持 batch provider',
+              }
+            : s,
+        ),
+      )
+      return
+    }
     const startedAt = performance.now()
     try {
       const wav = encodeWav(buffer, sampleRateRef.current)
-      const res = await fetch(sttUrl(transcribeProvider), { method: 'POST', body: wav })
+      const res = await fetch(
+        sttUrl(transcribeProvider, useConfig.getState().conversationLang),
+        { method: 'POST', body: wav },
+      )
       const json = (await res.json()) as { text?: string; error?: string }
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
       const sttMs = Math.round(performance.now() - startedAt)
@@ -189,11 +225,10 @@ export default function VadPanel() {
 
       // Aggregator: same shared module the live session uses. The VAD panel has
       // no speaker verification, so every segment is fed as 'other' (the panel's
-      // pause threshold is therefore `otherPauseMs`).
+      // pause threshold is therefore `pauseMs`).
       const aggregator = createSegmentAggregator({
         sampleRate: audio.sampleRate,
-        otherPauseMs: cfg.otherPauseMs,
-        userPauseMs: cfg.userPauseMs,
+        pauseMs: cfg.pauseMs,
         maxMs: cfg.mergeMaxMs,
       })
       aggregator.onFlush((merged: AggregatedSegment) => {
@@ -270,7 +305,7 @@ export default function VadPanel() {
               <Button variant="destructive" onClick={stop}>停止检测</Button>
             )}
           </div>
-          <TranscribeProviderSelect />
+          <TranscribeProviderSelect modeFilter="batch" />
           <VadModelSelect disabled={running} />
           <TranscribeModeSelect disabled={running} />
         </div>
@@ -361,7 +396,7 @@ export default function VadPanel() {
           {transcribeMode === 'aggregated' ? (
             mergedSegments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                （还没有合并片段——说几句话后停顿 {otherPauseMs}ms 以上会触发一次合并转写）
+                （还没有合并片段——说几句话后停顿 {pauseMs}ms 以上会触发一次合并转写）
               </p>
             ) : (
               <ol className="space-y-3 text-sm">

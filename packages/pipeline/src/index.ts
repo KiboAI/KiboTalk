@@ -8,6 +8,7 @@ export type {
   PipelineEventHandler,
   PipelineState,
   Segment,
+  FinalizedTurnInput,
   SttClient,
 } from './types'
 export { Pipeline } from './state-machine'

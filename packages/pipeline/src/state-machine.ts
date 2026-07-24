@@ -1,6 +1,7 @@
 import type {
   CandidateField,
   CandidateStreamEvent,
+  FinalizedTurnInput,
   PipelineDeps,
   PipelineEvent,
   PipelineEventHandler,
@@ -85,41 +86,79 @@ export class Pipeline {
   }
 
   async ingestSegment(segment: Segment): Promise<void> {
-    // Rule 2 & 5: a new segment aborts any in-flight LLM and discards partials.
-    if (this.currentLlm) {
-      const aborted = this.currentLlm
-      aborted.abort.abort()
-      this.currentLlm = null
-      this.emit({ type: 'llmAborted', turnId: aborted.turnId })
-    }
-
+    this.abortInFlightLlm()
     this.setState(segment.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
 
     const turnId = this.generateId()
     const text = await this.transcribeWithRetry(segment.pcm)
     const sttFailed = text === null
 
-    const turn: ConversationTurn = {
-      id: turnId,
+    await this.commitTurn({
+      turnId,
       speaker: segment.speaker,
       text: sttFailed ? '' : text!,
       startedAt: segment.startedAt,
       endedAt: segment.endedAt,
-      ...(sttFailed ? { sttFailed: true } : {}),
+      sttFailed,
+      interrupted: segment.interrupted,
+    })
+  }
+
+  /**
+   * Append a turn whose text is already known (realtime STT `completed`).
+   * Same LLM / interrupt rules as `ingestSegment` after transcription.
+   */
+  async ingestFinalizedTurn(input: FinalizedTurnInput): Promise<void> {
+    this.abortInFlightLlm()
+    this.setState(input.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
+
+    const turnId = this.generateId()
+    const sttFailed = input.sttFailed === true
+    await this.commitTurn({
+      turnId,
+      speaker: input.speaker,
+      text: sttFailed ? '' : input.text,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      sttFailed,
+      interrupted: input.interrupted,
+    })
+  }
+
+  private abortInFlightLlm(): void {
+    if (!this.currentLlm) return
+    const aborted = this.currentLlm
+    aborted.abort.abort()
+    this.currentLlm = null
+    this.emit({ type: 'llmAborted', turnId: aborted.turnId })
+  }
+
+  private async commitTurn(args: {
+    turnId: string
+    speaker: 'user' | 'other'
+    text: string
+    startedAt: number
+    endedAt: number
+    sttFailed: boolean
+    interrupted?: boolean
+  }): Promise<void> {
+    const turn: ConversationTurn = {
+      id: args.turnId,
+      speaker: args.speaker,
+      text: args.text,
+      startedAt: args.startedAt,
+      endedAt: args.endedAt,
+      ...(args.sttFailed ? { sttFailed: true } : {}),
     }
     await this.conversation.appendTurn(turn)
     this.emit({ type: 'turnAppended', turn })
 
-    if (sttFailed) {
-      this.emit({ type: 'sttFailed', turnId })
+    if (args.sttFailed) {
+      this.emit({ type: 'sttFailed', turnId: args.turnId })
     }
 
-    if (!segment.interrupted) {
-      // Detached: resolves on its own; a newer segment may abort it mid-stream.
-      void this.runLlm(turnId).catch(() => {
-        // runLlm handles its own failures; this swallows unexpected rejections
-        // so an orphaned task never surfaces an unhandled rejection.
-      })
+    if (!args.interrupted) {
+      void this.runLlm(args.turnId).catch(() => {})
     } else {
       this.setState('IDLE')
     }

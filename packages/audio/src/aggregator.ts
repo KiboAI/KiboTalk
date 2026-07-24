@@ -1,26 +1,19 @@
 /**
- * Segment aggregator — sits between VAD (+ speaker verification) and the
- * pipeline's `ingestSegment`. It accumulates VAD speech-ready segments of the
- * same speaker and flushes a merged chunk when:
- *   - silence since the last segment exceeds the current speaker's pause
- *     threshold (`otherPauseMs` / `userPauseMs`), or
- *   - the accumulated audio length exceeds `maxMs`, or
- *   - the speaker changes (the pending utterance is flushed, a new one starts).
+ * Segment aggregator (TurnGate) — sits between VAD (+ speaker verification) and
+ * the pipeline / realtime STT. Accumulates same-speaker VAD speech segments and
+ * flushes when:
+ *   - silence since the last segment exceeds `pauseMs`, or
+ *   - accumulated **speech** length exceeds `maxMs`, or
+ *   - the speaker changes (pending utterance flushes, a new one starts).
  *
- * This realizes spec §2.4's "wait for the other to pause before triggering the
- * LLM" and the VAD panel's merge experiment, as a shared, pipeline-agnostic
- * layer. The pipeline's contract (one ingested segment = one turn) is unchanged.
- *
- * Silence between constituent segments is reconstructed from segment timing
- * (zero-filled gap = next.startedAt - prev.endedAt) so ASR keeps natural cadence.
+ * Constituent PCM is concatenated directly (no silence-gap reconstruction).
+ * Spec §2.4 / ADR 0004. Pipeline contract: one flushed segment = one turn.
  */
 export type AggregatorConfig = {
   sampleRate: number
-  /** Pause (ms) after the last `other` segment that flushes an other utterance. */
-  otherPauseMs: number
-  /** Pause (ms) after the last `user` segment that flushes a user utterance. */
-  userPauseMs: number
-  /** Force-flush when accumulated audio reaches this length (ms). */
+  /** Pause (ms) after the last segment that flushes the utterance (both speakers). */
+  pauseMs: number
+  /** Force-flush when accumulated speech reaches this length (ms). Gaps not counted. */
   maxMs: number
 }
 
@@ -48,6 +41,18 @@ export type SegmentAggregator = {
   dispose(): void
 }
 
+function concatPcm(parts: FedSegment[]): Float32Array {
+  let total = 0
+  for (const part of parts) total += part.buffer.length
+  const out = new Float32Array(total)
+  let off = 0
+  for (const part of parts) {
+    out.set(part.buffer, off)
+    off += part.buffer.length
+  }
+  return out
+}
+
 export function createSegmentAggregator(config: AggregatorConfig): SegmentAggregator {
   let cfg = config
   const handlers = new Set<(seg: AggregatedSegment) => void>()
@@ -57,28 +62,6 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
 
   function emit(seg: AggregatedSegment): void {
     for (const h of handlers) h(seg)
-  }
-
-  function buildPcm(parts: FedSegment[]): Float32Array {
-    const gapSamples: number[] = []
-    let total = 0
-    for (let i = 0; i < parts.length; i++) {
-      total += parts[i].buffer.length
-      if (i > 0) {
-        const gapMs = Math.max(0, parts[i].startedAt - parts[i - 1].endedAt)
-        const gap = Math.round((gapMs / 1000) * cfg.sampleRate)
-        gapSamples.push(gap)
-        total += gap
-      }
-    }
-    const out = new Float32Array(total)
-    let off = 0
-    for (let i = 0; i < parts.length; i++) {
-      if (i > 0) off += gapSamples[i - 1]
-      out.set(parts[i].buffer, off)
-      off += parts[i].buffer.length
-    }
-    return out
   }
 
   function flush(): void {
@@ -92,7 +75,7 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
       return
     }
     const seg: AggregatedSegment = {
-      pcm: buildPcm(current),
+      pcm: concatPcm(current),
       speaker: currentSpeaker!,
       startedAt: current[0].startedAt,
       endedAt: current[current.length - 1].endedAt,
@@ -103,18 +86,16 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
     emit(seg)
   }
 
-  function armTimer(speaker: 'user' | 'other'): void {
+  function armTimer(): void {
     if (timer) clearTimeout(timer)
-    const pause = speaker === 'other' ? cfg.otherPauseMs : cfg.userPauseMs
     timer = setTimeout(() => {
       timer = null
       flush()
-    }, pause)
+    }, cfg.pauseMs)
   }
 
   return {
     feed(segment) {
-      // Speaker change → flush the pending utterance, start a new one.
       if (currentSpeaker !== null && currentSpeaker !== segment.speaker) {
         flush()
       }
@@ -124,13 +105,12 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
       }
       current.push(segment)
 
-      // Force-flush if the accumulated audio exceeds maxMs.
       const totalMs = (current.reduce((n, s) => n + s.buffer.length, 0) / cfg.sampleRate) * 1000
       if (totalMs >= cfg.maxMs) {
         flush()
         return
       }
-      armTimer(segment.speaker)
+      armTimer()
     },
     flush,
     onFlush(handler) {

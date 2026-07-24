@@ -32,9 +32,10 @@ export const defaultVadConfig: VadConfig = {
   sampleRate: 16000,
   speechThreshold: 0.5,
   exitThreshold: 0.3,
-  minSilenceDurationMs: 400,
+  /** Tight cut so speaker turns with short gaps don't merge into one blob. */
+  minSilenceDurationMs: 200,
   speechPadMs: 80,
-  minSpeechDurationMs: 250,
+  minSpeechDurationMs: 200,
   newBufferSize: 512,
 }
 

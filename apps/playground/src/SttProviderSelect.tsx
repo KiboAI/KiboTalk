@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useConfig } from './config-store'
 
-export type SttProvider = { id: string; label: string; model: string; active: boolean }
+export type SttProvider = {
+  id: string
+  label: string
+  model: string
+  active: boolean
+  mode?: 'batch' | 'realtime'
+}
 
 /**
  * Fetch the configured STT providers from the proxy once on mount. Returns an
  * empty list if the proxy is unreachable or nothing is configured. Keys never
- * arrive — only ids/labels/models.
+ * arrive — only ids/labels/models/mode.
  */
 export function useSttProviders(): SttProvider[] {
   const [providers, setProviders] = useState<SttProvider[]>([])
@@ -26,13 +32,28 @@ export function useSttProviders(): SttProvider[] {
 }
 
 /** Build the /stt proxy URL for a provider id (null/empty → active provider). */
-export function sttUrl(provider: string | null): string {
-  return provider ? `/stt?provider=${encodeURIComponent(provider)}` : '/stt'
+export function sttUrl(
+  provider: string | null,
+  language?: string | null,
+): string {
+  const params = new URLSearchParams()
+  if (provider) params.set('provider', provider)
+  if (language) params.set('language', language)
+  const qs = params.toString()
+  return qs ? `/stt?${qs}` : '/stt'
 }
 
 /** Pick the default provider: the active one, else the first available. */
 export function defaultSttProvider(providers: SttProvider[]): string | null {
   return providers.find((p) => p.active)?.id ?? providers[0]?.id ?? null
+}
+
+export function providerMode(
+  providers: SttProvider[],
+  id: string | null,
+): 'batch' | 'realtime' {
+  if (!id) return 'batch'
+  return providers.find((p) => p.id === id)?.mode ?? 'batch'
 }
 
 /**
@@ -82,7 +103,9 @@ export function SttProviderSelect({
         {allowOff && <option value="">{offLabel}</option>}
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.label}（{p.model}）{p.active ? ' · 默认' : ''}
+            {p.label}（{p.model}）
+            {p.mode === 'realtime' ? ' · 实时' : ' · batch'}
+            {p.active ? ' · 默认' : ''}
           </option>
         ))}
       </select>

@@ -78,7 +78,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     expect(done).toHaveLength(1)
     if (done[0].type === 'candidatesDone') {
       expect(done[0].candidates).toHaveLength(1)
-      expect(done[0].candidates[0].meaningZh).toBe('二')
+      expect(done[0].candidates[0].meaning).toBe('二')
     }
     const turns = await conversation.loadActiveSession()
     expect(turns).toHaveLength(2)
@@ -87,9 +87,9 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
   it('rule 3: multi-turn no user — each other segment triggers a fresh LLM', async () => {
     const stt = new MockStt(['a', 'b', 'c'])
     const llm = new MockLlm([
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'a', targetText: 'a', reading: 'a' } }, { type: 'done' }],
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'b', targetText: 'b', reading: 'b' } }, { type: 'done' }],
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'c', targetText: 'c', reading: 'c' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'a', targetText: 'a', reading: 'a' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'b', targetText: 'b', reading: 'b' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'c', targetText: 'c', reading: 'c' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -129,7 +129,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
   it('rule 5: user抢说 — interrupted other appended (no LLM); user segment triggers LLM', async () => {
     const stt = new MockStt(['other-partial', 'user-actual'])
     const llm = new MockLlm([
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: '续', targetText: 'つづき', reading: 'tsuzuki' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: '续', targetText: 'つづき', reading: 'tsuzuki' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -150,7 +150,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     const stt = new MockStt(['other', 'user抢说'])
     const llm = new MockLlm([
       [{ type: 'candidate-start', index: 0 }, candidate(0, 'partial', 'p', 'p'), { gate: 'block' }],
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'user', targetText: 'u', reading: 'u' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'user', targetText: 'u', reading: 'u' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -192,7 +192,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     expect(turns![0].text).toBe('')
 
     stt.results.push('recovered')
-    llm.scripts.push([{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'r', targetText: 'r', reading: 'r' } }, { type: 'done' }])
+    llm.scripts.push([{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'r', targetText: 'r', reading: 'r' } }, { type: 'done' }])
     await pipeline.ingestSegment(seg('other', 3000))
     await pipeline.idle()
     expect(llm.callCount).toBe(2)
@@ -201,7 +201,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
   it('rule 6: STT recovers on retry — no sttFailed, LLM proceeds', async () => {
     const stt = new MockStt([new Error('transient'), 'recovered'])
     const llm = new MockLlm([
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'ok', targetText: 'ok', reading: 'ok' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'ok', targetText: 'ok', reading: 'ok' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -233,7 +233,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     expect(turns![0].text).toBe('other-text')
 
     stt.results.push('next')
-    llm.scripts.push([{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'n', targetText: 'n', reading: 'n' } }, { type: 'done' }])
+    llm.scripts.push([{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'n', targetText: 'n', reading: 'n' } }, { type: 'done' }])
     await pipeline.ingestSegment(seg('other', 3000))
     await pipeline.idle()
     expect(llm.callCount).toBe(3)
@@ -243,7 +243,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     const stt = new MockStt(['other'])
     const llm = new MockLlm([
       [{ throw: true }],
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: 'ok', targetText: 'ok', reading: 'ok' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: 'ok', targetText: 'ok', reading: 'ok' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -260,7 +260,7 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
   it('user segment triggers LLM (same as other)', async () => {
     const stt = new MockStt(['user said this'])
     const llm = new MockLlm([
-      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaningZh: '续写', targetText: 'つづき', reading: 'tsuzuki' } }, { type: 'done' }],
+      [{ type: 'candidate-done', index: 0, candidate: { id: 'c0', meaning: '续写', targetText: 'つづき', reading: 'tsuzuki' } }, { type: 'done' }],
     ])
     const conversation = new InMemoryConversationStorage()
     const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
@@ -306,5 +306,39 @@ describe('Pipeline state machine — spec §2.4 rules 1–8', () => {
     await pipeline.ingestSegment(seg('other', 1000))
     await pipeline.idle()
     expect(pipeline.getState()).toBe('IDLE')
+  })
+
+  it('ingestFinalizedTurn skips STT and still streams candidates', async () => {
+    const stt = new MockStt([])
+    const llm = new MockLlm([
+      [
+        { type: 'candidate-start', index: 0 },
+        candidate(0, '你好', 'こんにちは', 'konnichiwa'),
+        { type: 'candidate-start', index: 1 },
+        candidate(1, '您好', 'こんにちは', 'konnichiwa'),
+        { type: 'candidate-start', index: 2 },
+        candidate(2, '哈喽', 'こんにちは', 'konnichiwa'),
+        { type: 'done' },
+      ],
+    ])
+    const conversation = new InMemoryConversationStorage()
+    const pipeline = new Pipeline({ stt, llm, conversation, sleep: noSleep })
+    const events = recordEvents(pipeline, ['turnAppended', 'candidatesDone'])
+
+    await pipeline.ingestFinalizedTurn({
+      speaker: 'other',
+      text: 'こんにちは',
+      startedAt: 0,
+      endedAt: 1000,
+    })
+    await pipeline.idle()
+
+    expect(stt.callCount).toBe(0)
+    const turns = await conversation.loadActiveSession()
+    expect(turns).toHaveLength(1)
+    expect(turns![0]).toMatchObject({ speaker: 'other', text: 'こんにちは' })
+    const done = events.find((e) => e.type === 'candidatesDone')
+    expect(done).toBeDefined()
+    if (done?.type === 'candidatesDone') expect(done.candidates).toHaveLength(3)
   })
 })

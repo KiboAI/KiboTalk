@@ -31,19 +31,31 @@
 
 ```text
 首次打开（立刻申请麦克风等权限；后台开始拉全部端侧模型权重）
-    → Onboarding 填信息（目标语 / 水平…；下载在后台继续）
+    → Onboarding 填信息（对话语言 / 翻译语言 / 水平…；下载在后台继续）
+        · 预填：对话 ja、翻译 zh、ja 水平 beginner；另两语言水平默认 intermediate
+        · 须显式确认一次（满足「第一次就要选择」）
         · 右上角小圆圈显示下载进度
         · 权重未下完 → 不能进入下一步 / 开始会话
-    → 声纹录制（权重已就绪）
-    → 开始会话
+    → 声纹录制（权重已就绪；口令随对话语言 ja/en/zh）
+    → 开始会话（快照 conversationLang / meaningLang / level；进行中锁定）
     → 持续听音频 → VAD 切段 → 说话人判定
-        → other 说完：STT → 写入对话 → 请求 LLM（通常给 3 条候选）
+        → other 说完：STT（language=conversationLang）→ 写入对话 → 请求 LLM（通常给 3 条候选）
         → user 说完：STT → 写入对话 → 同样请求 LLM（由模型决定出候选或跳过）
     → 循环
     → 结束会话 → 文字回顾（小结 + 本轮句型）
 ```
 
-**首次打开（硬性，勿懒加载）**：`apps/web` 一进入就**后台**开始拉取并缓存**全部**端侧模型权重（至少含 Silero VAD、speaker verification；以后若有其它本地 WASM/ONNX 一并列入），**禁止**「用到某能力时才开始拉模型」。下载与 Onboarding **填表并行**：用户填目标语 / 水平等信息时不挡操作；**右上角用小进度圆**展示下载进度。权重**全部下完之前**，进入下一步 / 「开始会话」按钮保持不可用（可附简短提示「模型准备中」）。同一时机**立刻**申请所需权限（麦克风等；桌面壳阶段再含系统音频相关权限），不要拖到点「开始会话」或 enrollment 录音时才弹。理由：把大体积下载叠在填表时间上；现场演示 / 真机网络差时，会话中途再下几百 MB 会卡死体验；权限延后弹窗也更容易被拒或打断录音。
+**语言双轴（见 §1.4、[ADR 0003](../adr/0003-multilingual-conversation-and-meaning.md)）**：
+
+| 轴 | 字段 | 白名单 | 作用 |
+|----|------|--------|------|
+| 对话语言 | `conversationLang` | `ja` \| `en` \| `zh` | 同场双方用语；STT hint、时间轴原文、候选 `targetText`、录入口令 |
+| 翻译语言 | `meaningLang` | `ja` \| `en` \| `zh` | 候选 `meaning`；允许与对话语言相同 |
+| 水平 | `levelByLang` | 每语言 `beginner` \| `intermediate` \| `advanced` | 进 prompt；切换对话语言时带出该语言上次水平 |
+
+设置仅会话外可改；开新会话时快照。界面文案语言（`uiLang`）独立预留，**MVP 不做整站 i18n**（playground / 壳暂中文）。
+
+**首次打开（硬性，勿懒加载）**：`apps/web` 一进入就**后台**开始拉取并缓存**全部**端侧模型权重（至少含 Silero VAD、speaker verification；以后若有其它本地 WASM/ONNX 一并列入），**禁止**「用到某能力时才开始拉模型」。下载与 Onboarding **填表并行**：用户填对话语言 / 翻译语言 / 水平等信息时不挡操作；**右上角用小进度圆**展示下载进度。权重**全部下完之前**，进入下一步 / 「开始会话」按钮保持不可用（可附简短提示「模型准备中」）。同一时机**立刻**申请所需权限（麦克风等；桌面壳阶段再含系统音频相关权限），不要拖到点「开始会话」或 enrollment 录音时才弹。理由：把大体积下载叠在填表时间上；现场演示 / 真机网络差时，会话中途再下几百 MB 会卡死体验；权限延后弹窗也更容易被拒或打断录音。
 
 **触发原则**：不再「仅对方轮次出候选」。任一 speaker 的 turn 入库后都进入教练请求；LLM 根据上下文判断本轮是否需要开口提示（见 F04）。
 ### 1.3 功能清单
@@ -52,14 +64,15 @@
 
 | ID | 模块 | 需求 | 验收 |
 |----|------|------|------|
-| F01 | 声纹 Enrollment | 开始前读固定文案，建立 user 声纹 | 后续能区分 user / other |
+| F01 | 声纹 Enrollment | 开始前读**随 `conversationLang` 的**固定口令，建立 user 声纹；换语言不强制重录 | 后续能区分 user / other |
 | F02 | 说话人识别 | 每段音频判定 `user` \| `other` | 对方轮次不误触为用户 |
-| F03 | VAD + STT | 按「一句」切段并转写；转写**可见但不可编辑**（ASR 错误由 LLM 上下文消化） | 时间轴显示转写原文 |
-| F04 | 回复候选（教练闸门） | **任一** `speaker` turn 入库后**一律**请求 LLM。输出 **恰好 3 条**或 **`[]`**。续写与应答同一套三卡（不加 `kind`）。卡壳 = user 停顿后半句 → 给**补全后的完整可念句** | 有 3 条时含 meaningZh / targetText / segments；`[]` / 失败 / 请求中均**保留**上一轮已提交候选（不先清空） |
+| F03 | VAD + STT | 按「一句」切段并转写（STT `language` = 会话快照的 `conversationLang`）；转写**可见但不可编辑**（ASR 错误由 LLM 上下文消化）。Realtime 路径可显示进行中草稿（partial）；**正式 turn / LLM 仅定稿** | 时间轴显示转写原文（可含草稿行） |
+| F04 | 回复候选（教练闸门） | **任一** `speaker` turn 入库后**一律**请求 LLM。输出 **恰好 3 条**或 **`[]`**。续写与应答同一套三卡（不加 `kind`）。卡壳 = user 停顿后半句 → 给**补全后的完整可念句** | 有 3 条时含 meaning / targetText；`conversationLang===ja` 时含 segments；`[]` / 失败 / 请求中均**保留**上一轮已提交候选（不先清空） |
 | F05 | 用户轮次感知 | `speaker === 'user'` 时 STT 写入对话，并与 other 一样触发 F04 | 上下文含用户实际说的；闸门见 §1.4 |
-| F06 | 语言水平 | N5–N1（或三档）影响 prompt | N5 与 N1 输出可肉眼区分 |
+| F06 | 语言水平 | 统一三档 beginner / intermediate / advanced，按语言存 `levelByLang`；进 prompt | 初级与高级输出可肉眼区分 |
+| F07 | 语言设置 | 首次必选并确认对话语言 / 翻译语言 / 水平；之后会话外可改；开新会话快照 | 进行中不可改；新会话 STT/LLM 用新快照 |
 | F08 | 对话时间轴 | 单条 turn 流，按 speaker 区分展示 | 可回看每轮原文 |
-| F09 | 结束回顾 | 会话结束生成文字小结 | 可复制 |
+| F09 | 结束回顾 | 会话结束生成文字小结 | 可复制；**意向**双语（目标语要点 + meaningLang 说明），实现可后于 N1 |
 | F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL | 竖屏/宽屏布局可用 |
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
 
@@ -82,10 +95,33 @@
 | iPhone 通话监听 | Web / PWA 做不到 |
 | 登录账号 | 本地会话即可 |
 | 离线 LLM | LLM 走在线 API。本地 ASR 可选（低延迟，见 §2.9 本地 STT） |
+| 整站界面 i18n（`uiLang`） | 壳 / playground 暂中文；与 `meaningLang` 解耦 |
+| 会话中热切换语言 | 时间轴与 STT hint 会混乱；仅会话外改、新会话快照 |
+| 对方说异于对话语言的语 | 同场双方都用 `conversationLang`；异语为后续愿景 |
 
 ### 1.4 数据模型
 
 ```ts
+type AppLanguage = 'ja' | 'en' | 'zh'
+type LearnerLevel = 'beginner' | 'intermediate' | 'advanced'
+
+type LevelByLang = Record<AppLanguage, LearnerLevel>
+
+/** Persisted user prefs (session-out editable). */
+type LanguagePrefs = {
+  conversationLang: AppLanguage
+  meaningLang: AppLanguage
+  levelByLang: LevelByLang
+  languagesConfirmed: boolean
+}
+
+/** Frozen when a session starts; drives STT + LLM for that session. */
+type SessionLanguageSnapshot = {
+  conversationLang: AppLanguage
+  meaningLang: AppLanguage
+  level: LearnerLevel // = levelByLang[conversationLang] at start
+}
+
 type Speaker = 'user' | 'other'
 
 type ConversationTurn = {
@@ -101,28 +137,30 @@ type ReplySegmentRole = 'content' | 'particle' | 'punct'
 
 type ReplySegment = {
   surface: string
-  reading?: string // 汉字注音；假名/标点可省略
+  reading?: string // ja: 汉字注音；假名/标点可省略
   role: ReplySegmentRole
 }
 
 type ReplyCandidate = {
   id: string
-  meaningZh: string
-  targetText: string
+  meaning: string // 学习者意图短句；语言 = meaningLang
+  targetText: string // 可念原文；语言 = conversationLang
   /** @deprecated 整句读音；已废弃，ruby 仅用 segments[].reading（仅汉字） */
   reading?: string
-  segments?: ReplySegment[] // 分词；surface 拼接 = targetText；用于 ruby + 助词高亮
+  /** 分词；surface 拼接 = targetText。仅 conversationLang===ja 时强制（ruby + 助词高亮） */
+  segments?: ReplySegment[]
 }
 ```
 
 **规则**
 
 - 一条 `ConversationTurn[]`，不按 speaker 拆两套存储
-- LLM 上下文 = 全部 turns（含用户 STT 结果）；prompt 须标明触发本轮的 **last speaker**（context 末轮）
+- LLM 上下文 = 全部 turns（含用户 STT 结果）；prompt 须标明触发本轮的 **last speaker**（context 末轮），并注入会话快照的 `conversationLang` / `meaningLang` / `level`
 - 点选候选 ≠ 用户说了什么；**以 STT 为准**
 - LLM JSON：**要么**长度为 3 的候选数组，**要么** `[]`（跳过）。禁止其它包装形状
-- **Schema**：续写与「下一句应答」同一套 `ReplyCandidate`（meaningZh + targetText + segments），**不加** `kind` 字段
-- **卡壳**：用户说一半卡住 = 停顿 ≥ `VAD_USER_PAUSE_MS` 后入库的未完 / 半句 user turn。此时 3 条应为基于半句补全的**完整可念句**（用户可从头念整句；不是只给续写尾巴）
+- **Schema**：续写与「下一句应答」同一套 `ReplyCandidate`（meaning + targetText；ja 时 + segments），**不加** `kind` 字段
+- **注解**：`conversationLang === 'ja'` 时强制 segments（汉字 ruby + 助詞）；en/zh 可省略 segments，UI 只显示 `targetText` + `meaning`
+- **卡壳**：用户说一半卡住 = 停顿 ≥ `VAD_PAUSE_MS` 后入库的未完 / 半句 user turn。此时 3 条应为基于半句补全的**完整可念句**（用户可从头念整句；不是只给续写尾巴）
 - **闸门（prompt 写死）**：
   - **`other` 后**：几乎必给 3 条；仅噪声 / 极短无意义 / 明显不在等用户开口时才可 `[]`
   - **`user` 后（宽松）**：不像「话轮已结束且在等对方」就给 3 条（卡壳续写，或下一句脚手架）；仅很明显「用户已答完、在等对方」才 `[]`
@@ -139,8 +177,8 @@ type ReplyCandidate = {
 | 录声纹 | ✅ F01 |
 | 听对方 / 听自己 → 出建议（由模型决定） | ✅ F02–F05 |
 | 感知用户说了什么 | ✅ F05 |
-| 语言水平 N5/N1 | ✅ F06 |
-| 结束小结 | ✅ F09 |
+| 语言水平 | ✅ F06（三档 + 按语言） |
+| 结束小结 | ✅ F09（双语意向后置实现） |
 | AI 语音 / AI 问答 | ❌ |
 | 候选编辑 | ❌ 已砍 |
 
@@ -286,23 +324,34 @@ Velin(repliesPrompt) → xsAI → JSON: 3 candidates | []
 
 **规则**：
 
-1. **停顿阈值触发 LLM**：**other 或 user** 停说 ≥ 各自阈值（`VAD_OTHER_PAUSE_MS` / `VAD_USER_PAUSE_MS`）→ append 对应 turn → **一律**触发 LLM streaming（F04）。卡壳救援也走同一路径（user 半句停顿后请求）
+1. **停顿阈值触发 LLM**：**other 或 user** 停说 ≥ `VAD_PAUSE_MS` → 定稿 turn 入库 → **一律**触发 LLM streaming（F04）。卡壳救援也走同一路径（user 半句停顿后请求）
 2. **打断**：LLM streaming 中，VAD 检到**任一** speaker 的新语音 → **abort 在途 LLM**，丢弃**本轮半截流**（不展示未完成对象），**保留**上一轮已提交的 3 卡，开始捕获该轮说话
 3. **多轮无用户**：可连续多个 other turn——每次 other 停顿达标都触发 LLM；若返回 3 条则刷新候选，若 `[]` 则保留原展示
-4. **完整对话进下一轮**：被打断后新一轮 LLM 的 context = **所有已完成的 ConversationTurn**。半截候选**不进 context**（§1.4「以 STT 为准」）
+4. **完整对话进下一轮**：被打断后新一轮 LLM 的 context = **所有已完成的 ConversationTurn**。半截候选与 realtime partial **不进 context**（§1.4「以 STT 为准」）
 5. **抢说 / 连说**：对方或用户停说后的阈值倒计时中若另一方（或同方）又开口 → **取消待触发或在途的 LLM**，先完成新 turn 的 STT/入库，再按规则 1 **重新请求教练**（user 入库后同样触发，不再「只入库不出 LLM」）
-6. **STT 失败**：自动重试 1 次（1s 退避）→ 仍失败 → `appendTurn({ text: '', sttFailed: true })`，UI 标红（**不可补字**）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**
+6. **STT 失败**：batch 自动重试 1 次（1s 退避）→ 仍失败 → `appendTurn({ text: '', sttFailed: true })`，UI 标红（**不可补字**）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**。Realtime：短退避重连；仍失败且已配置 batch provider 则可降级为 batch（见 §2.9 / ADR 0004）
 7. **LLM 失败**：自动重试 1 次（1s 退避）→ 仍失败 → 候选区可提示「出候选失败，重试」，但**不清空**上一轮已提交候选；turn 已入库不动 → 循环继续听下一轮，**不杀会话**
-8. **不做**：fallback provider、熔断、多轮指数退避、离线缓存重放、客户端预过滤闸门、双模型——MVP 过度
+8. **不做**：熔断、多轮指数退避、离线缓存重放、客户端预过滤闸门、双模型、中途 partial 触发 LLM——MVP 过度
 
 重试在 `packages/pipeline` 层做（catch 网络错误 + 重试 1 次 + 转用户可见状态）；`packages/llm` / `packages/stt` 的 client 内部不重试，保持简单。
 
+**TurnGate（`packages/audio` segment aggregator）**：
+
+坐在 VAD（+ 声纹）与 pipeline 之间。同 speaker 的 speech 段累积，在以下任一条件 flush：
+
+- 距上一段结束的静音 ≥ `VAD_PAUSE_MS`（双方同一阈值，默认 1000）
+- 说话人切换（先 flush 旧 turn，再开始新 turn）
+- 累计**语音**时长 ≥ `VAD_MERGE_MAX_MS`
+
+**Batch**：flush 时把组成段 **直接拼接** PCM（**不**按时间轴填静音 gap）→ 一次 `POST /stt` / `ingestSegment`。  
+**Realtime**：每段 speech 上行 `append`；flush 时 `commit` → 等 `completed` → `ingestFinalizedTurn`（不传合并 WAV）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
+
 **配置**：
 
-VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playground 前端「调试参数」面板实时可调（`vad.updateConfig()` / `verifier.setThreshold()`），无需改 env 或重启会话；默认值在 `packages/pipeline` 的 `defaultConfig`：
+VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playground 前端「调试参数」面板实时可调，无需改 env 或重启会话：
 
-- `VAD_OTHER_PAUSE_MS`（other 停说多久算「说完」→ append + 触发 LLM）：默认 1000
-- `VAD_USER_PAUSE_MS`（user 停说多久算「说完」→ append + 触发 LLM）：默认与 other 同值
+- `VAD_PAUSE_MS`（任一方停说多久算「说完」→ 定稿 + 触发 LLM）：默认 1000
+- `VAD_MERGE_MAX_MS`（累计语音多久强制成句）：playground 默认可调
 - 说话人判定 `threshold`：默认见 `packages/speaker`
 
 便利店快节奏可能 700ms 更合适，会议场景可能 1.5s——先 1s 跑起来，playground 阶段按场景调。
@@ -389,11 +438,12 @@ Velin 在 **Node / CI / eval** 中 `renderComponent`；浏览器运行时消费�
 
 `evals/` + 根 `vieval.config.ts`，矩阵维度示例：
 
-- `level`: N5 | N3 | N1
+- `level`: beginner | intermediate | advanced（及历史 JLPT 对照用例可映射）
+- `conversationLang` / `meaningLang`: 当前评测仍以 ja↔zh 为主；en/zh 套件后置
 - `model`: agent-mini | agent-large
 - `historyDepth`: 0 | 2 | 5
 
-重点测：用户上轮 STT 是否进入下轮建议、敬语/难度是否达标。
+重点测：用户上轮 STT 是否进入下轮建议、难度是否达标、ja 时 furigana/助詞质量。
 
 ### 2.7 开发 Playground（功能验证，非 UI 组件库）
 
@@ -459,18 +509,26 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 | 路由 | 协议 | 作用 | 备注 |
 |------|------|------|------|
 | `POST /llm` | **SSE 流式** | 接收对话上下文 + prompt，转发 LLM provider，流式回 3 条候选（传原始 token） | key 在服务端环境变量 |
-| `POST /stt` | 普通 POST | 接收 VAD 切好的音频片段，转发 STT provider，回 JSON 转写 | batch，与 speaker 判定并行 |
+| `POST /stt` | 普通 POST | 接收 VAD 切好的音频片段，转发 **batch** STT provider，回 JSON 转写 | 与 speaker 判定并行 |
+| `WS /stt-realtime` | **WebSocket** | 薄 JSON 协议上行 speech PCM / commit；代理注入 key，映射到上游 realtime WSS；下行 partial / completed | 见 ADR 0004；仅 realtime provider |
 
 **流式协议选型**：
 
 - **LLM 用 SSE**（Server-Sent Events）：单向服务端→客户端，Hono `streamSSE` 原生支持，是 LLM 流式的事实标准。代理透传 provider 的原始 token 流，浏览器用 `fetch` + `ReadableStream` 读，边收边增量解析结构化输出（3 候选的 JSON，用 partial-json 类库增量 parse）——第一个候选生成时用户就能开始读
-- **STT 不流式**：本地 VAD 已切段，`/stt` 是 batch POST（音频 → JSON 转写）
-- **不用 WebSocket**：流是单向的，打断是 abort 整个连接而非发消息，WebSocket 的双向能力用不上，纯属多付复杂度
+- **Batch STT**：本地 TurnGate 切段后 `POST /stt`（音频 → JSON 转写）
+- **Realtime STT 用 WebSocket**：说话中持续上行、下行 partial；LLM 仍不用 WS。浏览器只连同源 `/stt-realtime`，不直连上游
+
+**Realtime 薄协议（浏览器 ↔ 代理）**：
+
+- 客户端 → 服务端：`session.start`（含 `language`）、`append`（base64 pcm16le）、`commit`、`finish`
+- 服务端 → 客户端：`ready`、`partial`、`completed`、`error`
+- 上游厂商事件映射留在服务端（`packages/stt` 辅助 + `apps/api` 中继）
 
 **中断（对接 §2.4 状态机的"打断"分支）**：
 
 - 浏览器 `AbortController.abort()` 断开 `/llm` 连接
 - 代理在 Hono 里检测 `c.req.raw.signal.aborted` → abort 上游 provider 请求
+- Realtime：客户端发 `finish` 或关闭 WS → 代理结束上游 session
 - 半截候选丢弃（不进 context，符合 §1.4"以 STT 为准"）
 
 ```ts
@@ -517,9 +575,11 @@ app.use('/*', serveStatic({ root: '../web/dist' }))
 ```text
 浏览器（Renderer + Web Worker）        Railway（常驻 Hono）
 ─────────────────────────              ──────────────────
-VAD → SpeakerGate → STT 上行  ──POST /stt──→  转发 STT provider
-                  ↓                       ←── 转写文本
-            conversation.appendTurn
+VAD → SpeakerGate → TurnGate
+  batch:     合并 PCM ──POST /stt────────→  转发 batch STT
+  realtime:  append/commit ──WS /stt-realtime──→  中继上游 realtime
+                  ↓                       ←── 定稿文本（realtime 另有 partial→UI 草稿）
+            conversation.appendTurn（仅定稿）
                   ↓
         任一 speaker: ──POST /llm───→  转发 LLM provider
                                   ←── streaming JSON（3 候选或 []）
@@ -532,7 +592,7 @@ VAD → SpeakerGate → STT 上行  ──POST /stt──→  转发 STT provide
 
 **命名方案：前缀 + active 选择器**。加 provider 不改现有变量名，可同时配多组，一个变量切换当前使用的。
 
-**MVP 默认：LLM 与 STT 共用 OpenRouter**——一个 key、一份账单。OpenRouter 同时聚合了 LLM（DeepSeek / Anthropic / …）和 STT（`openai/gpt-4o-transcribe`、`groq/whisper-large-v3-turbo`），所以 MVP 阶段一组 OpenRouter env 即可覆盖两条链路。STT 默认 `openai/gpt-4o-transcribe`（多语种准确率领先，日语为主场景），cost-fallback 切 `groq/whisper-large-v3-turbo`（便宜约 10×）。
+**MVP 默认：LLM 与 STT 共用 OpenRouter**——一个 key、一份账单。OpenRouter 同时聚合了 LLM（DeepSeek / Anthropic / …）和 STT（`openai/gpt-4o-transcribe`、`groq/whisper-large-v3-turbo`），所以 MVP 阶段一组 OpenRouter env 即可覆盖两条链路。STT 默认 `openai/gpt-4o-transcribe`（多语种准确率领先；会话传入 `conversationLang` 作 language hint），cost-fallback 切 `groq/whisper-large-v3-turbo`（便宜约 10×）。
 
 ```bash
 # LLM 与 STT 共用 OpenRouter（MVP 默认）
@@ -572,9 +632,15 @@ STT_OPENROUTER_MODEL=openai/gpt-4o-transcribe   # fallback: groq/whisper-large-v
 
 用户不自带 key（已定"走我们中转"），所以 DB 只存"用哪个 provider/model"的选择，不存 key 本身。
 
-**STT provider 选型结论**：本地 VAD 切段后 batch 发送（非连续 streaming），故 Deepgram 的 streaming 优势用不上；按"日语准确率 + 成本"选，默认 `openai/gpt-4o-transcribe`，`groq/whisper-large-v3-turbo` 作 cost-fallback。LLM 具体用哪个模型留到 playground 跑出候选质量再定，env 方案 B 让切换零成本。
+**STT provider 形态**：每个已配置 provider 带 `mode: 'batch' | 'realtime'`（`GET /stt/providers`）。Playground 选 batch → `POST /stt`；选 realtime → `WS /stt-realtime`。`POST /stt` 与 WS 均接受可选 `language=` / query（BCP-47 短码，与 `conversationLang` 对齐）。默认 batch 仍可走 OpenRouter `openai/gpt-4o-transcribe` 等。
 
-**本地 STT（可选，低延迟）**：除云端 provider 外，`packages/stt` 另注册 `openai` provider——标准 OpenAI 兼容 multipart `/v1/audio/transcriptions`，默认指向本机 [`mlx-qwen3-asr`](https://github.com/moona3k/mlx-qwen3-asr)（`serve` 模式，Apple Silicon / MLX，Qwen3-ASR-1.7B，日语 FLEURS 3.6% 错误率）。该服务是本机独立进程，**不纳入本仓库**。**仍经 `apps/api` 的 `/stt` 代理转发**（不浏览器直连）：浏览器只发 `/stt?provider=openai`，base URL / key / model 全留在服务端 env，单一入口、key 不出服务端。`apps/api` 与 `mlx-qwen3-asr` 须同机（本地 dev 场景）；部署到 Railway 时用云端 provider。云端仍是默认。详见 [ADR 0002](./adr/0002-local-stt-mlx-qwen3-asr.md)。
+**本地 STT（可选，低延迟 batch）**：`packages/stt` 注册 `openai` provider——标准 OpenAI 兼容 multipart `/v1/audio/transcriptions`，默认指向本机 [`mlx-qwen3-asr`](https://github.com/moona3k/mlx-qwen3-asr)。**仍经 `apps/api` 的 `/stt` 代理**。详见 [ADR 0002](../adr/0002-local-stt-mlx-qwen3-asr.md)。
+
+**阿里云 DashScope**：
+- **batch** `dashscope`：`POST …/compatible-mode/v1/chat/completions` + `input_audio`，默认 `qwen3-asr-flash`
+- **realtime** `dashscope-realtime`：`WS /stt-realtime` → 上游 WSS Manual 模式（本地 TurnGate + commit）。Env：`STT_DASHSCOPE_API_KEY`（与 batch 共用）、`STT_DASHSCOPE_WS_URL`、`STT_DASHSCOPE_REALTIME_MODEL`（默认 `qwen3-asr-flash-realtime`）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
+
+**Realtime 失败降级（R4）**：短退避重连同一 realtime provider；仍失败且列表中存在已配置的 batch provider → 切换到该 batch 并提示用户；否则停止转写并显示错误。
 
 ```bash
 # 本地 Qwen3-ASR（仅 Apple Silicon，与 apps/api 同机）

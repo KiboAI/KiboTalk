@@ -1,10 +1,15 @@
 import type { LlmClient, SttClient, CandidateStreamEvent } from '@kibotalk/pipeline'
-import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
+import type {
+  AppLanguage,
+  ConversationTurn,
+  LearnerLevel,
+  ReplyCandidate,
+} from '@kibotalk/conversation'
 import { encodeWav, padBuffer } from '@kibotalk/audio'
 import { parseSseStream } from './sse'
 import { extractCandidates } from './partial-json'
 import { sttUrl } from './SttProviderSelect'
-import { useConfig } from './config-store'
+import { useConfig, type SessionLanguageSnapshot } from './config-store'
 
 /**
  * Pipeline STT client that talks to the /stt proxy. The proxy holds the
@@ -12,27 +17,44 @@ import { useConfig } from './config-store'
  * `sampleRate` (16kHz mono). Pre/post silence padding is applied here (ASR
  * preprocessing) so VAD cuts can stay tight (speechPadMs = 0). The provider
  * comes from the shared config store, so the live session honors the same
- * provider selection as the VAD panel.
+ * provider selection as the VAD panel. Language hint is frozen at session start.
  */
 export class ProxySttClient implements SttClient {
-  private prePadMs = 0;
-  private postPadMs = 0;
+  private prePadMs = 0
+  private postPadMs = 0
+  /** Session-only override (e.g. R4 degrade to batch while UI still shows realtime). */
+  private providerOverride: string | null = null
 
-  constructor(private sampleRate = 16000) {}
+  constructor(
+    private sampleRate = 16000,
+    private language: AppLanguage = 'ja',
+  ) {}
+
+  configureLanguage(language: AppLanguage): void {
+    this.language = language
+  }
 
   /** Live-tune ASR-level padding without restarting the session. */
   configurePadding(prePadMs: number, postPadMs: number): void {
-    this.prePadMs = prePadMs;
-    this.postPadMs = postPadMs;
+    this.prePadMs = prePadMs
+    this.postPadMs = postPadMs
+  }
+
+  setProviderOverride(provider: string | null): void {
+    this.providerOverride = provider
   }
 
   async transcribe(pcm: Float32Array, signal: AbortSignal): Promise<string> {
-    const padded = padBuffer(pcm, this.prePadMs, this.postPadMs, this.sampleRate);
-    const wav = encodeWav(padded, this.sampleRate);
-    const res = await fetch(sttUrl(useConfig.getState().transcribeProvider), { method: 'POST', body: wav, signal });
-    const json = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-    if (!res.ok) throw new Error(json.error ?? `STT HTTP ${res.status}`);
-    return json.text ?? '';
+    const provider = this.providerOverride ?? useConfig.getState().transcribeProvider
+    const padded = padBuffer(pcm, this.prePadMs, this.postPadMs, this.sampleRate)
+    const wav = encodeWav(padded, this.sampleRate)
+    const res = await fetch(
+      sttUrl(provider, this.language),
+      { method: 'POST', body: wav, signal },
+    )
+    const json = (await res.json().catch(() => ({}))) as { text?: string; error?: string }
+    if (!res.ok) throw new Error(json.error ?? `STT HTTP ${res.status}`)
+    return json.text ?? ''
   }
 }
 
@@ -43,10 +65,24 @@ export class ProxySttClient implements SttClient {
  * candidate onto the pipeline's CandidateStreamEvent.
  */
 export class ProxyLlmClient implements LlmClient {
-  constructor(private level = 'N5') {}
+  private conversationLang: AppLanguage
+  private meaningLang: AppLanguage
+  private level: LearnerLevel
 
-  configure(level: string): void {
-    this.level = level
+  constructor(snapshot: SessionLanguageSnapshot = {
+    conversationLang: 'ja',
+    meaningLang: 'zh',
+    level: 'beginner',
+  }) {
+    this.conversationLang = snapshot.conversationLang
+    this.meaningLang = snapshot.meaningLang
+    this.level = snapshot.level
+  }
+
+  configure(snapshot: SessionLanguageSnapshot): void {
+    this.conversationLang = snapshot.conversationLang
+    this.meaningLang = snapshot.meaningLang
+    this.level = snapshot.level
   }
 
   async *streamCandidates(
@@ -56,7 +92,12 @@ export class ProxyLlmClient implements LlmClient {
     const res = await fetch('/llm', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context, level: this.level }),
+      body: JSON.stringify({
+        context,
+        level: this.level,
+        conversationLang: this.conversationLang,
+        meaningLang: this.meaningLang,
+      }),
       signal,
     })
     if (!res.ok) {
@@ -75,7 +116,7 @@ export class ProxyLlmClient implements LlmClient {
         const c: ReplyCandidate = complete[emitted]
         const index = emitted
         yield { type: 'candidate-start', index }
-        yield { type: 'candidate-delta', index, field: 'meaningZh', delta: c.meaningZh }
+        yield { type: 'candidate-delta', index, field: 'meaning', delta: c.meaning }
         yield { type: 'candidate-delta', index, field: 'targetText', delta: c.targetText }
         if (c.reading) {
           yield { type: 'candidate-delta', index, field: 'reading', delta: c.reading }

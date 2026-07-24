@@ -249,6 +249,113 @@ describe("sttConfigFromEnv", () => {
   });
 });
 
+describe("createSttClient (dashscope batch adapter)", () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function mockDashScopeResponse(
+    content: string | Array<{ text?: string }>,
+    ok = true,
+  ): Response {
+    return {
+      ok,
+      status: ok ? 200 : 500,
+      statusText: ok ? "OK" : "Internal",
+      json: async () => ({
+        choices: [{ message: { content } }],
+      }),
+    } as unknown as Response;
+  }
+
+  it("POSTs chat/completions with input_audio Data URL and asr_options.language", async () => {
+    const mockFetch = vi.fn(async () => mockDashScopeResponse("こんにちは"));
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
+
+    const client = createSttClient({
+      provider: "dashscope",
+      baseUrl:
+        "https://ws.example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      apiKey: "sk-dash",
+      model: "qwen3-asr-flash",
+    });
+
+    const wav = new ArrayBuffer(6);
+    const text = await client.transcribe(wav, { language: "ja" });
+    expect(text).toBe("こんにちは");
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    expect(url).toBe(
+      "https://ws.example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+    );
+    expect(init.method).toBe("POST");
+    expect(init.headers["Authorization"]).toBe("Bearer sk-dash");
+    expect(init.headers["Content-Type"]).toBe("application/json");
+
+    const body = JSON.parse(init.body as string);
+    expect(body.model).toBe("qwen3-asr-flash");
+    expect(body.stream).toBe(false);
+    expect(body.asr_options).toEqual({ enable_itn: false, language: "ja" });
+    const dataUri = body.messages[0].content[0].input_audio.data as string;
+    expect(dataUri.startsWith("data:audio/wav;base64,")).toBe(true);
+    const expectedBase64 = btoa(
+      String.fromCharCode(...new Uint8Array(6)),
+    );
+    expect(dataUri).toBe(`data:audio/wav;base64,${expectedBase64}`);
+  });
+
+  it("omits asr_options.language when not provided", async () => {
+    const mockFetch = vi.fn(async () => mockDashScopeResponse("ok"));
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
+    const client = createSttClient({
+      provider: "dashscope",
+      baseUrl: "https://x.example/compatible-mode/v1",
+      apiKey: "k",
+      model: "qwen3-asr-flash",
+    });
+    await client.transcribe(new ArrayBuffer(2));
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.asr_options).toEqual({ enable_itn: false });
+  });
+
+  it("joins array message.content text parts", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      mockDashScopeResponse([{ text: "hello" }, { text: " world" }]),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createSttClient({
+      provider: "dashscope",
+      baseUrl: "https://x.example/compatible-mode/v1",
+      apiKey: "k",
+      model: "m",
+    });
+    expect(await client.transcribe(new ArrayBuffer(2))).toBe("hello world");
+  });
+
+  it("throws on non-ok response", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      mockDashScopeResponse("", false),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createSttClient({
+      provider: "dashscope",
+      baseUrl: "https://x.example/compatible-mode/v1",
+      apiKey: "k",
+      model: "m",
+    });
+    await expect(client.transcribe(new ArrayBuffer(2))).rejects.toThrow(
+      /STT request failed/,
+    );
+  });
+});
+
 describe("listSttProviders", () => {
   it("reports configured/active per registered provider, falling back to default model", () => {
     const providers = listSttProviders({
@@ -258,6 +365,10 @@ describe("listSttProviders", () => {
       // STT_OPENAI_MODEL omitted → falls back to the adapter default
       STT_OPENROUTER_BASE_URL: "https://cloud.example",
       // STT_OPENROUTER_API_KEY omitted → not configured
+      STT_DASHSCOPE_BASE_URL:
+        "https://ws.example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      STT_DASHSCOPE_API_KEY: "sk-dash",
+      // STT_DASHSCOPE_MODEL omitted → adapter default
     });
     const byId = Object.fromEntries(providers.map((p) => [p.id, p]));
     expect(byId.openai.configured).toBe(true);
@@ -265,5 +376,31 @@ describe("listSttProviders", () => {
     expect(byId.openai.model).toBe("Qwen/Qwen3-ASR-1.7B"); // adapter default
     expect(byId.openrouter.configured).toBe(false);
     expect(byId.openrouter.active).toBe(false);
+    expect(byId.dashscope.configured).toBe(true);
+    expect(byId.dashscope.active).toBe(false);
+    expect(byId.dashscope.model).toBe("qwen3-asr-flash");
+    expect(byId.dashscope.label).toBe("阿里云 DashScope（Qwen3-ASR batch）");
+    expect(byId.dashscope.mode).toBe("batch");
+    // API_KEY alone is not enough for realtime — needs WS_URL too.
+    expect(byId["dashscope-realtime"].configured).toBe(false);
+    expect(byId["dashscope-realtime"].mode).toBe("realtime");
+  });
+});
+
+describe("sttConfigFromEnv (dashscope)", () => {
+  it("reads STT_DASHSCOPE_* and falls back to default model", () => {
+    const config = sttConfigFromEnv({
+      STT_ACTIVE: "dashscope",
+      STT_DASHSCOPE_BASE_URL:
+        "https://ws.example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      STT_DASHSCOPE_API_KEY: "sk-dash",
+    });
+    expect(config).toEqual({
+      provider: "dashscope",
+      baseUrl:
+        "https://ws.example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      apiKey: "sk-dash",
+      model: "qwen3-asr-flash",
+    });
   });
 });

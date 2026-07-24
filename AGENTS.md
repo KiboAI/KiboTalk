@@ -11,6 +11,13 @@ turn is ingested we always request reply suggestions. The LLM returns exactly
 committed cards. User mid-utterance stalls (after pause) get full-sentence
 completions; other turns almost always get 3. Same card schema for both.
 
+**Language axes** (spec §1.4, ADR 0003): `conversationLang` (ja|en|zh) is what
+both speakers use in-session (STT hint + `targetText`); `meaningLang`
+(ja|en|zh) is the language of candidate `meaning` (may equal conversation).
+Levels are `beginner|intermediate|advanced` per language (`levelByLang`).
+Prefs are session-out only; each session freezes a snapshot. Japanese-only
+`segments` (furigana / particles); rename is `meaning` not `meaningZh`.
+
 Authoritative spec: `docs/spec/live-reply-coach-mvp.md`. ADRs in
 `docs/adr/`. Past fixes & known pitfalls in `docs/solutions/` (read the
 relevant one before touching a documented area). Prompt / schema vieval
@@ -23,9 +30,15 @@ update the spec — don't silently drift.
 Client orchestration + thin proxy (ADR 0001). The browser runs the pipeline;
 `apps/api` is a stateless Hono proxy that hides provider keys and forwards STT/LLM.
 
+**STT modes** (ADR 0004): **batch** (`POST /stt`) and **realtime**
+(`WS /stt-realtime`) run in parallel—not a migration. Local VAD + speaker
+verification own turn boundaries (`pauseMs`); realtime uses Manual commit
+(no server VAD). Timeline may show partial drafts; formal turns + LLM fire
+only on finalized transcript.
+
 ```
 apps/
-  api/        Hono proxy: /stt, /llm (SSE). Keys live server-side only.
+  api/        Hono proxy: /stt, /stt-realtime (WS), /llm (SSE). Keys server-side only.
   playground/ Vite + React dev panel (Chinese UI) for testing each layer
               (声纹页 covers enrollment + free-speech verify / threshold tuning).
   web/        PWA shell (not yet built).
@@ -35,7 +48,8 @@ packages/
   prompts/    Reply-suggestion prompts (Velin TSX → markdown).
   speaker/    Speaker verification (wavlm-base-plus-sv, WASM + IndexedDB);
               `verify` returns raw `similarity` plus label `confidence`.
-  stt/        Provider-agnostic STT client factory + adapters.
+  stt/        Provider-agnostic STT: batch adapters + DashScope realtime mapper
+              helpers (server-side). Providers declare mode batch|realtime.
   pipeline/   Conversation store + turn state machine.
   ui/         shadcn/ui primitives on Tailwind v4 (shared).
   app-shared/ Shared client types/config shell.
@@ -57,7 +71,7 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 - **VAD chunk size**: 512 samples (32 ms) per `processAudio` call (`packages/audio/src/vad.ts` `newBufferSize`). Silero v6.2 prepends 64-sample context → 576 input; v5 takes 512 raw. See `docs/solutions/silero-vad-v6-context-frame.md`.
 - **STT upload format**: WAV 16 kHz mono PCM via `encodeWav` (`packages/audio/src`). The `/stt` proxy forwards the WAV body as-is.
 - **Speaker embeddings**: computed in a Web Worker (`apps/playground/src/audio/speaker-worker.ts`), persisted in IndexedDB. Don't run the WASM model on the main thread.
-- **Segment aggregation** (`packages/audio/src/aggregator.ts`): sits between VAD (+ speaker verification) and `pipeline.ingestSegment`. Accumulates same-speaker VAD segments and flushes one merged turn when silence exceeds the speaker's pause threshold (`otherPauseMs`/`userPauseMs`), when accumulated audio exceeds `maxMs`, or on speaker change. Silence gaps between constituents are reconstructed from segment timing. This is where `vadOtherPauseMs`/`vadUserPauseMs` (spec §2.4) actually take effect — the pipeline itself fires LLM immediately per ingested turn and does NOT wait. The pipeline contract (one ingested segment = one turn) stays unchanged.
+- **Segment aggregation / TurnGate** (`packages/audio/src/aggregator.ts`): sits between VAD (+ speaker verification) and batch `ingestSegment` or realtime `append`/`commit`. Accumulates same-speaker speech and flushes on `pauseMs`, `maxMs` (speech only), or speaker change. PCM is direct-concatenated (no gap fill). Spec §2.4 / ADR 0004. Pipeline fires LLM per finalized turn and does NOT wait on pause itself.
 
 ## Conventions
 
@@ -69,7 +83,7 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 - **No backward-compatibility guards.** If a rename/breakage is needed, do it directly and update callers in the same change.
 - **Playground UI is Chinese** — labels, examples, and sample content in Chinese.
 - **Tailwind v4 + shadcn/ui** for all UI (playground included). Shared primitives in `packages/ui`. When you add/update a `packages/ui` component, keep this README's component list in sync.
-- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/ASR/merge/speaker knobs and selectors (provider, VAD model, transcribe mode) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `AsrPadFields`, `MergeParamsFields`, `VadModelSelect`, `TranscribeModeSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
+- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/ASR/merge/speaker knobs, language prefs (`conversationLang` / `meaningLang` / `levelByLang` / `languagesConfirmed`, persisted), and selectors (provider, VAD model, transcribe mode) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `AsrPadFields`, `MergeParamsFields`, `LanguagePrefsFields`, `VadModelSelect`, `TranscribeModeSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
 
 ## Commands
 

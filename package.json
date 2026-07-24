@@ -6,6 +6,7 @@
     "build": "turbo build",
     "dev:api": "pnpm -F @kibotalk/api dev",
     "dev:web": "pnpm -F @kibotalk/web dev",
+    "dev:desktop": "pnpm -F @kibotalk/desktop dev",
     "dev:playground": "pnpm -F @kibotalk/playground dev",
     "dev:prototypes": "pnpm -F @kibotalk/playground exec vite ../../prototypes --host --port 5175",
     "eval": "vieval run --config ./vieval.config.ts --report-out .vieval/reports --workspace local --experiment multi-turn-ruby --attempt attempt-a",
@@ -25,7 +26,8 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "electron"
     ]
   }
 }

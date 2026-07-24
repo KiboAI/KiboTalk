@@ -8,3 +8,5 @@ coverage
 .env.local
 .spec-issue-body.md
 .vieval
+apps/desktop/out
+apps/desktop/resources/models

@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../../../packages/ui/src/theme.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@source "../../../../packages/ui/src";
+@source "../../../../packages/pages/src";
+
+/* The Island window is `transparent: true` — only the dock's own glass
+   surfaces should be visible; everything else must stay see-through to
+   the desktop behind it. */
+html,
+body,
+#root {
+  background: transparent;
+}

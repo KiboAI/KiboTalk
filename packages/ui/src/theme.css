@@ -1,0 +1,257 @@
+/*
+ * Shared design tokens — the yellow / flat / pill "paper + sticky note"
+ * language from prototypes/product-style-direction.html. One source of
+ * truth for apps/playground, apps/web, and apps/desktop: `@import` this
+ * file instead of defining a parallel `:root` block.
+ *
+ * See docs/spec/product-design-system.md for the token inventory and the
+ * component-level conventions (which control gets which shadow tier, etc).
+ */
+
+:root {
+  --background: #fafafa;
+  --foreground: #2b2620;
+  --card: #fffefb;
+  --card-foreground: #2b2620;
+  --popover: #fffefb;
+  --popover-foreground: #2b2620;
+
+  /* Primary = the yellow brand color (Tailwind `yellow` scale, yellow-400
+     ≈ #ffc900). Ink-on-yellow text is yellow-900, not a separate token. */
+  --primary: var(--color-yellow-400);
+  --primary-foreground: var(--color-yellow-900);
+  /* Hover state for soft/ghost yellow surfaces (chip, pill-tag, icon-btn). */
+  --primary-soft-strong: var(--color-yellow-200);
+
+  --secondary: #f1efe6;
+  --secondary-foreground: #3a342c;
+  --muted: #f2f0e8;
+  --muted-foreground: #7d7669;
+  /* Soft yellow tint — chip / pill-tag / icon-btn resting surface. */
+  --accent: var(--color-yellow-100);
+  --accent-foreground: var(--color-yellow-800);
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+  --border: #e7e2d5;
+  --input: #e7e2d5;
+  --ring: var(--color-yellow-500);
+
+  /* One base radius; sm/md/lg/xl derive from it (shadcn calc convention),
+     landing on the prototype's 10/15/22px scale. Buttons/pills use
+     `rounded-full` directly, not this scale. */
+  --radius: 0.9375rem;
+
+  /* Desk under the sticky stack (playground floating-sim + Island dock). */
+  --desk: #ececdf;
+
+  /* Post-it ink — fixed warm brown in both themes (bright paper, dark ink,
+     never inverted into a muddy gold). */
+  --sticky-foreground: #3a2c05;
+
+  /* Desktop Island — dark glass bar, independent of light/dark page theme. */
+  --island: #1e1b16;
+  --island-foreground: #eee;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  --background: #17140f;
+  --foreground: #f1ece0;
+  --card: #1e1a14;
+  --card-foreground: #f1ece0;
+  --popover: #1e1a14;
+  --popover-foreground: #f1ece0;
+
+  --primary: var(--color-yellow-400);
+  --primary-foreground: var(--color-yellow-900);
+  --primary-soft-strong: var(--color-yellow-200);
+
+  --secondary: #29241c;
+  --secondary-foreground: #f1ece0;
+  --muted: #241f18;
+  --muted-foreground: #a89e8c;
+  --accent: #33291a;
+  --accent-foreground: var(--color-yellow-200);
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+  --border: #332c22;
+  --input: #332c22;
+  --ring: var(--color-yellow-500);
+
+  --desk: #1c1811;
+  --sticky-foreground: #3a2c05;
+  --island: #1e1b16;
+  --island-foreground: #eee;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft-strong: var(--primary-soft-strong);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-desk: var(--desk);
+  --color-sticky-foreground: var(--sticky-foreground);
+  --color-island: var(--island);
+  --color-island-foreground: var(--island-foreground);
+
+  --radius-sm: calc(var(--radius) - 5px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 7px);
+  --radius-xl: calc(var(--radius) + 11px);
+
+  /* Shared elevation grammar for every "selectable token" (chip / seg /
+     switch / icon-btn / pill-tag / btn) — tier 0 = resting, tier 1 = active
+     or primary. Both are flat: color/contrast carries the state, not
+     embossed thickness. Nothing outside these should invent a third tier. */
+  --shadow-tier0: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(161, 98, 7, 0.1);
+  --shadow-tier1: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 3px rgba(161, 98, 7, 0.2);
+  --shadow-tier1-lg: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 8px rgba(161, 98, 7, 0.24);
+  --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 2px rgba(43, 38, 32, 0.06),
+    0 16px 32px rgba(43, 38, 32, 0.09);
+  --shadow-note: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 1px 2px rgba(0, 0, 0, 0.08),
+    0 16px 30px rgba(120, 90, 0, 0.26);
+
+  /* The one "filled active" surface — big and small controls share it, no
+     extra gradient stop for "important" buttons. */
+  --background-image-surface-active: linear-gradient(180deg, var(--color-yellow-300), var(--color-yellow-400));
+  /* Evolved sticky note background. */
+  --background-image-sticky-note: linear-gradient(
+    165deg,
+    var(--color-yellow-200) 0%,
+    var(--color-yellow-300) 55%,
+    var(--color-yellow-400) 100%
+  );
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei",
+      system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  /* Generic elevated paper surface — toolbars, rails, side panels, dialogs. */
+  .paper-sheet {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .desk-surface {
+    background: var(--desk);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: var(--radius-lg);
+    min-height: 26rem;
+  }
+
+  .product-stage {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* No permanent drop shadow — this sits directly on the transparent desktop,
+     not an opaque page, so a blurred shadow would just read as a stray dark
+     halo around the bar. Border stays near-invisible at rest, brightens on
+     hover as the only "you can interact with this" cue (AIRI's idle-island
+     buttons have no shadow either — see docs/spec/product-design-system.md). */
+  .island-bar {
+    color: var(--island-foreground);
+    background: color-mix(in srgb, var(--island) 82%, transparent);
+    border: 1px solid rgb(255 255 255 / 0.06);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(16px);
+    transition: border-color 150ms var(--ease-out-soft);
+  }
+
+  .island-bar:hover {
+    border-color: rgb(255 255 255 / 0.2);
+  }
+
+  /* Scopes the Island's sticky notes to the same "no permanent shadow"
+     treatment — playground's / apps/web's sticky notes (on an opaque page,
+     not a transparent desktop) keep the full paper shadow below. */
+  .island-stage {
+    --shadow-note: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .island-stage .sticky-note {
+    border: 1px solid transparent;
+    transition: border-color 150ms var(--ease-out-soft);
+  }
+
+  .island-stage .sticky-note:hover {
+    border-color: rgba(120, 90, 0, 0.35);
+  }
+
+  /* Dark glass pill — the Island's live-draft caption strip. Same family as
+     `.island-bar`, just pill-shaped and without the toolbar's elevation. */
+  .glass-chip {
+    color: var(--island-foreground);
+    background: color-mix(in srgb, var(--island) 78%, transparent);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 9999px;
+    backdrop-filter: blur(10px);
+  }
+
+  /* One sticky holds a whole round (3 lines). */
+  .sticky-note {
+    position: relative;
+    width: min(100%, 22rem);
+    min-height: 15rem;
+    padding: 20px 22px 22px;
+    color: var(--sticky-foreground);
+    background-image: var(--background-image-sticky-note);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-note);
+  }
+
+  .sticky-note-placeholder {
+    opacity: 1;
+  }
+
+  .sticky-note-interactive {
+    transition:
+      transform 220ms var(--ease-out-soft),
+      box-shadow 220ms var(--ease-out-soft);
+  }
+
+  .sticky-note-interactive:active {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(120, 90, 0, 0.18);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sticky-note-interactive {
+      transition: none;
+    }
+  }
+}

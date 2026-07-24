@@ -1,13 +1,24 @@
-import type { AppLanguage, LevelByLang } from '@kibotalk/conversation'
-import { defaultLanguagePrefs } from './config'
+import type {
+  AppLanguage,
+  ConversationSessionSnapshot,
+  LevelByLang,
+  SessionAudioSource,
+  UiLanguage,
+} from '@kibotalk/conversation'
+import { defaultProductPrefs, systemUiLanguage, type ProductTheme } from './config'
 
 const LANGUAGE_PREFS_KEY = 'kibotalk.languagePrefs'
+const LANGUAGE_PREFS_EVENT = 'kibotalk:language-prefs'
 
 export type LanguagePrefs = {
+  uiLang: UiLanguage
   conversationLang: AppLanguage
-  meaningLang: AppLanguage
   levelByLang: LevelByLang
   languagesConfirmed: boolean
+  theme: ProductTheme
+  launchAtLogin: boolean
+  audioSource: SessionAudioSource
+  microphoneDeviceId: string
 }
 
 /**
@@ -17,16 +28,24 @@ export type LanguagePrefs = {
  * duplicated per app.
  */
 export function loadLanguagePrefs(): LanguagePrefs {
-  const fallback: LanguagePrefs = { ...defaultLanguagePrefs, languagesConfirmed: false }
+  const fallback: LanguagePrefs = {
+    ...defaultProductPrefs,
+    uiLang: systemUiLanguage(),
+    levelByLang: { ...defaultProductPrefs.levelByLang },
+  }
   try {
     const raw = localStorage.getItem(LANGUAGE_PREFS_KEY)
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as Partial<LanguagePrefs>
     return {
+      uiLang: parsed.uiLang ?? fallback.uiLang,
       conversationLang: parsed.conversationLang ?? fallback.conversationLang,
-      meaningLang: parsed.meaningLang ?? fallback.meaningLang,
       levelByLang: { ...fallback.levelByLang, ...parsed.levelByLang },
       languagesConfirmed: parsed.languagesConfirmed === true,
+      theme: parsed.theme ?? fallback.theme,
+      launchAtLogin: parsed.launchAtLogin === true,
+      audioSource: parsed.audioSource ?? fallback.audioSource,
+      microphoneDeviceId: parsed.microphoneDeviceId ?? fallback.microphoneDeviceId,
     }
   } catch {
     return fallback
@@ -36,7 +55,35 @@ export function loadLanguagePrefs(): LanguagePrefs {
 export function persistLanguagePrefs(prefs: LanguagePrefs): void {
   try {
     localStorage.setItem(LANGUAGE_PREFS_KEY, JSON.stringify(prefs))
+    window.dispatchEvent(new CustomEvent<LanguagePrefs>(LANGUAGE_PREFS_EVENT, { detail: prefs }))
   } catch {
     // Ignore quota / private mode.
+  }
+}
+
+export function subscribeLanguagePrefs(listener: (prefs: LanguagePrefs) => void): () => void {
+  const onLocalChange = (event: Event) => {
+    const detail = (event as CustomEvent<LanguagePrefs>).detail
+    listener(detail ?? loadLanguagePrefs())
+  }
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LANGUAGE_PREFS_KEY) listener(loadLanguagePrefs())
+  }
+  window.addEventListener(LANGUAGE_PREFS_EVENT, onLocalChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(LANGUAGE_PREFS_EVENT, onLocalChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+export function createSessionSnapshot(prefs: LanguagePrefs): ConversationSessionSnapshot {
+  return {
+    conversationLang: prefs.conversationLang,
+    meaningLang: prefs.uiLang,
+    uiLang: prefs.uiLang,
+    level: prefs.levelByLang[prefs.conversationLang],
+    audioSource: prefs.audioSource,
+    microphoneDeviceId: prefs.microphoneDeviceId,
   }
 }

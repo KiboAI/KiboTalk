@@ -1,8 +1,8 @@
 import type { Configuration } from 'electron-builder'
 
 /**
- * Minimal packaging config — no custom icon/notarization/auto-update yet
- * (no design asset exists for one; logged as a known gap, not blocking dev).
+ * Minimal packaging config. The menu-bar brand asset is bundled below; a
+ * separate app-bundle icon, notarization, and auto-update are not configured.
  */
 const config: Configuration = {
   appId: 'com.kibotalk.desktop',
@@ -12,7 +12,10 @@ const config: Configuration = {
   },
   files: ['out/**/*'],
   // Populated by `pnpm download-models` — bundled models, not runtime-fetched (see `src/main/model-protocol.ts`).
-  extraResources: [{ from: 'resources/models', to: 'models' }],
+  extraResources: [
+    { from: 'resources/models', to: 'models' },
+    { from: '../../prototypes/assets/kibotalk-mark.svg', to: 'tray/kibotalk-mark.svg' },
+  ],
   mac: {
     category: 'public.app-category.productivity',
     target: 'dir',

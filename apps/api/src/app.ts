@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { streamSSE } from 'hono/streaming'
 import { createSttClient, sttConfigFromEnv, listSttProviders } from '@kibotalk/stt'
 import { createLlmClient, llmConfigFromEnv } from '@kibotalk/llm'
-import { buildReplySuggestionsMessages } from '@kibotalk/prompts'
+import { buildReplySuggestionsMessages, buildSessionReviewMessages } from '@kibotalk/prompts'
 import type { AppLanguage, ConversationTurn, LearnerLevel } from '@kibotalk/conversation'
 
 export const app = new Hono()
@@ -106,7 +106,36 @@ app.post('/llm', (c) =>
   }),
 )
 
+app.post('/session-review', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    turns?: ConversationTurn[]
+    conversationLang?: string
+    uiLang?: string
+  } | null
+  const conversationLang = parseAppLanguage(body?.conversationLang, 'ja')
+  const uiLang = parseAppLanguage(body?.uiLang, 'en')
+  try {
+    const client = createLlmClient(llmConfigFromEnv(process.env))
+    const messages = await buildSessionReviewMessages({
+      turns: body?.turns ?? [],
+      conversationLang,
+      uiLang,
+    })
+    const raw = await client.generateChat({ messages, signal: c.req.raw.signal })
+    const parsed = JSON.parse(raw) as { title?: unknown; summary?: unknown }
+    if (typeof parsed.title !== 'string' || typeof parsed.summary !== 'string') {
+      throw new Error('invalid session review response')
+    }
+    const title = parsed.title.trim()
+    const summary = parsed.summary.trim()
+    if (!title || !summary) throw new Error('empty session review response')
+    return c.json({ title, summary })
+  } catch (cause) {
+    return c.json({ error: cause instanceof Error ? cause.message : String(cause) }, 502)
+  }
+})
+
 // In production the API also serves the built SPA so one Railway service hosts
-// both. Locally `pnpm --filter @kibotalk/api start` after a playground build.
-app.use('/*', serveStatic({ root: './apps/playground/dist' }))
-app.get('*', serveStatic({ root: './apps/playground/dist', path: './index.html' }))
+// both. Locally `pnpm --filter @kibotalk/api start` after a Web build.
+app.use('/*', serveStatic({ root: '../web/dist' }))
+app.get('*', serveStatic({ root: '../web/dist', path: './index.html' }))

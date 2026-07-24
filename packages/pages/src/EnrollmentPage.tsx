@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { EmbeddingSpeakerVerifier, IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import type { AppLanguage } from '@kibotalk/conversation'
-import { AudioSource, createWorkerEmbedAudio, PASSPHRASE_BY_LANG, defaultAppConfig } from '@kibotalk/app-shared'
+import {
+  AudioSource,
+  createWorkerEmbedAudio,
+  PASSPHRASE_BY_LANG,
+  defaultAppConfig,
+  useI18n,
+} from '@kibotalk/app-shared'
 import { Button, LevelMeter, StepIndicator, toast, WizardScreen } from '@kibotalk/ui'
 import { ArrowRight, Loader2, Mic, RotateCcw, Square } from 'lucide-react'
 
 type WizardStep = 'intro' | 'record' | 'done'
-
-const STEPS = [{ label: '说明' }, { label: '录入' }, { label: '完成' }]
 
 function concatPcm(chunks: Float32Array[]): Float32Array {
   const out = new Float32Array(chunks.reduce((n, c) => n + c.length, 0))
@@ -60,7 +64,7 @@ export function EnrollmentPage({
   onEnterSession,
   embedded,
   recordReady = true,
-  enterSessionLabel = '进入会话',
+  enterSessionLabel,
   initialStep,
 }: EnrollmentPageProps) {
   const [step, setStep] = useState<WizardStep>(initialStep ?? (enrolled ? 'done' : 'intro'))
@@ -69,6 +73,8 @@ export function EnrollmentPage({
   const [working, setWorking] = useState(false)
   const [level, setLevel] = useState(0)
   const [error, setError] = useState('')
+  const { t } = useI18n()
+  const steps = [{ label: t('stepIntro') }, { label: t('stepRecord') }, { label: t('stepDone') }]
   const passphrase = PASSPHRASE_BY_LANG[conversationLang]
   const verifierRef = useRef<EmbeddingSpeakerVerifier | null>(null)
   const audioRef = useRef<AudioSource | null>(null)
@@ -108,8 +114,8 @@ export function EnrollmentPage({
         setLevel(levelFromChunk(chunk))
       })
       setRecording(true)
-    } catch (e) {
-      fail((e as Error).message)
+    } catch {
+      fail(t('voiceprintFailed'))
       audioRef.current?.stop()
       audioRef.current = null
     } finally {
@@ -127,7 +133,7 @@ export function EnrollmentPage({
     setLevel(0)
 
     if (pcm.length === 0) {
-      fail('没有录到音频，请重试')
+      fail(t('noAudioRecorded'))
       return
     }
 
@@ -137,9 +143,9 @@ export function EnrollmentPage({
         yield pcm.buffer as ArrayBuffer
       })(), passphrase)
       setEnrolledDone()
-      toast.success('声纹已保存到本机')
-    } catch (e) {
-      fail((e as Error).message)
+      toast.success(t('voiceprintSavedLocal'))
+    } catch {
+      fail(t('voiceprintFailed'))
     } finally {
       setWorking(false)
     }
@@ -155,19 +161,19 @@ export function EnrollmentPage({
 
   return (
     <WizardScreen embedded={embedded} className="space-y-5 p-7">
-      <StepIndicator steps={STEPS} current={stepIndex} />
+      <StepIndicator steps={steps} current={stepIndex} />
 
       {step === 'intro' ? (
         <div className="space-y-5">
           <div className="space-y-1.5">
-            <h2 className="text-lg font-bold">录一下声音</h2>
+            <h2 className="text-lg font-bold">{t('recordVoiceTitle')}</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              读一段短口令，让教练分清哪句是你说的。大约 15 秒，只保存在这台设备上。
+              {t('recordVoiceDescription')}
             </p>
           </div>
           <Button className="w-full" size="lg" onClick={() => void beginRecording()} disabled={!recordReady}>
             {recordReady ? <Mic className="size-4" /> : <Loader2 className="size-4 animate-spin" />}
-            {recordReady ? '开始录音' : '模型下载中…'}
+            {recordReady ? t('startRecording') : t('preparingSpeech')}
           </Button>
         </div>
       ) : null}
@@ -175,7 +181,7 @@ export function EnrollmentPage({
       {step === 'record' ? (
         <div className="space-y-4">
           <div className="rounded-md bg-foreground/6 p-4">
-            <div className="mb-1.5 text-xs text-muted-foreground">请朗读：</div>
+            <div className="mb-1.5 text-xs text-muted-foreground">{t('pleaseRead')}</div>
             <div className="text-lg font-bold leading-relaxed">{passphrase}</div>
           </div>
 
@@ -184,17 +190,17 @@ export function EnrollmentPage({
               <LevelMeter level={level} />
               <Button className="w-full" variant="destructive" onClick={() => void stopRecording()} disabled={working}>
                 <Square className="size-4" />
-                结束录音
+                {t('stopRecording')}
               </Button>
             </>
           ) : error ? (
             <Button className="w-full" onClick={() => void beginRecording()} disabled={!recordReady}>
               <Mic className="size-4" />
-              重试录音
+              {t('retryRecording')}
             </Button>
           ) : (
             <p className="text-center text-sm text-muted-foreground">
-              {starting ? '正在准备麦克风…' : '处理中…'}
+              {starting ? t('preparingMicrophone') : t('processing')}
             </p>
           )}
         </div>
@@ -203,25 +209,25 @@ export function EnrollmentPage({
       {step === 'done' ? (
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <h2 className="text-lg font-bold">声纹已保存</h2>
+            <h2 className="text-lg font-bold">{t('voiceprintSaved')}</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              这台设备已经能认出你的声音了，可以开始真实会话，教练会自动分清谁在说话。
+              {t('voiceprintSavedDescription')}
             </p>
           </div>
           <div className="flex gap-2">
             <Button className="flex-1" size="lg" onClick={onEnterSession}>
               <ArrowRight className="size-4" />
-              {enterSessionLabel}
+              {enterSessionLabel ?? t('enterSession')}
             </Button>
             <Button className="flex-1" variant="soft" size="lg" onClick={() => void beginRecording()} disabled={busy}>
               <RotateCcw className="size-4" />
-              重新录制
+              {t('rerecord')}
             </Button>
           </div>
         </div>
       ) : null}
 
-      {error ? <p className="text-sm text-destructive">错误：{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{t('errorPrefix')}{error}</p> : null}
     </WizardScreen>
   )
 }

@@ -31,6 +31,7 @@ export default defineConfig({
           ws: true,
         },
         '/llm': 'http://localhost:8787',
+        '/session-review': 'http://localhost:8787',
       },
     },
   },

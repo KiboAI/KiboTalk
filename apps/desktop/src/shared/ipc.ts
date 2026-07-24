@@ -7,23 +7,54 @@
 
 /** Mirrors Electron's `systemPreferences.getMediaAccessStatus` return type without importing `electron` into renderer-reachable code. */
 export type MediaAccessStatus = 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'
+export type ProductWindowView = 'settings' | 'history' | 'voiceprint'
+export type IslandContentSide = 'above' | 'below'
+export type DesktopSessionLifecycle = 'restoring' | 'stopped' | 'starting' | 'running' | 'paused'
+export type DesktopSessionCommand =
+  | 'start'
+  | 'pause'
+  | 'resume'
+  | 'stop'
+  | 'toggle-ai'
+  | 'open-history'
+  | 'open-settings'
+  | 'prepare-quit'
+
+export type DesktopSessionState = {
+  lifecycle: DesktopSessionLifecycle
+  replyEnabled: boolean
+  uiLang: 'zh' | 'ja' | 'en'
+}
 
 export const IPC_CHANNEL = {
   onboardingGetStatus: 'onboarding:get-status',
   onboardingOpen: 'onboarding:open',
   onboardingComplete: 'onboarding:complete',
   onboardingCompletedEvent: 'onboarding:completed',
+  onboardingReset: 'onboarding:reset',
+  onboardingResetEvent: 'onboarding:reset-completed',
   onboardingResize: 'onboarding:resize',
   onboardingClose: 'onboarding:close',
+  onboardingViewRequestedEvent: 'onboarding:view-requested',
   permissionsCheckMicrophone: 'permissions:check-microphone',
   permissionsRequestMicrophone: 'permissions:request-microphone',
   permissionsCheckScreenRecording: 'permissions:check-screen-recording',
   permissionsRequestScreenRecording: 'permissions:request-screen-recording',
   systemAudioStart: 'system-audio:start',
   systemAudioStop: 'system-audio:stop',
+  islandGetContentSide: 'island:get-content-side',
+  islandContentSideChanged: 'island:content-side-changed',
+  islandHide: 'island:hide',
+  islandShow: 'island:show',
+  islandSetPointerThrough: 'island:set-pointer-through',
+  sessionUpdateState: 'session:update-state',
+  sessionCommandEvent: 'session:command',
+  appSetLaunchAtLogin: 'app:set-launch-at-login',
+  appRequestQuit: 'app:request-quit',
+  appQuitReady: 'app:quit-ready',
 } as const
 
-export type OnboardingStatus = { completed: boolean }
+export type OnboardingStatus = { completed: boolean; view: ProductWindowView }
 
 /** Renderer-measured content box — main process applies it via `setContentSize`. */
 export type OnboardingContentSize = { width: number; height: number }
@@ -34,11 +65,14 @@ export type SystemAudioStartResult = { ok: true } | { ok: false; error: string }
 export type KiboTalkDesktopApi = {
   onboarding: {
     getStatus: () => Promise<OnboardingStatus>
-    open: () => Promise<void>
+    open: (view?: ProductWindowView) => Promise<void>
     complete: () => Promise<void>
+    reset: () => Promise<void>
     resize: (size: OnboardingContentSize) => Promise<void>
     close: () => Promise<void>
     onCompleted: (callback: () => void) => () => void
+    onReset: (callback: () => void) => () => void
+    onViewRequested: (callback: (view: ProductWindowView) => void) => () => void
   }
   permissions: {
     checkMicrophone: () => Promise<MediaAccessStatus>
@@ -49,6 +83,22 @@ export type KiboTalkDesktopApi = {
   systemAudio: {
     start: () => Promise<SystemAudioStartResult>
     stop: () => Promise<void>
+  }
+  island: {
+    getContentSide: () => Promise<IslandContentSide>
+    hide: () => Promise<void>
+    show: () => Promise<void>
+    setPointerThrough: (ignored: boolean) => Promise<void>
+    onContentSideChanged: (callback: (side: IslandContentSide) => void) => () => void
+  }
+  session: {
+    updateState: (state: DesktopSessionState) => Promise<void>
+    onCommand: (callback: (command: DesktopSessionCommand) => void) => () => void
+  }
+  app: {
+    setLaunchAtLogin: (enabled: boolean) => Promise<void>
+    requestQuit: () => Promise<void>
+    quitReady: () => Promise<void>
   }
 }
 

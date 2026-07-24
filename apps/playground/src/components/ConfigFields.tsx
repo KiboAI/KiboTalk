@@ -252,13 +252,13 @@ export function TranscribeProviderSelect({
   )
 }
 
-/** Conversation / meaning language + current conversation-lang level. */
+/** Conversation language + product UI language (also the derived meaning language). */
 export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
   const conversationLang = useConfig((s) => s.conversationLang)
-  const meaningLang = useConfig((s) => s.meaningLang)
+  const uiLang = useConfig((s) => s.uiLang)
   const levelByLang = useConfig((s) => s.levelByLang)
   const setConversationLang = useConfig((s) => s.setConversationLang)
-  const setMeaningLang = useConfig((s) => s.setMeaningLang)
+  const setUiLang = useConfig((s) => s.setUiLang)
   const setCurrentLevel = useConfig((s) => s.setCurrentLevel)
   const level = levelByLang[conversationLang]
 
@@ -282,10 +282,10 @@ export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
         </Select>
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs text-muted-foreground">翻译语言</Label>
+        <Label className="text-xs text-muted-foreground">界面 / 候选释义语言</Label>
         <Select
-          value={meaningLang}
-          onValueChange={(v) => setMeaningLang(v as AppLanguage)}
+          value={uiLang}
+          onValueChange={(v) => setUiLang(v as AppLanguage)}
           disabled={disabled}
         >
           <SelectTrigger className="h-9">

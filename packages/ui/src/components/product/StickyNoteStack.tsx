@@ -15,6 +15,10 @@ export type StickyNoteStackProps = {
   maxRounds: number
   streaming?: boolean
   emptyHint?: string
+  generatingLabel?: string
+  previousRoundLabel?: string
+  compactOlderRounds?: boolean
+  scrollable?: boolean
   className?: string
 }
 
@@ -22,7 +26,7 @@ const spring = { type: 'spring' as const, stiffness: 320, damping: 28, mass: 0.8
 
 /**
  * The reply-suggestion stage — newest sticky-note round on top, older rounds
- * fading/shrinking behind it. Shared by the desktop Island dock and the
+ * fading below it. Shared by the desktop Island dock and the
  * `apps/web` session stage; both show real sticky notes, not a flat
  * alternative (see `docs/prompt-evals` prototypes for the reference look).
  */
@@ -31,6 +35,10 @@ export function StickyNoteStack({
   maxRounds,
   streaming = false,
   emptyHint = '开始会话后，回复建议会出现在这里',
+  generatingLabel = '正在生成建议…',
+  previousRoundLabel = '上一轮',
+  compactOlderRounds = false,
+  scrollable = true,
   className,
 }: StickyNoteStackProps) {
   const reduceMotion = useReducedMotion()
@@ -45,11 +53,16 @@ export function StickyNoteStack({
     if (viewport) viewport.scrollTop = 0
   }, [newestId])
 
-  return (
-    <ScrollArea className={className ?? 'h-full w-full'} viewportRef={viewportRef} viewportClassName="px-2 pb-28 pt-6">
-      <div className="flex w-full flex-col items-center gap-6">
+  const content = (
+    <div
+      className={
+        scrollable
+          ? 'flex w-full flex-col items-center gap-6 px-2 pb-28 pt-6'
+          : 'flex w-full flex-col items-center gap-2'
+      }
+    >
         <AnimatePresence initial={false} mode="popLayout">
-          {streaming ? (
+          {streaming && visible.length === 0 ? (
             <motion.div
               key="streaming"
               layout
@@ -59,37 +72,65 @@ export function StickyNoteStack({
               transition={reduceMotion ? { duration: 0.15 } : spring}
               className="flex w-full flex-col items-center"
             >
-              <StickyNoteCardPlaceholder label="正在生成建议…" />
+              <StickyNoteCardPlaceholder label={generatingLabel} />
             </motion.div>
           ) : null}
 
           {empty ? (
-            <motion.div key="empty" layout initial={false} className="flex w-full flex-col items-center">
-              <StickyNoteCardPlaceholder label={emptyHint} />
+            <motion.div
+              key="empty"
+              layout
+              initial={false}
+              className="flex min-h-40 w-full items-center justify-center px-6 text-center text-sm text-muted-foreground"
+            >
+              {emptyHint}
             </motion.div>
           ) : null}
 
           {visible.map((round, roundIndex) => {
             const isLatest = roundIndex === 0
-            const ageOpacity = isLatest ? 1 : Math.max(0.58, 1 - roundIndex * 0.2)
+            const ageOpacity = isLatest ? 1 : Math.max(0.32, 1 - roundIndex * 0.34)
+            const oldest = roundIndex === visible.length - 1 && roundIndex > 0
             return (
               <motion.div
                 key={round.id}
                 layout
                 initial={reduceMotion ? false : { opacity: 0, y: -28, scale: 0.96 }}
-                animate={{ opacity: ageOpacity, y: 0, scale: isLatest ? 1 : 0.98 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: ageOpacity, y: 0, scale: 1 }}
+                exit={reduceMotion ? undefined : { opacity: 0, y: 12, scale: 1 }}
                 transition={reduceMotion ? { duration: 0.2 } : spring}
                 style={{ zIndex: visible.length - roundIndex }}
-                className="flex w-full flex-col items-center"
+                className={oldest ? 'sticky-round-oldest flex w-full flex-col items-center' : 'flex w-full flex-col items-center'}
               >
-                {!isLatest ? <p className="mb-2 text-center text-xs text-muted-foreground">上一轮</p> : null}
-                <StickyNoteCard candidates={round.candidates} roundIndex={roundIndex} />
+                {!isLatest ? (
+                  <p className="mb-2 text-center text-xs text-muted-foreground">{previousRoundLabel}</p>
+                ) : null}
+                <StickyNoteCard
+                  candidates={round.candidates}
+                  older={compactOlderRounds && !isLatest}
+                />
               </motion.div>
             )
           })}
         </AnimatePresence>
+    </div>
+  )
+
+  if (!scrollable) {
+    return (
+      <div ref={viewportRef} className={className ?? 'h-full w-full overflow-hidden'}>
+        {content}
       </div>
+    )
+  }
+
+  return (
+    <ScrollArea
+      className={className ?? 'h-full w-full'}
+      viewportRef={viewportRef}
+      viewportClassName="h-full"
+    >
+      {content}
     </ScrollArea>
   )
 }

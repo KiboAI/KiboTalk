@@ -37,11 +37,11 @@ const THEME_KEY = 'kibotalk.playground.theme'
 
 function languageSummary(
   conversationLang: string,
-  meaningLang: string,
+  uiLang: string,
   level: string,
 ): string {
   const conv = APP_LANGUAGE_OPTIONS.find((o) => o.value === conversationLang)?.label ?? conversationLang
-  const meaning = APP_LANGUAGE_OPTIONS.find((o) => o.value === meaningLang)?.label ?? meaningLang
+  const meaning = APP_LANGUAGE_OPTIONS.find((o) => o.value === uiLang)?.label ?? uiLang
   const lvl = LEARNER_LEVEL_OPTIONS.find((o) => o.value === level)?.label ?? level
   return `${conv} · 释义${meaning} · ${lvl}`
 }
@@ -69,14 +69,14 @@ function ShellHeader({
   onToggleTheme,
   languageLocked,
   conversationLang,
-  meaningLang,
+  uiLang,
   level,
 }: {
   dark: boolean
   onToggleTheme: () => void
   languageLocked?: boolean
   conversationLang: string
-  meaningLang: string
+  uiLang: string
   level: string
 }) {
   const productSurfaceMode = useConfig((s) => s.productSurfaceMode)
@@ -103,7 +103,7 @@ function ShellHeader({
             >
               <Languages className="size-3.5 shrink-0" />
               <span className="truncate">
-                {languageSummary(conversationLang, meaningLang, level)}
+                {languageSummary(conversationLang, uiLang, level)}
               </span>
             </Button>
           </PopoverTrigger>
@@ -146,7 +146,7 @@ function LanguageOnboarding({
   onToggleTheme: () => void
 }) {
   const conversationLang = useConfig((s) => s.conversationLang)
-  const meaningLang = useConfig((s) => s.meaningLang)
+  const uiLang = useConfig((s) => s.uiLang)
   const levelByLang = useConfig((s) => s.levelByLang)
   const level = levelByLang[conversationLang]
 
@@ -157,14 +157,14 @@ function LanguageOnboarding({
           dark={dark}
           onToggleTheme={onToggleTheme}
           conversationLang={conversationLang}
-          meaningLang={meaningLang}
+          uiLang={uiLang}
           level={level}
         />
         <Card className="paper-sheet mx-auto max-w-lg border-0">
           <CardHeader>
             <CardTitle>选择语言</CardTitle>
             <CardDescription>
-              首次使用请确认对话语言（双方说的语言）、翻译语言（候选释义）和当前水平。
+              首次使用请确认对话语言、界面 / 候选释义语言和当前水平。
               进入后仍可在顶部随时修改；进行中的实时会话会锁定，下一场生效。
             </CardDescription>
           </CardHeader>
@@ -190,7 +190,7 @@ export default function App() {
   const confirmLanguages = useConfig((s) => s.confirmLanguages)
   const liveSessionRunning = useConfig((s) => s.liveSessionRunning)
   const conversationLang = useConfig((s) => s.conversationLang)
-  const meaningLang = useConfig((s) => s.meaningLang)
+  const uiLang = useConfig((s) => s.uiLang)
   const levelByLang = useConfig((s) => s.levelByLang)
   const level = levelByLang[conversationLang]
 
@@ -234,7 +234,7 @@ export default function App() {
           onToggleTheme={toggleTheme}
           languageLocked={liveSessionRunning}
           conversationLang={conversationLang}
-          meaningLang={meaningLang}
+          uiLang={uiLang}
           level={level}
         />
 

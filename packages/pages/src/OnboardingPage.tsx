@@ -1,86 +1,99 @@
-import type { AppLanguage, LearnerLevel } from '@kibotalk/conversation'
-import { APP_LANGUAGE_OPTIONS, LEARNER_LEVEL_OPTIONS } from '@kibotalk/app-shared'
-import { Button, CardContent, CardHeader, CardTitle, CardDescription, ToggleGroup, ToggleGroupItem, WizardScreen } from '@kibotalk/ui'
-import { ArrowRight, Mic } from 'lucide-react'
+import { useState } from 'react'
+import type { AppLanguage, LearnerLevel, UiLanguage } from '@kibotalk/conversation'
+import { languageLabel, levelLabel, useI18n } from '@kibotalk/app-shared'
+import {
+  Button,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  ToggleGroup,
+  ToggleGroupItem,
+  WizardScreen,
+} from '@kibotalk/ui'
+import { ArrowRight, Languages, Loader2 } from 'lucide-react'
+
+const LANGUAGES: AppLanguage[] = ['ja', 'en', 'zh']
+const LEVELS: LearnerLevel[] = ['beginner', 'intermediate', 'advanced']
 
 export type OnboardingPageProps = {
+  uiLang: UiLanguage
   conversationLang: AppLanguage
-  meaningLang: AppLanguage
   level: LearnerLevel
+  onUiLangChange: (lang: UiLanguage) => void
   onConversationLangChange: (lang: AppLanguage) => void
-  onMeaningLangChange: (lang: AppLanguage) => void
   onLevelChange: (level: LearnerLevel) => void
   onConfirm: () => void
-  /** Desktop's standalone onboarding window — see `WizardScreen`. */
+  onRequestPermissions?: () => Promise<void>
   embedded?: boolean
-  /**
-   * `setup` (default) = first-run confirm → enrollment.
-   * `settings` = session-out prefs edit; optional voiceprint management entry.
-   */
-  variant?: 'setup' | 'settings'
-  onManageVoiceprint?: () => void
 }
 
 /**
- * Language prefs — conversation language (what both speakers use), meaning
- * language (candidate translations), and level for the chosen conversation
- * language. First-run (`setup`) hands off to enrollment; `settings` saves
- * and can open voiceprint re-enrollment.
+ * First-run language step. UI language lives in a small top-right selector;
+ * the body only asks for conversation language and level. Meaning language is
+ * derived from UI language when the session snapshot is created.
  */
 export function OnboardingPage({
+  uiLang,
   conversationLang,
-  meaningLang,
   level,
+  onUiLangChange,
   onConversationLangChange,
-  onMeaningLangChange,
   onLevelChange,
   onConfirm,
+  onRequestPermissions,
   embedded,
-  variant = 'setup',
-  onManageVoiceprint,
 }: OnboardingPageProps) {
-  const settings = variant === 'settings'
+  const { t, language } = useI18n()
+  const [working, setWorking] = useState(false)
+
+  async function confirm() {
+    setWorking(true)
+    try {
+      await onRequestPermissions?.()
+      onConfirm()
+    } finally {
+      setWorking(false)
+    }
+  }
 
   return (
     <WizardScreen embedded={embedded}>
-      <CardHeader>
-        <CardTitle className="text-xl">{settings ? '设置' : '选择语言'}</CardTitle>
-        <CardDescription className="leading-relaxed">
-          {settings
-            ? '会话外可改对话语言、翻译语言和水平；进行中的会话会锁定当前快照。'
-            : '首次使用请确认对话语言（双方说的语言）、翻译语言（候选释义）和当前水平。设置里仍可修改；进行中的会话会锁定。'}
-        </CardDescription>
+      <CardHeader className="relative pr-36">
+        <div className="absolute right-6 top-5">
+          <Select value={uiLang} onValueChange={(value) => onUiLangChange(value as UiLanguage)}>
+            <SelectTrigger className="h-9 w-28" aria-label={t('uiLanguage')}>
+              <Languages className="size-3.5" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="zh">中文</SelectItem>
+              <SelectItem value="ja">日本語</SelectItem>
+              <SelectItem value="en">English</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <CardTitle className="text-xl">{t('selectLanguage')}</CardTitle>
+        <CardDescription className="leading-relaxed">{t('onboardingDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <p className="text-xs font-bold text-muted-foreground">对话语言（双方说的语言）</p>
+          <p className="text-xs font-bold text-muted-foreground">{t('conversationLanguage')}</p>
           <ToggleGroup
             variant="chip"
             type="single"
             value={conversationLang}
-            onValueChange={(v) => v && onConversationLangChange(v as AppLanguage)}
+            onValueChange={(value) => value && onConversationLangChange(value as AppLanguage)}
             className="w-full"
           >
-            {APP_LANGUAGE_OPTIONS.map((opt) => (
-              <ToggleGroupItem key={opt.value} value={opt.value} variant="chip">
-                {opt.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-muted-foreground">翻译语言（候选释义）</p>
-          <ToggleGroup
-            variant="chip"
-            type="single"
-            value={meaningLang}
-            onValueChange={(v) => v && onMeaningLangChange(v as AppLanguage)}
-            className="w-full"
-          >
-            {APP_LANGUAGE_OPTIONS.map((opt) => (
-              <ToggleGroupItem key={opt.value} value={opt.value} variant="chip">
-                {opt.label}
+            {LANGUAGES.map((option) => (
+              <ToggleGroupItem key={option} value={option} variant="chip">
+                {languageLabel(option, language)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -88,29 +101,25 @@ export function OnboardingPage({
 
         <div className="space-y-2">
           <p className="text-xs font-bold text-muted-foreground">
-            当前水平（{APP_LANGUAGE_OPTIONS.find((o) => o.value === conversationLang)?.label}）
+            {t('level')} · {languageLabel(conversationLang, language)}
           </p>
-          <ToggleGroup type="single" value={level} onValueChange={(v) => v && onLevelChange(v as LearnerLevel)}>
-            {LEARNER_LEVEL_OPTIONS.map((opt) => (
-              <ToggleGroupItem key={opt.value} value={opt.value} className="flex-1">
-                {opt.label}
+          <ToggleGroup
+            type="single"
+            value={level}
+            onValueChange={(value) => value && onLevelChange(value as LearnerLevel)}
+          >
+            {LEVELS.map((option) => (
+              <ToggleGroupItem key={option} value={option} className="flex-1">
+                {levelLabel(option, language)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
         </div>
 
-        <div className="space-y-2">
-          <Button className="w-full" size="lg" onClick={onConfirm}>
-            {settings ? '保存并关闭' : '确认并继续 · 录声纹'}
-            <ArrowRight className="size-4" />
-          </Button>
-          {settings && onManageVoiceprint ? (
-            <Button className="w-full" variant="soft" size="lg" onClick={onManageVoiceprint}>
-              <Mic className="size-4" />
-              重新录制声纹
-            </Button>
-          ) : null}
-        </div>
+        <Button className="w-full" size="lg" onClick={() => void confirm()} disabled={working}>
+          {working ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+          {t('continueVoiceprint')}
+        </Button>
       </CardContent>
     </WizardScreen>
   )

@@ -319,6 +319,9 @@ importers:
 
   packages/llm:
     dependencies:
+      '@xsai/generate-text':
+        specifier: ^0.4.3
+        version: 0.4.4
       '@xsai/stream-text':
         specifier: ^0.4.3
         version: 0.4.4

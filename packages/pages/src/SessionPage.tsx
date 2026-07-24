@@ -1,123 +1,325 @@
-import { useState } from 'react'
-import type { ConversationStorage } from '@kibotalk/conversation'
-import { useProductSession, type SessionLanguageSnapshot, type SessionTurn } from '@kibotalk/app-shared'
-import { Button, PillTag, ScrollArea, StickyNoteStack } from '@kibotalk/ui'
-import { History, PanelLeft, Settings, Sparkle, Square } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ProductSessionController, SessionTurn } from '@kibotalk/app-shared'
+import { languageLabel, levelLabel, useI18n } from '@kibotalk/app-shared'
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  ScrollArea,
+  StickyNoteStack,
+  Switch,
+} from '@kibotalk/ui'
+import {
+  Ellipsis,
+  History,
+  PanelLeft,
+  Pause,
+  Play,
+  Settings,
+  Sparkles,
+  Square,
+} from 'lucide-react'
 
 export type SessionPageProps = {
-  languageSnapshot: SessionLanguageSnapshot
-  /** Defaults to an in-memory session (playground behavior); `apps/web` passes `IndexedDbConversationStorage`. */
-  storage?: ConversationStorage
+  controller: ProductSessionController
   onGoSettings?: () => void
   onGoHistory?: () => void
 }
 
-/** Max reply-suggestion rounds kept visible on the stage. */
-const CANDIDATE_ROUNDS_MAX = 2
+function formatDuration(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function useSessionDuration(controller: ProductSessionController): number {
+  const [now, setNow] = useState(Date.now())
+  const { activeSession, lifecycle } = controller.session
+  useEffect(() => {
+    if (lifecycle !== 'running') return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [lifecycle])
+  if (!activeSession) return 0
+  const end = activeSession.endedAt ?? (lifecycle === 'paused' ? activeSession.pausedAt ?? now : now)
+  return Math.max(0, end - activeSession.startedAt - activeSession.pausedDurationMs)
+}
 
 function TurnBubble({ turn }: { turn: SessionTurn }) {
+  const { t } = useI18n()
   const isUser = turn.speaker === 'user'
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(turn.startedAt)
   return (
-    <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
-      <div
-        className={`max-w-[78%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
-          isUser ? 'rounded-tr-sm bg-accent' : 'rounded-tl-sm bg-foreground/5'
-        }`}
-      >
-        <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-          {isUser ? '我' : '对方'}
+    <li className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div className={`max-w-[82%] ${isUser ? 'text-right' : ''}`}>
+        <div className="mb-1 text-[10.5px] font-bold text-muted-foreground">
+          {isUser ? t('me') : t('other')} · {time}
         </div>
-        {turn.sttFailed ? '（空·转写失败）' : turn.text}
+        <div
+          className={`rounded-md px-3.5 py-2.5 text-left text-sm leading-relaxed ${
+            isUser ? 'rounded-tr-sm bg-accent' : 'rounded-tl-sm bg-foreground/5'
+          }`}
+        >
+          {turn.sttFailed ? t('sttFailed') : turn.text}
+        </div>
       </div>
-    </div>
+    </li>
   )
 }
 
+function statusLabel(controller: ProductSessionController, translate: ReturnType<typeof useI18n>['t']) {
+  const { lifecycle, loading } = controller.session
+  if (loading) return translate('preparing')
+  if (lifecycle === 'paused') return translate('paused')
+  if (lifecycle === 'stopped') return translate('stopped')
+  if (lifecycle === 'restoring' || lifecycle === 'starting') return translate('preparing')
+  return translate('listening')
+}
+
 /**
- * The `apps/web` "session window" — final-product view of a live coaching
- * session. Composes `useConversationSession` (mic → VAD → speaker → STT →
- * LLM) with the sticky-note reply stage; no dev toolbar, provider picker, or
- * debug panel (see `apps/playground/src/LiveSession.tsx` for that surface).
+ * Responsive A+B workbench: equal-height, independently scrolling transcript
+ * and suggestion columns on desktop; one suggestion stage with a transcript
+ * overlay on narrow screens.
  */
-export function SessionPage({ languageSnapshot, storage, onGoSettings, onGoHistory }: SessionPageProps) {
-  const [transcriptOpen, setTranscriptOpen] = useState(false)
-  const { session, rounds } = useProductSession({
-    languageSnapshot,
-    storage,
-    candidateRoundsMax: CANDIDATE_ROUNDS_MAX,
-  })
+export function SessionPage({ controller, onGoSettings, onGoHistory }: SessionPageProps) {
+  const { t, language } = useI18n()
+  const [transcriptOpen, setTranscriptOpen] = useState(() =>
+    window.matchMedia('(min-width: 640px)').matches,
+  )
+  const [stopDialogOpen, setStopDialogOpen] = useState(false)
+  const { session, rounds, replyEnabled, setReplyEnabled } = controller
+  const duration = useSessionDuration(controller)
+  const snapshot = session.activeSession?.snapshot
+  const latestTurn = session.turns.at(-1)
+  const currentTranscript = session.draft ?? latestTurn
+  const transcriptItems = useMemo(() => session.turns, [session.turns])
+  const status = statusLabel(controller, t)
+  const active = session.lifecycle === 'running' || session.lifecycle === 'paused'
 
   return (
-    <div className="mx-auto flex h-screen max-w-4xl flex-col gap-4 p-6">
-      <div className="paper-sheet flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div className="flex items-center gap-2.5">
+    <div className="session-workbench mx-auto flex h-dvh w-full max-w-[90rem] flex-col gap-3 overflow-hidden p-3 sm:gap-4 sm:p-5">
+      <header className="paper-sheet z-30 flex shrink-0 flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
           <span
-            className={`size-2.5 rounded-full ${session.running ? 'animate-pulse bg-emerald-500' : 'bg-foreground/25'}`}
+            className={`size-2.5 shrink-0 rounded-full ${
+              session.lifecycle === 'running'
+                ? 'animate-pulse bg-emerald-500'
+                : session.lifecycle === 'paused'
+                  ? 'bg-yellow-500'
+                  : 'bg-foreground/25'
+            }`}
           />
-          <span className="text-sm font-semibold">{session.running ? '听写中' : session.loading || '待机'}</span>
-          {session.activeSttPath === 'realtime' ? <PillTag>实时转写</PillTag> : null}
-          {session.activeSttPath === 'batch' ? <PillTag>batch 转写</PillTag> : null}
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">{status}</div>
+            {snapshot ? (
+              <div className="hidden text-[11px] text-muted-foreground sm:block">
+                {languageLabel(snapshot.conversationLang, language)} · {levelLabel(snapshot.level, language)} ·{' '}
+                {formatDuration(duration)}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="soft" size="sm" onClick={() => setTranscriptOpen((v) => !v)}>
-            <PanelLeft className="size-4" />
-            对话记录
-          </Button>
-          {onGoHistory ? (
-            <Button variant="soft" size="icon" onClick={onGoHistory} aria-label="历史会话">
-              <History className="size-4" />
-            </Button>
-          ) : null}
-          {onGoSettings ? (
-            <Button variant="soft" size="icon" onClick={onGoSettings} aria-label="设置">
-              <Settings className="size-4" />
-            </Button>
-          ) : null}
-          {session.running ? (
-            <Button size="sm" variant="destructive" onClick={session.stop}>
-              <Square className="size-4" />
-              停止会话
-            </Button>
-          ) : null}
-        </div>
-      </div>
 
-      {session.error ? <p className="text-sm text-destructive">{session.error}</p> : null}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <label className="hidden items-center gap-2 rounded-full bg-foreground/5 px-3 py-2 text-xs font-semibold md:flex">
+            <Sparkles className="size-3.5" />
+            {t('aiSuggestions')}
+            <Switch
+              checked={replyEnabled}
+              onCheckedChange={setReplyEnabled}
+              aria-label={t('aiSuggestions')}
+            />
+          </label>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="paper-sheet min-h-0 p-5">
-          <StickyNoteStack
-            rounds={rounds}
-            maxRounds={CANDIDATE_ROUNDS_MAX}
-            streaming={session.state === 'LLM_STREAMING'}
-            emptyHint="开始说话，教练会在这里给出回复建议"
-          />
+          {session.lifecycle === 'running' ? (
+            <Button
+              variant="soft"
+              size="icon"
+              onClick={() => void session.pause()}
+              aria-label={t('pause')}
+            >
+              <Pause className="size-4" />
+            </Button>
+          ) : session.lifecycle === 'paused' ? (
+            <Button variant="soft" size="icon" onClick={() => void session.resume()} aria-label={t('resume')}>
+              <Play className="size-4" />
+            </Button>
+          ) : null}
+
+          {active ? (
+            <Button size="sm" onClick={() => setStopDialogOpen(true)}>
+              <Square className="size-3.5" />
+              <span className="hidden sm:inline">{t('stop')}</span>
+            </Button>
+          ) : session.lifecycle === 'stopped' ? (
+            <Button size="sm" onClick={() => void session.start()}>
+              <Play className="size-3.5" />
+              <span className="hidden sm:inline">{t('start')}</span>
+            </Button>
+          ) : null}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="soft" size="icon" aria-label={t('more')}>
+                <Ellipsis className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setReplyEnabled((enabled) => !enabled)} className="md:hidden">
+                <Sparkles className="size-4" />
+                {t('aiSuggestions')}
+              </DropdownMenuItem>
+              {onGoHistory ? (
+                <DropdownMenuItem onSelect={onGoHistory}>
+                  <History className="size-4" />
+                  {t('history')}
+                </DropdownMenuItem>
+              ) : null}
+              {onGoSettings ? (
+                <DropdownMenuItem onSelect={onGoSettings}>
+                  <Settings className="size-4" />
+                  {t('settings')}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </header>
+
+      {session.recoveredUnexpectedPause ? (
+        <div className="shrink-0 rounded-md bg-accent px-3 py-2 text-xs text-accent-foreground">
+          {t('activeSessionRecovered')}
+        </div>
+      ) : null}
+      {session.error ? (
+        <div className="shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {session.error === 'VOICEPRINT_REQUIRED' ? t('voiceprintRequired') : t('sessionUnavailable')}
+        </div>
+      ) : null}
+
+      {currentTranscript ? (
+        <div className="glass-transcript shrink-0 px-3.5 py-2 text-sm" aria-live="polite">
+          <strong className="mr-2 text-[11px] text-muted-foreground">
+            {currentTranscript.speaker === 'user' ? t('me') : t('other')}
+          </strong>
+          {'sttFailed' in currentTranscript && currentTranscript.sttFailed
+            ? t('sttFailed')
+            : currentTranscript.text || '…'}
+        </div>
+      ) : null}
+
+      <div
+        className={`relative grid min-h-0 flex-1 gap-4 ${
+          transcriptOpen ? 'sm:grid-cols-[20rem_minmax(0,1fr)]' : 'grid-cols-1'
+        }`}
+      >
         {transcriptOpen ? (
-          <div className="paper-sheet flex min-h-0 flex-col gap-2 p-4">
-            <p className="inline-flex items-center gap-1.5 text-sm font-bold">
-              <Sparkle className="size-3.5" />
-              对话记录
-            </p>
+          <aside className="paper-sheet absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden sm:static sm:z-auto">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <div>
+                <h2 className="text-sm font-bold">{t('conversationHistory')}</h2>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {t('currentSession')} · {transcriptItems.length}
+                </p>
+              </div>
+              <Button
+                variant="default"
+                size="sm"
+                className="sm:hidden"
+                aria-expanded
+                onClick={() => setTranscriptOpen(false)}
+              >
+                <PanelLeft className="size-4" />
+                {t('conversationHistory')}
+              </Button>
+            </div>
             <ScrollArea className="min-h-0 flex-1">
-              {session.turns.length === 0 && !session.draft ? (
-                <p className="text-sm text-muted-foreground">（还没有对话轮次）</p>
-              ) : (
-                <div className="space-y-2.5 pb-3 pr-2">
-                  {session.draft ? (
-                    <div className="rounded-md border border-dashed border-border px-3.5 py-2.5 text-sm opacity-70">
-                      {session.draft.text || '…'}
-                    </div>
-                  ) : null}
-                  {[...session.turns].reverse().map((t) => (
-                    <TurnBubble key={t.id} turn={t} />
-                  ))}
+              {transcriptItems.length === 0 && !session.draft ? (
+                <div className="flex min-h-48 items-center justify-center px-5 text-sm text-muted-foreground">
+                  {t('noTranscript')}
                 </div>
+              ) : (
+                <ol className="space-y-3 p-4">
+                  {transcriptItems.map((turn) => (
+                    <TurnBubble key={turn.id} turn={turn} />
+                  ))}
+                  {session.draft ? (
+                    <li
+                      className={`flex ${session.draft.speaker === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className="max-w-[82%] rounded-md border border-dashed border-border px-3.5 py-2.5 text-sm opacity-70">
+                        {session.draft.text || '…'}
+                      </div>
+                    </li>
+                  ) : null}
+                </ol>
               )}
             </ScrollArea>
-          </div>
+          </aside>
         ) : null}
+
+        <main className="web-suggestion-stage paper-sheet flex min-h-0 flex-col overflow-hidden p-3 sm:p-5">
+          <div className="flex shrink-0 items-center justify-between gap-3 pb-3">
+            <div>
+              <h1 className="text-base font-bold sm:text-lg">{t('suggestions')}</h1>
+              <p className="hidden text-xs text-muted-foreground sm:block">{t('emptySuggestions')}</p>
+            </div>
+            <Button
+              variant={transcriptOpen ? 'default' : 'soft'}
+              size="sm"
+              aria-expanded={transcriptOpen}
+              onClick={() => setTranscriptOpen((open) => !open)}
+            >
+              <PanelLeft className="size-4" />
+              {t('conversationHistory')}
+            </Button>
+          </div>
+          <StickyNoteStack
+            className="min-h-0 flex-1"
+            rounds={rounds}
+            maxRounds={3}
+            streaming={session.state === 'LLM_STREAMING'}
+            emptyHint={t('emptySuggestions')}
+            generatingLabel={t('generatingSuggestions')}
+            previousRoundLabel={t('previousRound')}
+          />
+        </main>
       </div>
+
+      <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('stopTitle')}</DialogTitle>
+            <DialogDescription>{t('stopDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="soft">{t('cancel')}</Button>
+            </DialogClose>
+            <Button
+              onClick={() => {
+                setStopDialogOpen(false)
+                void session.stop()
+              }}
+            >
+              {t('stopAndSave')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -144,7 +144,6 @@
       inset 0 1px 0 rgba(255,255,255,0.4),
       0 1px 2px rgba(0,0,0,0.08),
       0 16px 30px rgba(120,90,0,0.26);
-    transform: rotate(-1deg);
   }
   .note-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
   .note-list li + li { border-top: 1px dashed rgba(58,44,5,0.25); padding-top: 14px; }
@@ -152,7 +151,7 @@
   .note-meaning { font-size: 14px; margin-top: 5px; color: rgba(58,44,5,0.72); font-weight: 500; }
   .note-particle { background: rgba(58,44,5,0.20); border-bottom: 2px solid rgba(58,44,5,0.55); border-radius: 4px; padding: 0 3px; font-weight: 700; }
   .note ruby rt { font-size: 0.68em; font-weight: 600; color: rgba(58,44,5,0.68); }
-  .note.is-old { opacity: 0.55; transform: rotate(0.6deg) scale(0.98); }
+  .note.is-old { opacity: 0.55; }
 
   /* =====================================================================
      PAGE 1 — Onboarding
@@ -326,6 +325,7 @@
   .turn-speaker { font-size: 10.5px; font-weight: 700; color: var(--ink-faint); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
   .turn-candidates { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(43,38,32,0.15); font-size: 12px; color: var(--yellow-800); }
   .turn-candidates .cand-line { margin-top: 4px; }
+  .turn-candidates ruby rt { color: rgba(133,77,14,0.72); font-size: 0.62em; font-weight: 600; }
 
   /* ---------- Summary (F09) ---------- */
   .summary-hero { padding: 22px 22px 20px; text-align: center; margin-bottom: 16px; }
@@ -564,7 +564,7 @@
   <!-- ================= PAGE 3: Desktop Island ================= -->
   <div class="page" id="desktop">
     <div class="dock">
-      <div class="caption-strip">「すみません、それは……」 <span style="opacity:0.5;">草稿中…</span></div>
+      <div class="caption-strip">「すみません、それは……」</div>
       <div class="round-tag">本轮</div>
       <div class="note" style="align-self:flex-end;">
         <ol class="note-list">
@@ -719,8 +719,8 @@
             <div class="turn-candidates">
               <svg class="ic" viewBox="0 0 24 24" data-icon="sparkle" style="width:11px;height:11px;"></svg>
               当时的建议
-              <div class="cand-line">· はい、お願いします。</div>
-              <div class="cand-line">· 少々お待ちください。</div>
+              <div class="cand-line">· はい、<ruby>お願<rt>おねが</rt></ruby>いします。</div>
+              <div class="cand-line">· <ruby>少々<rt>しょうしょう</rt></ruby>お<ruby>待<rt>ま</rt></ruby>ちください。</div>
             </div>
           </div>
         </div>

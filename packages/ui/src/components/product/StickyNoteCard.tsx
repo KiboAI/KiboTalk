@@ -48,32 +48,37 @@ function CandidateBlock({ candidate }: { candidate: ReplyCandidate }) {
 export type StickyNoteCardProps = {
   /** One round = up to 3 candidates on a single note. */
   candidates: ReplyCandidate[]
-  /** Round index in the visible stack — slight placement. */
-  roundIndex?: number
+  /** Older desktop rounds keep all target lines but omit meanings to fit without overlap. */
+  older?: boolean
   className?: string
 }
-
-const PLACEMENT = [
-  { rotate: -1.6, x: -4 },
-  { rotate: 1.2, x: 6 },
-  { rotate: -0.8, x: 0 },
-] as const
 
 /**
  * One Post-it per LLM round: all three reply lines live on the same note.
  * Used by both apps/web's SessionPage stage and apps/desktop's Island dock.
  */
-export function StickyNoteCard({ candidates, roundIndex = 0, className }: StickyNoteCardProps) {
-  const place = PLACEMENT[roundIndex % PLACEMENT.length]
+export function StickyNoteCard({ candidates, older = false, className }: StickyNoteCardProps) {
   return (
-    <div
-      className={cn('sticky-note sticky-note-interactive', className)}
-      style={{ transform: `translateX(${place.x}px) rotate(${place.rotate}deg)` }}
-    >
+    <div className={cn('sticky-note', older && 'sticky-note-older', className)}>
       <ol className="flex flex-col gap-3.5">
-        {candidates.map((c, i) => (
-          <CandidateBlock key={c.id ?? i} candidate={c} />
-        ))}
+        {candidates.map((candidate, index) =>
+          older ? (
+            <li
+              key={candidate.id ?? index}
+              className="py-1 text-sm font-bold leading-relaxed first:pt-0 [&+li]:border-t [&+li]:border-dashed [&+li]:border-sticky-foreground/25"
+            >
+              {candidate.segments?.length ? (
+                candidate.segments.map((segment, segmentIndex) => (
+                  <SegmentSpan key={`${segmentIndex}-${segment.surface}`} segment={segment} />
+                ))
+              ) : (
+                candidate.targetText
+              )}
+            </li>
+          ) : (
+            <CandidateBlock key={candidate.id ?? index} candidate={candidate} />
+          ),
+        )}
       </ol>
     </div>
   )
@@ -81,31 +86,27 @@ export function StickyNoteCard({ candidates, roundIndex = 0, className }: Sticky
 
 function CandidateLineSkeleton() {
   return (
-    <div className="space-y-1.5">
-      <Skeleton className="h-2.5 w-[85%] bg-sticky-foreground/18" />
-      <Skeleton className="h-2 w-[55%] bg-sticky-foreground/12" />
-    </div>
+    <li className="pt-3.5 first:pt-0 [&+li]:border-t [&+li]:border-dashed [&+li]:border-sticky-foreground/25">
+      <div className="flex min-h-11 items-center">
+        <Skeleton className="h-4 w-[85%] bg-sticky-foreground/18" />
+      </div>
+      <Skeleton className="mt-1.5 h-3 w-[55%] bg-sticky-foreground/12" />
+    </li>
   )
 }
 
 export function StickyNoteCardPlaceholder({
   label,
-  roundIndex = 0,
 }: {
   label?: string
-  roundIndex?: number
 }) {
-  const place = PLACEMENT[roundIndex % PLACEMENT.length]
   return (
-    <div
-      className="sticky-note sticky-note-placeholder flex flex-col gap-3"
-      style={{ transform: `translateX(${place.x}px) rotate(${place.rotate}deg)` }}
-    >
-      <div className="space-y-3">
+    <div className="sticky-note sticky-note-placeholder flex flex-col gap-3">
+      <ol className="flex flex-col gap-3.5">
         <CandidateLineSkeleton />
         <CandidateLineSkeleton />
         <CandidateLineSkeleton />
-      </div>
+      </ol>
       {label ? <p className="text-sm font-medium text-sticky-foreground/70">{label}</p> : null}
     </div>
   )

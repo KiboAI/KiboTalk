@@ -80,9 +80,9 @@
 |------|------|------|
 | `StickyNoteCard` / `StickyNoteCardPlaceholder` | 单条回复候选的便利贴卡面 | props 直接对齐 `@kibotalk/conversation` 的 `ReplyCandidate`/`ReplySegment`，不重新定义 schema |
 | `StickyNoteStack` | 一轮（或多轮）候选的堆叠列表 | 承载"通知中心式多轮候选"逻辑：新轮在上、旧轮弱化、`maxRounds` 截断、空态/流式骨架 |
-| `IslandBar` + `IslandStatus` / `IslandSeparator` / `IslandToggleButton` / `IslandNavButton` | 桌面 Island 的悬浮控制条 | `IslandToggleButton`（状态开关，如转写/AI 提示）与 `IslandNavButton`（跳转按钮，如设置/历史）视觉区分；容器本身 `[-webkit-app-region:drag]` 可拖，按钮各自 `no-drag` 保持可点 |
+| `IslandBar` + `IslandStatus` / `IslandSeparator` / `IslandToggleButton` / `IslandNavButton` / `IslandDragHandle` | 桌面 Island 的悬浮控制条 | `IslandToggleButton` 只承载 AI 建议等真实开关；运行即转写，不再显示转写开关。容器不可整体拖动，只有带四向箭头的 `IslandDragHandle` 使用 `[-webkit-app-region:drag]` |
 | `StepIndicator` | 声纹录入向导的步骤指示 | 三步：说明 → 录入 → 完成确认 |
-| `SessionListItem` | 历史会话列表的一行 | 目前只有精简信息（无图标、无轮数、无预览文字）——历史列表页本身仍是方案 C 的一部分，未排期（见桌面头脑风暴文档「已知缺口」） |
+| `SessionListItem` | 历史会话列表的一行 | 由 `HistoryPage` 使用；列表与详情响应式切换，详情显示转写、候选和后台总结状态 |
 | `PillTag` | 通用药丸标签 | 例如"仅桌面端"一类的能力标记 |
 
 ## 5. 谁在用
@@ -91,7 +91,7 @@
 flowchart LR
   theme["packages/ui/src/theme.css"]
   ui["packages/ui（shadcn + product 组件）"]
-  pages["packages/pages（OnboardingPage / EnrollmentPage / SessionPage / IslandPage）"]
+  pages["packages/pages（Onboarding / Enrollment / Session / Island / Settings / History）"]
   playground["apps/playground"]
   web["apps/web"]
   desktop["apps/desktop"]
@@ -108,4 +108,4 @@ flowchart LR
 ## 6. 非目标
 
 - 不是决议记录——视觉决策的来龙去脉见 [Playground 视觉重构 spec](./playground-visual-refactor.md) 与桌面头脑风暴文档。
-- 不覆盖尚未实现的产品面（历史会话列表/详情、设置页深配置、错误态、权限引导等）——见桌面头脑风暴文档「已知缺口」一节。
+- 不定义业务状态机或存储 schema；会话、历史、设置锁定与权限行为以 MVP spec 和跨端决策文档为准。

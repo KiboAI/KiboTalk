@@ -1,54 +1,199 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KiboTalk prototypes</title>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      --yellow-100: #fef9c3;
+      --yellow-300: #fde047;
+      --yellow-400: #facc15;
+      --yellow-900: #713f12;
+      --paper: #f7f5ef;
+      --panel: #fffefb;
+      --ink: #2b2620;
+      --muted: rgba(43, 38, 32, 0.58);
+      --line: rgba(43, 38, 32, 0.09);
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100dvh;
-      font-family: system-ui, sans-serif;
-      background: #0f0f12;
-      color: #f4f4f5;
-      display: grid;
-      place-items: center;
-      padding: 2rem;
+      padding: 56px 22px;
+      background:
+        radial-gradient(circle at 80% 4%, rgba(250, 204, 21, 0.16), transparent 28%),
+        var(--paper);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
     }
-    main { max-width: 28rem; width: 100%; }
-    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1rem; }
-    ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+    main { width: min(980px, 100%); margin: 0 auto; }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    .brand { width: 130px; height: 26px; object-fit: contain; object-position: left center; }
+    h1 { margin: 12px 0 5px; font-size: clamp(24px, 4vw, 38px); letter-spacing: -0.035em; }
+    .intro { max-width: 610px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .status {
+      flex: 0 0 auto;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: var(--yellow-100);
+      color: var(--yellow-900);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    section + section { margin-top: 28px; }
+    h2 {
+      margin: 0 0 10px 4px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    ul {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
     a {
       display: block;
-      padding: 0.875rem 1rem;
-      border-radius: 0.75rem;
-      background: #1c1c22;
-      border: 1px solid #2e2e38;
+      min-height: 130px;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.74);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 1px 2px rgba(43, 38, 32, 0.05),
+        0 14px 28px rgba(43, 38, 32, 0.07);
       color: inherit;
       text-decoration: none;
+      transition: transform 140ms ease, box-shadow 140ms ease;
     }
-    a:hover { border-color: #facc15; }
-    .desc { margin: 0.25rem 0 0; font-size: 0.875rem; color: #a1a1aa; }
+    a:hover {
+      border-color: rgba(250, 204, 21, 0.72);
+      box-shadow: 0 18px 34px rgba(120, 90, 0, 0.14);
+      transform: translateY(-2px);
+    }
+    .tag {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--yellow-100);
+      color: var(--yellow-900);
+      font-size: 10px;
+      font-weight: 730;
+    }
+    .title { font-size: 15px; font-weight: 760; }
+    .desc { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .legacy ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .legacy a { min-height: 104px; background: rgba(255, 254, 251, 0.66); }
+    .featured { grid-column: 1 / -1; }
+    .featured a {
+      min-height: 112px;
+      border-color: rgba(250, 204, 21, 0.5);
+      background: linear-gradient(135deg, var(--panel), var(--yellow-100));
+    }
+    @media (max-width: 760px) {
+      body { padding: 36px 14px; }
+      header { display: block; }
+      .status { display: inline-flex; margin-top: 14px; }
+      ul, .legacy ul { grid-template-columns: 1fr; }
+      a { min-height: auto; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>Prototypes</h1>
-    <ul>
-      <li>
-        <a href="/product-style-direction.html">
-          Product style direction
-          <p class="desc">全产品视觉方向：按钮、卡片、Island、设置等页面</p>
-        </a>
-      </li>
-      <li>
-        <a href="/sticky-note-styles.html">
-          Sticky note styles
-          <p class="desc">候选回复卡片样式对比</p>
-        </a>
-      </li>
-    </ul>
+    <header>
+      <div>
+        <img class="brand" src="./assets/kibotalk-mark.svg" alt="KiboTalk" />
+        <h1>交互原型目录</h1>
+        <p class="intro">本轮先确认 A+B 合并后的响应式 Web 会话布局，同时复核 AIRI 式桌面缩放边框、无旋转便利贴与对齐最终结果的骨架态。所有页面都可直接打开，无需构建。</p>
+      </div>
+      <span class="status">A+B 待确认</span>
+    </header>
+
+    <section>
+      <h2>Web 会话候选</h2>
+      <ul>
+        <li class="featured">
+          <a href="./web-session-hybrid.html">
+            <span class="tag">新候选 · A+B</span>
+            <div class="title">可折叠工作台</div>
+            <p class="desc">桌面双栏等高并分别滚动，收起后完全回到单栏；手机为单栏建议，对话记录按需覆盖内容区。</p>
+          </a>
+        </li>
+        <li>
+          <a href="./web-session-focus.html">
+            <span class="tag">方案 A</span>
+            <div class="title">专注舞台</div>
+            <p class="desc">建议居中占据主舞台；最新转写固定顶部，完整对话按需展开。</p>
+          </a>
+        </li>
+        <li>
+          <a href="./web-session-split.html">
+            <span class="tag">方案 B</span>
+            <div class="title">双栏工作台</div>
+            <p class="desc">对话记录常驻左侧，建议舞台位于右侧；适合宽屏长时间使用。</p>
+          </a>
+        </li>
+        <li>
+          <a href="./web-session-rail.html">
+            <span class="tag">方案 C</span>
+            <div class="title">舞台 + 窄轨</div>
+            <p class="desc">建议仍是主角，右侧保留紧凑对话轨，可随时展开完整记录。</p>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>已确认的独立交互</h2>
+      <ul>
+        <li>
+          <a href="./desktop-floating-responsive.html">
+            <span class="tag">Desktop</span>
+            <div class="title">可调悬浮窗与上下翻转</div>
+            <p class="desc">拖动、八向缩放、松手翻转、最多三轮便利贴、状态栏菜单与退出确认。</p>
+          </a>
+        </li>
+        <li>
+          <a href="./settings-i18n-session.html">
+            <span class="tag">Settings</span>
+            <div class="title">i18n 与会话锁定</div>
+            <p class="desc">完整设置分类、中日英即时切换、仅停止时可改语言、真实麦克风设备和权限状态。</p>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section class="legacy">
+      <h2>视觉基线</h2>
+      <ul>
+        <li>
+          <a href="./product-style-direction.html">
+            <div class="title">Product style direction</div>
+            <p class="desc">既有的全产品视觉方向：按钮、卡片、Island、设置等页面。</p>
+          </a>
+        </li>
+        <li>
+          <a href="./sticky-note-styles.html">
+            <div class="title">Sticky note styles</div>
+            <p class="desc">候选回复便利贴样式对比。</p>
+          </a>
+        </li>
+      </ul>
+    </section>
   </main>
 </body>
 </html>

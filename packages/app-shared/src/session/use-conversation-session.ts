@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PipelineEvent } from '@kibotalk/pipeline'
 import { Pipeline } from '@kibotalk/pipeline'
-import type { ConversationStorage, ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
+import type {
+  ConversationSession,
+  ConversationSessionSnapshot,
+  ConversationStorage,
+  ConversationTurn,
+  ReplyCandidate,
+} from '@kibotalk/conversation'
 import { InMemoryConversationStorage } from '@kibotalk/conversation'
 import { EmbeddingSpeakerVerifier, IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import type { Embedding } from '@kibotalk/speaker'
@@ -27,6 +33,8 @@ export type SessionDraft = {
 
 export type CandidateRound = { id: string; candidates: ReplyCandidate[] }
 
+export type ProductSessionLifecycle = 'restoring' | 'stopped' | 'starting' | 'running' | 'paused'
+
 /** The knobs `defaultAppConfig` hardcodes for product apps and the playground exposes as sliders. */
 export type ConversationSessionParams = {
   speechThreshold: number
@@ -50,6 +58,15 @@ export type ConversationSessionParams = {
   selectedProvider: string | null
   /** Defaults to a fresh `InMemoryConversationStorage` (playground behavior). */
   storage?: ConversationStorage
+  /** Product shells persist lifecycle/history; playground sessions stay ephemeral. */
+  persistSessionLifecycle?: boolean
+  /** Full settings snapshot frozen when a persisted session begins. */
+  sessionSnapshot?: ConversationSessionSnapshot
+  /** Localized fallback title available before the background review finishes. */
+  sessionTitle?: string
+  /** Desktop-only system-audio stream factory; Web leaves this unset. */
+  getSystemAudioStream?: () => Promise<MediaStream>
+  stopSystemAudioStream?: () => Promise<void>
 }
 
 /**
@@ -75,6 +92,11 @@ export function useConversationSession(params: ConversationSessionParams) {
   const [confidence, setConfidence] = useState<number | null>(null)
   /** Actual STT path for the running session (may differ from the selected provider after R4 degrade). */
   const [activeSttPath, setActiveSttPath] = useState<'idle' | 'realtime' | 'batch'>('idle')
+  const [lifecycle, setLifecycle] = useState<ProductSessionLifecycle>(
+    params.persistSessionLifecycle ? 'restoring' : 'stopped',
+  )
+  const [activeSession, setActiveSession] = useState<ConversationSession | null>(null)
+  const [recoveredUnexpectedPause, setRecoveredUnexpectedPause] = useState(false)
 
   const speakerRef = useRef(speaker)
   speakerRef.current = speaker
@@ -83,18 +105,28 @@ export function useConversationSession(params: ConversationSessionParams) {
 
   const llmRef = useRef<ProxyLlmClient | null>(null)
   const audioRef = useRef<AudioSource | null>(null)
+  const systemAudioRef = useRef<AudioSource | null>(null)
   const pipelineRef = useRef<Pipeline | null>(null)
+  const settlingPipelineRef = useRef<Pipeline | null>(null)
   const storageRef = useRef<ConversationStorage>(params.storage ?? new InMemoryConversationStorage())
   const verifierRef = useRef<EmbeddingSpeakerVerifier | null>(null)
   const embeddingRef = useRef<Embedding | null>(null)
   const autoRef = useRef(false)
   const vadRef = useRef<VAD | null>(null)
+  const systemVadRef = useRef<VAD | null>(null)
   const sttRef = useRef<ProxySttClient | null>(null)
   const aggregatorRef = useRef<SegmentAggregator | null>(null)
+  const systemAggregatorRef = useRef<SegmentAggregator | null>(null)
   const realtimeRef = useRef<RealtimeSttClient | null>(null)
   const realtimeModeRef = useRef(false)
   const realtimeBusyRef = useRef(Promise.resolve())
+  const pipelineBusyRef = useRef(Promise.resolve())
+  const startInFlightRef = useRef(false)
   const draftMetaRef = useRef<{ speaker: 'user' | 'other'; startedAt: number } | null>(null)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const pauseRef = useRef<(reason?: 'user' | 'unexpected') => Promise<void>>(async () => {})
+  pauseRef.current = pause
   /** Realtime: stream mic while Silero says in-speech (not wait for speech-ready). */
   const inSpeechRef = useRef(false)
   /** True after append until commit completes — blocks next speech stream from mixing. */
@@ -103,13 +135,59 @@ export function useConversationSession(params: ConversationSessionParams) {
   const lastRealtimeTurnIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    vadRef.current?.updateConfig({
+    if (!params.persistSessionLifecycle) return
+    let cancelled = false
+    void storageRef.current
+      .getActiveSession()
+      .then(async (session) => {
+        if (cancelled) return
+        if (!session) {
+          setLifecycle('stopped')
+          return
+        }
+        const restored =
+          session.status === 'running'
+            ? await storageRef.current.pauseActiveSession('unexpected')
+            : session
+        if (cancelled || !restored) return
+        setTurns(
+          restored.turns.map((turn) => ({
+            ...turn,
+            ...(turn.suggestions ? { candidates: turn.suggestions } : {}),
+          })),
+        )
+        setCandidateRounds(
+          restored.turns
+            .filter((turn) => turn.suggestions?.length)
+            .map((turn) => ({ id: turn.id, candidates: turn.suggestions! }))
+            .reverse(),
+        )
+        setActiveSession(restored)
+        setRecoveredUnexpectedPause(restored.pauseReason === 'unexpected')
+        setLifecycle('paused')
+      })
+      .catch((cause) => {
+        if (cancelled) return
+        reportError(String(cause))
+        setLifecycle('stopped')
+      })
+    return () => {
+      cancelled = true
+    }
+    // Storage is fixed for the lifetime of one product shell.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const config = {
       speechThreshold: params.speechThreshold,
       exitThreshold: params.exitThreshold,
       minSilenceDurationMs: params.minSilenceDurationMs,
       minSpeechDurationMs: params.minSpeechDurationMs,
       speechPadMs: 0,
-    })
+    }
+    vadRef.current?.updateConfig(config)
+    systemVadRef.current?.updateConfig(config)
   }, [params.speechThreshold, params.exitThreshold, params.minSilenceDurationMs, params.minSpeechDurationMs])
   useEffect(() => {
     verifierRef.current?.setThreshold(params.speakerThreshold)
@@ -118,7 +196,9 @@ export function useConversationSession(params: ConversationSessionParams) {
     sttRef.current?.configurePadding(params.prePadMs, params.postPadMs)
   }, [params.prePadMs, params.postPadMs])
   useEffect(() => {
-    aggregatorRef.current?.updateConfig({ pauseMs: params.pauseMs, maxMs: params.mergeMaxMs })
+    const config = { pauseMs: params.pauseMs, maxMs: params.mergeMaxMs }
+    aggregatorRef.current?.updateConfig(config)
+    systemAggregatorRef.current?.updateConfig(config)
   }, [params.pauseMs, params.mergeMaxMs])
   useEffect(() => {
     if (params.transcribeMode !== 'aggregated') aggregatorRef.current?.flush()
@@ -147,6 +227,9 @@ export function useConversationSession(params: ConversationSessionParams) {
   }
 
   async function verifySpeaker(buffer: ArrayBuffer): Promise<'user' | 'other'> {
+    const audioSource = paramsRef.current.sessionSnapshot?.audioSource
+    if (audioSource === 'both') return 'user'
+    if (audioSource === 'system') return 'other'
     if (!autoRef.current || !embeddingRef.current || !verifierRef.current) {
       return speakerRef.current
     }
@@ -203,13 +286,17 @@ export function useConversationSession(params: ConversationSessionParams) {
     }
   }
 
-  async function start() {
+  async function start(options: { resume?: boolean } = {}) {
+    if (startInFlightRef.current || lifecycle === 'starting' || running) return
+    startInFlightRef.current = true
+    const resuming = options.resume === true
     setError('')
     setStatusNote('')
     setLoading('正在检查声纹录入…')
-    setTurns([])
+    setLifecycle('starting')
+    if (!resuming) setTurns([])
     setDraft(null)
-    setCandidateRounds([])
+    if (!resuming) setCandidateRounds([])
     try {
       if (!verifierRef.current) {
         verifierRef.current = new EmbeddingSpeakerVerifier({
@@ -222,13 +309,51 @@ export function useConversationSession(params: ConversationSessionParams) {
       embeddingRef.current = embedding
       autoRef.current = !!embedding
       setMode(embedding ? 'auto' : 'manual')
+      if (paramsRef.current.persistSessionLifecycle && !embedding) {
+        throw new Error('VOICEPRINT_REQUIRED')
+      }
+
+      if (paramsRef.current.persistSessionLifecycle) {
+        if (resuming) {
+          const resumed = await storageRef.current.resumeActiveSession()
+          if (!resumed) throw new Error('NO_SESSION_TO_RESUME')
+          setActiveSession(resumed)
+          setRecoveredUnexpectedPause(false)
+        } else {
+          const snapshot = paramsRef.current.sessionSnapshot
+          if (!snapshot) throw new Error('MISSING_SESSION_SNAPSHOT')
+          const startedAt = Date.now()
+          const created = await storageRef.current.startSession({
+            id: globalThis.crypto?.randomUUID?.() ?? `${startedAt}-${Math.random().toString(36).slice(2)}`,
+            startedAt,
+            snapshot,
+            title: paramsRef.current.sessionTitle ?? '',
+          })
+          setActiveSession(created)
+        }
+      }
 
       const p = paramsRef.current
       const selectedProvider = p.selectedProvider
-      const isRealtime = providerMode(p.providers, selectedProvider) === 'realtime'
+      const audioSourceMode = p.sessionSnapshot?.audioSource ?? 'microphone'
+      const isRealtime =
+        audioSourceMode === 'microphone' &&
+        providerMode(p.providers, selectedProvider) === 'realtime'
 
       setLoading('正在请求麦克风 + 加载 VAD 模型…')
-      const audio = new AudioSource()
+      const primaryStream =
+        audioSourceMode === 'system'
+          ? await p.getSystemAudioStream?.()
+          : undefined
+      if (audioSourceMode === 'system' && !primaryStream) {
+        throw new Error('系统音频不可用')
+      }
+      const audio = new AudioSource({
+        deviceId: p.sessionSnapshot?.microphoneDeviceId,
+        stream: primaryStream,
+        echoCancellation: audioSourceMode !== 'system',
+        onDeviceEnded: () => void pauseRef.current('unexpected'),
+      })
       audioRef.current = audio
       const vadVariant = SILERO_VARIANTS.find((v) => v.id === p.vadVariantId) ?? SILERO_VARIANTS[0]
       const infer = await createSileroInfer(vadVariant, audio.sampleRate)
@@ -250,6 +375,11 @@ export function useConversationSession(params: ConversationSessionParams) {
       )
       stt.configurePadding(p.prePadMs, p.postPadMs)
       stt.setProviderOverride(null)
+      if (audioSourceMode !== 'microphone' && providerMode(p.providers, selectedProvider) === 'realtime') {
+        const batchProvider = p.providers.find((provider) => provider.mode !== 'realtime')
+        if (!batchProvider) throw new Error('系统音频需要可用的批量转写服务')
+        stt.setProviderOverride(batchProvider.id)
+      }
       sttRef.current = stt
       const llm = new ProxyLlmClient(p.languageSnapshot, () => paramsRef.current.replyEnabled)
       llmRef.current = llm
@@ -302,15 +432,70 @@ export function useConversationSession(params: ConversationSessionParams) {
           const next = realtimeBusyRef.current.then(() => handleRealtimeFlush(merged, pipeline)).catch(() => {})
           realtimeBusyRef.current = next
         } else {
-          void pipeline.ingestSegment({
-            pcm: merged.pcm,
-            speaker: merged.speaker,
-            startedAt: merged.startedAt,
-            endedAt: merged.endedAt,
-          })
+          pipelineBusyRef.current = pipelineBusyRef.current
+            .then(() =>
+              pipeline.ingestSegment({
+                pcm: merged.pcm,
+                speaker: merged.speaker,
+                startedAt: merged.startedAt,
+                endedAt: merged.endedAt,
+              }),
+            )
+            .catch(() => {})
         }
       })
       aggregatorRef.current = aggregator
+
+      if (audioSourceMode === 'both') {
+        const systemStream = await p.getSystemAudioStream?.()
+        if (!systemStream) throw new Error('系统音频不可用')
+        const systemAudio = new AudioSource({
+          stream: systemStream,
+          echoCancellation: false,
+          onDeviceEnded: () => void pauseRef.current('unexpected'),
+        })
+        systemAudioRef.current = systemAudio
+        const systemInfer = await createSileroInfer(vadVariant, systemAudio.sampleRate)
+        const systemVad = createVAD(systemInfer, {
+          speechThreshold: p.speechThreshold,
+          exitThreshold: p.exitThreshold,
+          minSilenceDurationMs: p.minSilenceDurationMs,
+          minSpeechDurationMs: p.minSpeechDurationMs,
+          speechPadMs: 0,
+          sampleRate: systemAudio.sampleRate,
+        })
+        systemVadRef.current = systemVad
+        const systemAggregator = createSegmentAggregator({
+          sampleRate: systemAudio.sampleRate,
+          pauseMs: p.pauseMs,
+          maxMs: p.mergeMaxMs,
+        })
+        systemAggregator.onFlush((merged) => {
+          pipelineBusyRef.current = pipelineBusyRef.current
+            .then(() =>
+              pipeline.ingestSegment({
+                pcm: merged.pcm,
+                speaker: 'other',
+                startedAt: merged.startedAt,
+                endedAt: merged.endedAt,
+              }),
+            )
+            .catch(() => {})
+        })
+        systemAggregatorRef.current = systemAggregator
+        systemVad.on('speech-ready', (event) => {
+          const endedAt = Date.now()
+          systemAggregator.feed({
+            buffer: event.buffer,
+            speaker: 'other',
+            startedAt: endedAt - event.duration * 1000,
+            endedAt,
+          })
+        })
+        await systemAudio.start(async (chunk) => {
+          await systemVad.processAudio(chunk)
+        })
+      }
 
       pipeline.on((e: PipelineEvent) => {
         switch (e.type) {
@@ -329,6 +514,7 @@ export function useConversationSession(params: ConversationSessionParams) {
               setCandidateRounds((prev) => [{ id: e.turnId, candidates: e.candidates }, ...prev])
             }
             setTurns((prev) => prev.map((t) => (t.id === e.turnId ? { ...t, candidates: e.candidates } : t)))
+            void storageRef.current.updateTurnSuggestions(e.turnId, e.candidates)
             break
           case 'llmAborted':
           case 'llmFailed':
@@ -471,15 +657,33 @@ export function useConversationSession(params: ConversationSessionParams) {
         rt.append(chunk)
       })
       setRunning(true)
+      setLifecycle('running')
       setLoading('')
     } catch (e) {
       reportError((e as Error).message)
       setLoading('')
-      stop()
+      releaseCapture()
+      if (paramsRef.current.persistSessionLifecycle) {
+        const paused = await storageRef.current.pauseActiveSession('unexpected')
+        setActiveSession(paused)
+        setRecoveredUnexpectedPause(true)
+        setLifecycle(paused ? 'paused' : 'stopped')
+      } else {
+        setLifecycle('stopped')
+      }
+    } finally {
+      startInFlightRef.current = false
     }
   }
 
-  function stop() {
+  function releaseCapture() {
+    systemAggregatorRef.current?.flush()
+    systemAggregatorRef.current?.dispose()
+    systemAggregatorRef.current = null
+    systemAudioRef.current?.stop()
+    systemAudioRef.current = null
+    systemVadRef.current = null
+    void paramsRef.current.stopSystemAudioStream?.()
     aggregatorRef.current?.flush()
     aggregatorRef.current?.dispose()
     aggregatorRef.current = null
@@ -487,9 +691,11 @@ export function useConversationSession(params: ConversationSessionParams) {
     realtimeRef.current?.close()
     realtimeRef.current = null
     realtimeModeRef.current = false
+    uncommittedRef.current = false
     inSpeechRef.current = false
     audioRef.current?.stop()
     audioRef.current = null
+    if (pipelineRef.current) settlingPipelineRef.current = pipelineRef.current
     pipelineRef.current = null
     llmRef.current = null
     vadRef.current = null
@@ -502,12 +708,79 @@ export function useConversationSession(params: ConversationSessionParams) {
     setConfidence(null)
   }
 
+  function sealPendingRealtimeDraft() {
+    const pending = draftRef.current
+    const pipeline = pipelineRef.current
+    if (!uncommittedRef.current || !pending?.text.trim() || !pipeline) return
+
+    uncommittedRef.current = false
+    draftMetaRef.current = null
+    draftRef.current = null
+    setDraft(null)
+    pipelineBusyRef.current = pipelineBusyRef.current
+      .then(() =>
+        pipeline.ingestFinalizedTurn({
+          speaker: pending.speaker,
+          text: pending.text.trim(),
+          startedAt: pending.startedAt,
+          endedAt: Date.now(),
+        }),
+      )
+      .catch(() => {})
+  }
+
+  async function pause(reason: 'user' | 'unexpected' = 'user') {
+    if (!running && lifecycle !== 'starting') return
+    sealPendingRealtimeDraft()
+    releaseCapture()
+    if (paramsRef.current.persistSessionLifecycle) {
+      const paused = await storageRef.current.pauseActiveSession(reason)
+      setActiveSession(paused)
+    }
+    setRecoveredUnexpectedPause(reason === 'unexpected')
+    setLifecycle('paused')
+  }
+
+  async function resume() {
+    if (lifecycle !== 'paused') return
+    await realtimeBusyRef.current.catch(() => {})
+    await pipelineBusyRef.current.catch(() => {})
+    await settlingPipelineRef.current?.idle().catch(() => {})
+    settlingPipelineRef.current = null
+    await start({ resume: true })
+  }
+
+  async function stop() {
+    const pipeline = pipelineRef.current ?? settlingPipelineRef.current
+    sealPendingRealtimeDraft()
+    releaseCapture()
+    await realtimeBusyRef.current.catch(() => {})
+    await pipelineBusyRef.current.catch(() => {})
+    await pipeline?.idle().catch(() => {})
+    settlingPipelineRef.current = null
+    if (paramsRef.current.persistSessionLifecycle) {
+      const stopped = await storageRef.current.stopActiveSession()
+      setActiveSession(stopped)
+    }
+    setRecoveredUnexpectedPause(false)
+    setLifecycle('stopped')
+  }
+
+  async function interrupt() {
+    if (lifecycle === 'running' || lifecycle === 'starting') {
+      await pause('unexpected')
+    }
+  }
+
   async function clearSession() {
     await storageRef.current.clearActiveSession()
     setTurns([])
     setDraft(null)
     setCandidateRounds([])
     setState('IDLE')
+    setActiveSession(null)
+    setRecoveredUnexpectedPause(false)
+    setLifecycle('stopped')
   }
 
   return {
@@ -525,8 +798,14 @@ export function useConversationSession(params: ConversationSessionParams) {
     mode,
     confidence,
     activeSttPath,
+    lifecycle,
+    activeSession,
+    recoveredUnexpectedPause,
     start,
+    pause,
+    resume,
     stop,
+    interrupt,
     clearSession,
   }
 }

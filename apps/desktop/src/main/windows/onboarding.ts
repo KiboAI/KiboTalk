@@ -1,7 +1,11 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow } from 'electron'
-import type { OnboardingContentSize } from '../../shared/ipc'
+import {
+  IPC_CHANNEL,
+  type OnboardingContentSize,
+  type ProductWindowView,
+} from '../../shared/ipc'
 import { loadRendererEntry } from '../location'
 import { embeddedWindowConfig, protectPrivilegedWindowNavigation } from './shared'
 
@@ -16,14 +20,21 @@ const ONBOARDING_MIN_HEIGHT = 160
 const mainDirname = dirname(fileURLToPath(import.meta.url))
 
 let onboardingWindow: BrowserWindow | null = null
+let requestedView: ProductWindowView = 'settings'
+
+export function getRequestedProductView(): ProductWindowView {
+  return requestedView
+}
 
 /**
  * Onboarding / settings window — first-run language + voiceprint, later
  * reused from Island「设置」. Height is content-driven via
  * `resizeOnboardingWindow`.
  */
-export async function openOnboardingWindow(): Promise<BrowserWindow> {
+export async function openOnboardingWindow(view: ProductWindowView = 'settings'): Promise<BrowserWindow> {
+  requestedView = view
   if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.webContents.send(IPC_CHANNEL.onboardingViewRequestedEvent, view)
     onboardingWindow.show()
     onboardingWindow.focus()
     return onboardingWindow
@@ -51,6 +62,7 @@ export async function openOnboardingWindow(): Promise<BrowserWindow> {
   })
 
   await loadRendererEntry(window, 'onboarding')
+  window.webContents.send(IPC_CHANNEL.onboardingViewRequestedEvent, requestedView)
   onboardingWindow = window
   return window
 }

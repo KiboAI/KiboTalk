@@ -1,6 +1,6 @@
 # Live Reply Coach — MVP 需求与技术选型
 
-- **状态**：技术方案草案
+- **状态**：实现基线（跨端产品壳已落地）
 - **标签**：product, mvp, architecture, react, electron, pwa
 - **关联**：[产品想法](../brainstorm/2026-07-16-live-reply-coach-language-assist.md)
 - **作者**：路路（与神奈子需求对齐后整理）
@@ -15,7 +15,7 @@
 |----|------|----------|
 | **移动端（iPhone 等）** | 纯 Web / PWA，响应式 UI | 仅麦克风（当面场景） |
 | **桌面浏览器** | 同一套 Web 应用，响应式 UI | 麦克风 |
-| **桌面原生壳（P1）** | Electron 薄入口，与 Web **共用 packages** | 麦克风 + Mac 系统声音 |
+| **桌面原生壳（macOS）** | Electron 薄入口，与 Web **共用 packages** | 麦克风 + Mac 系统声音（可双路同时采集） |
 
 组织方式参考 [AIRI](https://github.com/moeru-ai/airi)：**具体实现放在 `packages/`，`apps/` 只是各平台的薄入口**（见 §2.2）。
 
@@ -30,32 +30,34 @@
 ### 1.2 核心用户流程
 
 ```text
-首次打开（立刻申请麦克风等权限；后台开始拉全部端侧模型权重）
-    → Onboarding 填信息（对话语言 / 翻译语言 / 水平…；下载在后台继续）
-        · 预填：对话 ja、翻译 zh、ja 水平 beginner；另两语言水平默认 intermediate
+首次打开（按系统初始化界面语言；立刻申请权限；后台开始拉全部端侧模型权重）
+    → Onboarding 填信息（界面语言 / 对话语言 / 水平；下载在后台继续）
+        · 预填：界面语言跟随系统；对话 ja；ja 水平 beginner；另两语言水平默认 intermediate
         · 须显式确认一次（满足「第一次就要选择」）
         · 右上角小圆圈显示下载进度
         · 权重未下完 → 不能进入下一步 / 开始会话
     → 声纹录制（权重已就绪；口令随对话语言 ja/en/zh）
-    → 开始会话（快照 conversationLang / meaningLang / level；进行中锁定）
+    → 开始会话（快照 uiLang / conversationLang / meaningLang / level / 音源与设备；进行中锁定）
     → 持续听音频 → VAD 切段 → 说话人判定
         → other 说完：STT（language=conversationLang）→ 写入对话 → 请求 LLM（通常给 3 条候选）
         → user 说完：STT → 写入对话 → 同样请求 LLM（由模型决定出候选或跳过）
     → 循环
-    → 结束会话 → 文字回顾（小结 + 本轮句型）
+    → 暂停（释放音频但保留同一会话）或停止（封存本会话）
+    → 停止后后台生成短标题与文字回顾；下次开始创建新会话
 ```
 
-**语言双轴（见 §1.4、[ADR 0003](../adr/0003-multilingual-conversation-and-meaning.md)）**：
+**语言轴（见 §1.4、[ADR 0003](../adr/0003-multilingual-conversation-and-meaning.md)）**：
 
 | 轴 | 字段 | 白名单 | 作用 |
 |----|------|--------|------|
 | 对话语言 | `conversationLang` | `ja` \| `en` \| `zh` | 同场双方用语；STT hint、时间轴原文、候选 `targetText`、录入口令 |
-| 翻译语言 | `meaningLang` | `ja` \| `en` \| `zh` | 候选 `meaning`；允许与对话语言相同 |
+| 界面语言 | `uiLang` | `ja` \| `en` \| `zh` | 产品界面文案；首次跟随系统，停止时可切换并立即生效 |
+| 候选释义语言（内部） | `meaningLang` | `ja` \| `en` \| `zh` | 不单独展示设置；开会话时由 `uiLang` 派生并冻结，允许与对话语言相同 |
 | 水平 | `levelByLang` | 每语言 `beginner` \| `intermediate` \| `advanced` | 进 prompt；切换对话语言时带出该语言上次水平 |
 
-设置仅会话外可改；开新会话时快照。界面文案语言（`uiLang`）独立预留，**MVP 不做整站 i18n**（playground / 壳暂中文）。
+产品界面做中 / 日 / 英三语。界面语言、对话语言、水平、音频来源、麦克风设备及声纹只可在 stopped / 无活跃会话时修改；新会话开始时冻结快照。主题、登录时启动和会话内 AI 建议开关不受该锁定约束。
 
-**首次打开（硬性，勿懒加载）**：`apps/web` 一进入就**后台**开始拉取并缓存**全部**端侧模型权重（至少含 Silero VAD、speaker verification；以后若有其它本地 WASM/ONNX 一并列入），**禁止**「用到某能力时才开始拉模型」。下载与 Onboarding **填表并行**：用户填对话语言 / 翻译语言 / 水平等信息时不挡操作；**右上角用小进度圆**展示下载进度。权重**全部下完之前**，进入下一步 / 「开始会话」按钮保持不可用（可附简短提示「模型准备中」）。同一时机**立刻**申请所需权限（麦克风等；桌面壳阶段再含系统音频相关权限），不要拖到点「开始会话」或 enrollment 录音时才弹。理由：把大体积下载叠在填表时间上；现场演示 / 真机网络差时，会话中途再下几百 MB 会卡死体验；权限延后弹窗也更容易被拒或打断录音。
+**首次打开（硬性，勿懒加载）**：`apps/web` 一进入就**后台**开始拉取并缓存**全部**端侧模型权重（至少含 Silero VAD、speaker verification；以后若有其它本地 WASM/ONNX 一并列入），**禁止**「用到某能力时才开始拉模型」。下载与 Onboarding **填表并行**：用户填界面语言 / 对话语言 / 水平时不挡操作；**右上角用小进度圆**展示通用语音能力准备进度，不能向用户显示模型名称、提供方或删除模型入口。权重**全部下完之前**，进入下一步 / 「开始会话」按钮保持不可用。同一时机申请所需权限：Web 请求麦克风，桌面请求麦克风与系统音频 / 屏幕录制。理由：把大体积下载叠在填表时间上；现场演示 / 真机网络差时，会话中途再下几百 MB 会卡死体验；权限延后弹窗也更容易被拒或打断录音。
 
 **触发原则**：不再「仅对方轮次出候选」。任一 speaker 的 turn 入库后都进入教练请求；LLM 根据上下文判断本轮是否需要开口提示（见 F04）。
 ### 1.3 功能清单
@@ -70,10 +72,10 @@
 | F04 | 回复候选（教练闸门） | **任一** `speaker` turn 入库后**一律**请求 LLM。输出 **恰好 3 条**或 **`[]`**。续写与应答同一套三卡（不加 `kind`）。卡壳 = user 停顿后半句 → 给**补全后的完整可念句** | 有 3 条时含 meaning / targetText；`conversationLang===ja` 时含 segments；`[]` / 失败 / 请求中均**保留**上一轮已提交候选（不先清空） |
 | F05 | 用户轮次感知 | `speaker === 'user'` 时 STT 写入对话，并与 other 一样触发 F04 | 上下文含用户实际说的；闸门见 §1.4 |
 | F06 | 语言水平 | 统一三档 beginner / intermediate / advanced，按语言存 `levelByLang`；进 prompt | 初级与高级输出可肉眼区分 |
-| F07 | 语言设置 | 首次必选并确认对话语言 / 翻译语言 / 水平；之后会话外可改；开新会话快照 | 进行中不可改；新会话 STT/LLM 用新快照 |
+| F07 | 语言与 i18n | 首次确认界面语言 / 对话语言 / 水平；界面语言首次跟随系统，产品支持中日英；`meaningLang` 由 `uiLang` 派生 | 只在停止时可切换语言，UI 立即生效；新会话 STT/LLM 用新快照 |
 | F08 | 对话时间轴 | 单条 turn 流，按 speaker 区分展示 | 可回看每轮原文 |
-| F09 | 结束回顾 | 会话结束生成文字小结 | 可复制；**意向**双语（目标语要点 + meaningLang 说明），实现可后于 N1 |
-| F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL | 竖屏/宽屏布局可用 |
+| F09 | 历史与结束回顾 | 本地长期保留会话；停止后后台生成冻结 `uiLang` 的短标题与小结，失败可重试 | 列表 / 详情可回看转写和候选；不保存原始音频 |
+| F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL；宽屏 A+B 可折叠双栏，窄屏内容区对话层 | 无页面横向溢出；两栏等高并独立滚动 |
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
 
 #### P1 — 演示加分
@@ -81,21 +83,20 @@
 | ID | 需求 |
 |----|------|
 | F12 | Mac 系统音频（Teams / 视频里的对方） |
-| F13 | 「换一批」重新生成候选 |
-| F14 | 点选候选高亮（**不进** LLM 上下文，上下文以 STT 为准） |
 | F15 | [vieval](https://github.com/vieval-dev/vieval) 提示词评估（CI / 本地） |
 
 #### 明确不做（MVP）
 
 | 不做 | 原因 |
 |------|------|
-| 候选编辑 / 自建 | 团队决策砍掉；不够好则「换一批」 |
+| 候选编辑 / 自建 | 团队决策砍掉；候选保持只读展示 |
+| 「换一批」重新生成 | 产品决策不做；LLM 失败只允许重试失败请求，不提供主动再生成入口 |
+| 点选 / 高亮候选 | 产品决策不做；候选不承担选择状态，用户实际说了什么始终以 STT 为准 |
 | 用户选择场景 | 不做场景选择；难度由水平 + 对话上下文推断 |
 | TTS / AI 代说 | 产品定位是用户自己开口 |
 | iPhone 通话监听 | Web / PWA 做不到 |
 | 登录账号 | 本地会话即可 |
 | 离线 LLM | LLM 走在线 API。本地 ASR 可选（低延迟，见 §2.9 本地 STT） |
-| 整站界面 i18n（`uiLang`） | 壳 / playground 暂中文；与 `meaningLang` 解耦 |
 | 会话中热切换语言 | 时间轴与 STT hint 会混乱；仅会话外改、新会话快照 |
 | 对方说异于对话语言的语 | 同场双方都用 `conversationLang`；异语为后续愿景 |
 
@@ -109,17 +110,24 @@ type LevelByLang = Record<AppLanguage, LearnerLevel>
 
 /** Persisted user prefs (session-out editable). */
 type LanguagePrefs = {
+  uiLang: AppLanguage
   conversationLang: AppLanguage
-  meaningLang: AppLanguage
   levelByLang: LevelByLang
   languagesConfirmed: boolean
+  theme: 'system' | 'light' | 'dark'
+  launchAtLogin: boolean
+  audioSource: 'microphone' | 'system' | 'both'
+  microphoneDeviceId: string
 }
 
-/** Frozen when a session starts; drives STT + LLM for that session. */
-type SessionLanguageSnapshot = {
+/** Frozen when a session starts; drives UI history, audio, STT + LLM. */
+type ConversationSessionSnapshot = {
+  uiLang: AppLanguage
   conversationLang: AppLanguage
-  meaningLang: AppLanguage
+  meaningLang: AppLanguage // = uiLang at start; not a user-facing preference
   level: LearnerLevel // = levelByLang[conversationLang] at start
+  audioSource: 'microphone' | 'system' | 'both'
+  microphoneDeviceId: string
 }
 
 type Speaker = 'user' | 'other'
@@ -131,6 +139,21 @@ type ConversationTurn = {
   startedAt: number
   endedAt: number
   suggestions?: ReplyCandidate[] // 本轮教练结果；空数组表示 LLM 决定跳过；未调用则为 undefined
+}
+
+type ConversationSession = {
+  id: string
+  status: 'running' | 'paused' | 'stopped'
+  startedAt: number
+  endedAt?: number
+  pausedAt?: number
+  pausedDurationMs: number
+  pauseReason?: 'user' | 'unexpected'
+  snapshot: ConversationSessionSnapshot
+  turns: ConversationTurn[]
+  title: string
+  summary?: string
+  reviewStatus: 'pending' | 'ready' | 'failed'
 }
 
 type ReplySegmentRole = 'content' | 'particle' | 'punct'
@@ -155,6 +178,7 @@ type ReplyCandidate = {
 **规则**
 
 - 一条 `ConversationTurn[]`，不按 speaker 拆两套存储
+- `meaningLang` 不是用户设置项；每次 `startSession` 从当时的 `uiLang` 派生并与其它会话定义一起冻结
 - LLM 上下文 = 全部 turns（含用户 STT 结果）；prompt 须标明触发本轮的 **last speaker**（context 末轮），并注入会话快照的 `conversationLang` / `meaningLang` / `level`
 - 点选候选 ≠ 用户说了什么；**以 STT 为准**
 - LLM JSON：**要么**长度为 3 的候选数组，**要么** `[]`（跳过）。禁止其它包装形状
@@ -178,9 +202,20 @@ type ReplyCandidate = {
 | 听对方 / 听自己 → 出建议（由模型决定） | ✅ F02–F05 |
 | 感知用户说了什么 | ✅ F05 |
 | 语言水平 | ✅ F06（三档 + 按语言） |
-| 结束小结 | ✅ F09（双语意向后置实现） |
+| 结束小结 | ✅ F09（冻结界面语言的短标题 + 总结） |
 | AI 语音 / AI 问答 | ❌ |
 | 候选编辑 | ❌ 已砍 |
+
+### 1.6 跨端产品壳契约
+
+- **运行即转写**：产品不提供转写开关。AI 建议可独立关闭；关闭后继续转写并保留旧卡。
+- **暂停与停止分离**：暂停无需确认并保留上下文；停止需确认，保存后下一次开始创建新会话。停止控制紧邻暂停 / 继续。
+- **Web 会话页**：控制区固定顶部，页面本身不随内容滚动；宽屏 A+B 双栏等高且独立滚动，对话按钮在展开时仍保留并显示激活态；移动端同一按钮打开 / 收起对话层。
+- **桌面 Island**：窗口 always-on-top、可拖移和八向缩放；细边框只在鼠标位于窗口内容或缩放命中区时出现。窗口上半屏时内容在 Island 下方，下半屏时在上方；转写仍是视觉最上方内容。Island 上直接放状态、相邻的暂停 / 继续和停止、AI 开关、四向拖动把手；更多菜单放历史、设置、隐藏、退出。
+- **候选卡**：最多三轮，按容器高度减少；不重叠、不旋转，旧轮逐级透明且不可点击。无候选时不显示空白黄卡；首次请求可显示与最终布局一致的骨架。Web 与桌面均显示日语 ruby 和助词高亮。
+- **设置**：通用、对话、声纹、权限、数据与隐私、关于。普通项立即保存，无保存按钮；活跃会话锁定会话定义类项目。用户看不到模型名称、模型选择或模型删除；清除个人数据也保留模型文件。
+- **音频**：Web 只用系统默认麦克风。桌面可选真实麦克风设备及麦克风 / 系统音频 / 同时采集；同时采集为 mic=user、system=other 两条独立 lane，不混音。
+- **macOS 状态栏**：首次引导后默认不占 Dock；静态品牌图标菜单可显示 / 隐藏、控制会话、切换 AI、进入历史 / 设置及退出。动态状态图标和系统通知延期。所有主动退出路径均需确认；活跃时先停止保存再退出。
 
 ---
 
@@ -203,7 +238,7 @@ type ReplyCandidate = {
 | Prompt 评估 | **vieval**（根目录 config + `evals/`） | [vieval-dev/vieval](https://github.com/vieval-dev/vieval) |
 | 移动 | **PWA**（`apps/web` 构建） | — |
 | 桌面 Web | 同一 `packages/*`，`apps/web` 响应式 | 对齐 AIRI「浏览器入口」角色，非其命名 |
-| 桌面系统音 | **Electron** 薄入口（P1） | AIRI `stage-tamagotchi` 同款模式 |
+| 桌面系统音 | **Electron** 薄入口 | AIRI `stage-tamagotchi` 同款模式 |
 
 ### 2.2 Monorepo 结构（对齐 AIRI 的真实做法）
 
@@ -250,7 +285,7 @@ live-reply-coach/
 
 **`apps/web` 里通常只有**：`index.html`、`main.tsx`、`vite.config.ts`、`pwa` 插件——然后 `import` 来自 `@lrc/pages`、`@lrc/ui`。
 
-**`apps/desktop`（P1）里通常只有**：Electron main/preload、打包配置——渲染进程同样 `import` 同一批 packages。
+**`apps/desktop` 里通常只有**：Electron main/preload、打包配置——渲染进程同样 `import` 同一批 packages。
 
 ### 2.3 vieval：不需要 `eval-runner` app
 
@@ -414,21 +449,31 @@ playground **声纹页**同时覆盖 P0-c（`enroll` + `saveEmbedding`）与 P0-
 
 #### 会话持久化
 
-**MVP 方案 B**：`ConversationTurn[]` 持久化到 IndexedDB（append-only log），无历史会话列表。理由：iOS Safari PWA 后台杀进程频繁，纯内存会话随时蒸发；MVP 不做"回看历史会话"，但需要崩溃/刷新恢复 + F09 可重新生成。
+**MVP 采用方案 C**：完整 `ConversationSession` 持久化到 IndexedDB，提供一个 active-session 指针及本地历史列表 / 详情。每个正式 turn、候选和生命周期变化即时写入；不保存原始音频。历史无限期保留，直到用户清除。
 
 **`packages/conversation` 接口**：
 
 ```ts
-appendTurn(turn: ConversationTurn): Promise<void>              // 同时写内存 + IndexedDB
-loadActiveSession(): Promise<ConversationTurn[] | null>         // 启动时恢复进行中的会话
-clearActiveSession(): Promise<void>                             // "结束会话"按钮调用
+startSession(session): Promise<ConversationSession>
+appendTurn(turn): Promise<void>
+updateTurnSuggestions(turnId, suggestions): Promise<void>
+getActiveSession(): Promise<ConversationSession | null>
+pauseActiveSession(reason): Promise<ConversationSession | null>
+resumeActiveSession(): Promise<ConversationSession | null>
+stopActiveSession(): Promise<ConversationSession | null>
+listSessions(): Promise<ConversationSession[]>
+loadSession(sessionId): Promise<ConversationSession | null>
+updateSessionReview(sessionId, review): Promise<void>
+clearHistory(): Promise<void>
 ```
 
-F09 结束回顾 = 对当前 `ConversationTurn[]` 调 LLM 生成 summary；turns 持久化后即使用户刷新也能重新生成。
+- **开始**：创建新 `sessionId` 并冻结设置；新会话默认开启 AI 建议。
+- **暂停**：释放麦克风 / 系统采集，封存有效 partial，保留同一 session、上下文、界面和 AI 开关。
+- **停止**：等待已排队的定稿工作，封存 session；下一次开始必为新场景。短标题 / 总结异步生成，不阻塞新会话。
+- running / paused 在刷新、崩溃或设备中断后恢复为 `pauseReason: 'unexpected'`，可继续或停止。
+- 时长不计暂停区间。
 
-**将来演进到 C**：加历史会话列表页 + 详情页；加账号后按 `userId` 把会话同步到 Supabase，实现跨设备。`packages/conversation` 接口不变，只换底层存储（IndexedDB → IndexedDB + Supabase 双写）。
-
-`apps/web`（及 `apps/desktop`）目前就是照方案 B 上线的：`SessionPage`/`IslandPage` 直接用 `IndexedDbConversationStorage`，只提供崩溃/刷新恢复的单个进行中会话，没有历史会话列表/详情页——方案 C 仍是未来工作，尚未排期。
+停止时先写一个按冻结 `uiLang` 本地化的日期时间 + 对话语言标题；后台调用 `/session-review` 生成同语言短场景标题和小结。失败记录为 `failed`，历史页可重试；应用下次启动会继续 pending 任务。MVP 不提供重命名，也不做账号或跨设备同步。
 
 ### 2.5 提示词（Velin TSX）
 
@@ -511,6 +556,7 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 | 路由 | 协议 | 作用 | 备注 |
 |------|------|------|------|
 | `POST /llm` | **SSE 流式** | 接收对话上下文 + prompt，转发 LLM provider，流式回 3 条候选（传原始 token） | key 在服务端环境变量 |
+| `POST /session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 后台任务；客户端持久化状态并负责重试 |
 | `POST /stt` | 普通 POST | 接收 VAD 切好的音频片段，转发 **batch** STT provider，回 JSON 转写 | 与 speaker 判定并行 |
 | `WS /stt-realtime` | **WebSocket** | 薄 JSON 协议上行 speech PCM / commit；代理注入 key，映射到上游 realtime WSS；下行 partial / completed | 见 ADR 0004；仅 realtime provider |
 
@@ -544,7 +590,7 @@ app.post('/llm', streamSSE(async (c) => {
 **不做**：
 
 - 不做 pipeline 编排（VAD / speaker / conversation store 全在浏览器）
-- 不做账号 / 会话持久化（MVP 不上账号；将来加账号时再决定同步策略）
+- 不做账号或服务端会话持久化；本地 IndexedDB 会话由客户端负责
 - 不做 SSR / 模板渲染
 
 **STT 上行音频格式**：WAV，16kHz 单声道 PCM。
@@ -661,27 +707,27 @@ STT_OPENAI_MODEL=Qwen/Qwen3-ASR-1.7B   # 想更快切 Qwen/Qwen3-ASR-0.6B
 
 ### 3.1 需求拆分
 
-| 能力 | Web / PWA | Electron（P1） |
+| 能力 | Web / PWA | Electron |
 |------|-----------|----------------|
 | iPhone 麦克风 | ✅ | — |
 | Mac 浏览器麦克风 | ✅ | — |
 | Mac **系统声音** | ❌ | ✅ ScreenCaptureKit 等 |
 | 一套 UI 代码 | ✅ `packages/*` | ✅ 同一批 `packages/*` |
 
-### 3.2 结论：Web 优先 + 按需 Electron
+### 3.2 结论：Web / PWA + macOS Electron
 
 1. **移动端只需麦克风** → **PWA 足够**（Safari `getUserMedia` + 添加到主屏幕）。
 2. **桌面浏览器也要做** → `apps/web` 响应式布局，Mac 打开 URL 即可演示。
-3. **系统音频仅 P1** → `apps/desktop` Electron 薄壳；**与 web 共用 packages**，不是嵌 web 的静态 dist 壳（对齐 AIRI tamagotchi 模式）。
+3. **系统音频与状态栏工具形态** → `apps/desktop` Electron 薄壳；**与 web 共用 packages**，不是嵌 web 的静态 dist 壳（对齐 AIRI tamagotchi 模式）。
 
-### 3.3 为何选 Electron（P1 时）
+### 3.3 为何选 Electron
 
 - 路路有 Electron 经验；[AIRI `stage-tamagotchi`](https://github.com/moeru-ai/airi)、[DeepChat](https://github.com/thinkinaixyz/deepchat) 均为先例。
-- Mac 系统音需在主进程或 native 模块处理；MVP 可**先不做壳**，麦克风演示不阻塞。
+- Mac 系统音需由主进程注册 loopback capture，再把独立音轨交给渲染进程 VAD / STT。
 
 ```text
-Phase 0（MVP）：apps/web + PWA
-Phase 1（加分）：apps/desktop（Electron，共用 packages）
+Web / PWA：apps/web
+macOS 状态栏应用：apps/desktop（Electron，共用 packages）
 ```
 
 ### 3.4 三端交付
@@ -690,18 +736,22 @@ Phase 1（加分）：apps/desktop（Electron，共用 packages）
 |----|------|--------------|
 | iPhone | `apps/web` + PWA | Safari → 添加到主屏幕 |
 | Mac 浏览器 | `apps/web` | 访问 URL |
-| Mac 系统音 | `apps/desktop` | 安装 .dmg（P1） |
+| Mac 系统音 | `apps/desktop` | 安装 .dmg |
 
 ---
 
 ## 4. UI 与开发顺序
 
-### 4.1 产品 UI（等原型定稿）
+### 4.1 产品 UI（已按确认原型落地）
 
 - 页面与组件在 **`packages/pages` + `packages/ui`**，`apps/web` 只负责挂载。
-- Tailwind breakpoint：移动单列 + 底部操作条；桌面时间轴与候选并排。
-- shadcn 初始化在 `packages/ui`（或 `apps/web` 的 `components.json` 指向 ui 包）。
-- **依赖神奈子原型图**：会话页、声纹录制页、回顾页等布局与交互以她的稿为准；定稿前不在 `apps/web` 里硬猜 UI。
+- Web 宽屏采用 A+B：顶部控制固定，完整对话与建议舞台等高、分别内部滚动；对话按钮始终可见并可用同一按钮展开 / 收起。
+- Web 窄屏采用单栏建议舞台；对话按钮在内容区打开 / 收起响应式对话层。Web 不做上下翻转。
+- 桌面透明窗口默认 `420 × 640`，范围 `360 × 420` 至约 `680 × 当前工作区高`，按显示器记忆位置和尺寸；八向不可见命中区缩放，悬浮时才显示连续细边框，不显示四角圆点。
+- Island 水平居中，只通过四向箭头把手拖动。拖动松手后按 Island 所在半屏翻转内容，并保留中线滞回；转写永远位于所有便利贴上方。
+- 便利贴所有端保持正直、不重叠。按可用高度最多显示当前 + 两轮旧卡；旧轮逐级透明，最旧底部渐隐；旧轮不可点击。骨架复用最终三候选结构。
+- 日语候选用 `segments` 显示汉字假名与助词高亮。
+- 设置、历史、权限、错误、停止 / 退出确认均复用 `packages/pages` 与 shadcn 组件，不在 apps 内平行重造。
 
 ### 4.2 推荐开发顺序
 
@@ -736,15 +786,15 @@ Phase 1（加分）：apps/desktop（Electron，共用 packages）
 | 双人同麦 / 短句 / 音色接近导致 speaker 误判 | 本地 verification + 阈值调参；安静 demo；enrollment 念够 5–10 秒；必要时换 NeXt-TDNN mobile / Eagle 等更稳模型；测 user↔other 混淆率。**不**用 LLM 纠 speaker（成本翻倍且自身会错）；**不**做事后纠错；manual 标注仅活在 Playground（注入 mock 标签测下游），不进生产 env |
 | PWA 本地模型体积大 / iOS 慢 | 优先 NeXt-TDNN mobile 或 Eagle；Worker + 缓存；避免默认拉 360MB WavLM；**首次打开后台预下载全部权重**（§1.2，填表并行 + 右上角进度圆，下完才能进），会话中途再下会卡死演示 |
 | 权限延后申请被拒 / 打断录音 | 首次打开与模型预下载同期申请麦克风等权限；勿拖到「开始会话」或 enrollment 才弹 |
-| PWA iOS 后台杀进程 | UI 提示保持前台；会话可导出 |
-| 神奈子要独立 Mac 程序感 | P1 Electron 安装包；MVP 浏览器 + PWA 可演示核心 |
+| PWA iOS 后台杀进程 | 每轮即时写 IndexedDB；重开后以意外暂停恢复同一会话 |
+| 桌面双路重复收音 | mic 与 system 分 lane、不混音；提示佩戴耳机并保留 echo cancellation；MVP 不做文本跨源去重 |
 
 ---
 
 ## 6. 待与神奈子确认
 
-1. MVP 是否接受 **浏览器 + PWA**，Electron 仅 P1（系统音）？  
-2. 候选不可编辑，改为「换一批」是否 OK？  
+1. ~~MVP 是否接受浏览器 + PWA，Electron 仅 P1？~~ **已确认**：Web / PWA 与 macOS Electron 均落地。
+2. ~~候选不可编辑，改为「换一批」是否 OK？~~ **已确认**：候选不可编辑，也不做「换一批」或点选 / 高亮。
 3. 演示是否固定「便利店 3 轮对话」脚本？  
 
 ---

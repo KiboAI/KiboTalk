@@ -229,4 +229,51 @@ describe('T3 — real /llm SSE through proxy', () => {
     const errorEvent = messages.find((m) => m.event === 'error')
     expect(errorEvent?.data).toMatch(/LLM_ACTIVE/)
   })
+
+  it('generates a localized stopped-session title and summary', async () => {
+    setEnv()
+    const fetchSpy = mockUpstream(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '{"title":"便利店结账","summary":"练习了询问价格和刷卡付款。下次可以继续练习礼貌确认。"}',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 20, completion_tokens: 18, total_tokens: 38 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    )
+
+    const response = await fetch(`${baseUrl}/session-review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        turns: [
+          { id: 't1', speaker: 'other', text: 'カードですか？', startedAt: 1, endedAt: 2 },
+        ],
+        conversationLang: 'ja',
+        uiLang: 'zh',
+      }),
+    })
+
+    expect(response.ok).toBe(true)
+    await expect(response.json()).resolves.toEqual({
+      title: '便利店结账',
+      summary: '练习了询问价格和刷卡付款。下次可以继续练习礼貌确认。',
+    })
+    const [, init] = upstreamCall(fetchSpy.mock.calls as Array<[unknown, RequestInit | undefined]>)
+    const sent = JSON.parse(String(init.body)) as {
+      stream?: boolean
+      messages: Array<{ role: string; content: string }>
+    }
+    expect(sent.stream).not.toBe(true)
+    expect(sent.messages[1]?.content).toContain('Chinese')
+    expect(sent.messages[1]?.content).toContain('カードですか？')
+  })
 })

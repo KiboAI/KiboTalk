@@ -1,7 +1,7 @@
 # 桌面端：Island 日常壳 + 便利贴候选卡（参考 AIRI）
 
 - **日期**：2026-07-24
-- **状态**：头脑风暴（未进 spec）
+- **状态**：行为已确认并落地
 - **标签**：desktop, electron, island, onboarding, settings, reply-candidates, UX
 - **提出人**：路路（grill 会话中；对照 [moeru-ai/airi](https://github.com/moeru-ai/airi) `stage-tamagotchi`）
 - **关联**：[产品想法](./2026-07-16-live-reply-coach-language-assist.md) · [MVP spec §2.1 / Electron P1](../spec/live-reply-coach-mvp.md)
@@ -58,22 +58,27 @@ Playground 定稿的 Sticky 候选卡应可挂到日后 Island 附近 overlay；
 
 ## 开放问题（未决议 · 桌面壳）
 
-1. 便利贴锚点：永远贴 Island 上沿 / 随屏幕边缘 / 用户可拖？（仍开放）
-2. 三张卡同时出现还是错峰动画？点选一张后其余如何？（仍开放）
-3. ~~对话历史要不要另开「回顾」窗，还是正式产品刻意不做完整 transcript UI？~~ **已决议**：要开，走 History 列表页 + 详情页 + 会话内侧边栏（"方案 C"）；但这本身仍是**未来工作**，未随本轮 `design_system_to_web_and_desktop` 计划实现——`apps/web`/`apps/desktop` 目前都还是方案 B（单个可恢复的进行中会话，无历史列表），见 `docs/spec/live-reply-coach-mvp.md` §2.4「会话持久化」。
+1. ~~便利贴锚点：永远贴 Island 上沿 / 随屏幕边缘 / 用户可拖？~~ **已决议**：整个透明悬浮窗可通过 Island 拖动并从边缘 / 四角缩放；Island 位于当前屏幕下半区时内容在上，上半区时内容在下。只在拖动松手后翻转，Island 的屏幕坐标保持稳定；内部顺序始终为「转写 → 当前便利贴 → 旧一轮 → 旧二轮」。
+2. ~~三张卡同时出现还是错峰动画？点选一张后其余如何？~~ **已决议**：按容器高度显示，最多保留当前 + 两轮旧卡，垂直排列且不重叠；所有端、所有轮次都不旋转或横向错位，旧轮逐轮透明，最旧一轮底部渐隐。旧轮不可点击，也不提供候选点选 / 高亮。
+3. ~~对话历史要不要另开「回顾」窗，还是正式产品刻意不做完整 transcript UI？~~ **已决议并落地**：采用 History 列表页 + 详情页 + Web 会话内可折叠对话栏。会话与候选在 IndexedDB 长期保留，停止后后台生成短标题和总结。
 4. ~~Onboarding 是否强制声纹 + 语言，还是可跳过？~~ **已决议**：**强制**。`apps/web`/`apps/desktop` 均已按此实现：未确认语言 prefs 前不进 enrollment，未声纹入库前不进会话页/Island。
+
+## 已确认：macOS 状态栏壳
+
+- MVP 是 **macOS 状态栏优先**的工具应用；完成首次引导后默认不占 Dock，但悬浮窗始终可由状态栏菜单找回。
+- 状态栏图标本身使用**静态品牌图标**。运行 / 暂停 / 错误等动态图标变体不进 MVP，留作未来工作。
+- 菜单包含：当前状态、显示 / 隐藏悬浮窗、开始 / 暂停 / 继续 / 停止、AI 建议开关、历史、设置、退出。
+- 隐藏悬浮窗不会暂停；产生新建议也不会自动把窗弹回。MVP 不发系统通知，菜单状态可提示「有新建议」。
+- 所有用户主动退出路径（Island 菜单、状态栏菜单、`Cmd+Q`、Dock / 应用菜单）统一进入确认对话框。进行中 / 暂停时使用「结束会话并退出」，已停止时使用普通退出确认；系统关机 / 注销只做尽力持久化。
 
 Playground 本轮布局 / 纸感 / 多轮通知列已写入 [playground-visual-refactor.md](../spec/playground-visual-refactor.md)，不再在此开放。
 
-## 已知缺口（未来工作，本轮不做）
+## 已落地的原缺口
 
-`design_system_to_web_and_desktop` 计划落地 `apps/web` + `apps/desktop` 真实管线时发现、但按决议本轮不解决的用户视角缺口：
-
-- **首次权限体验**：麦克风（web）与 macOS 麦克风 + 屏幕录制（desktop 系统音频）授权目前只有最小化的请求调用，没有设计过的引导/拒绝重试流程。
-- **模型冷启动反馈**：Silero VAD / WavLM 声纹首次使用要加载数秒，产品 UI 目前没有任何「首次加载模型」提示（playground 旧的提示已在便利贴重构中删除，未在产品页找回）。
-- **错误态**：`ConversationTurn.sttFailed` 字段存在，但没有 UI 呈现 STT 失败、低置信度声纹判定、或 LLM/proxy 报错。
-- **隐私/数据控制**：产品面没有「清除声纹 / 清除全部历史」入口（目前只有 playground Enrollment.tsx 里的实验室按钮）。
-- **会话起止与命名语义**：新会话怎么开、何时算续接旧会话、会话标题（如「日语·便利店」）从哪来都还没定义——这也是 schema 债：`ConversationStorage` 还没有 `sessionId`/标题/元数据的概念，是方案 C 历史列表的前提。
+- 首次引导与设置包含麦克风及桌面系统音频 / 屏幕录制权限状态和重试入口。
+- 冷启动只显示通用语音能力准备进度，不向用户暴露模型名称或缓存管理。
+- 产品设置提供声纹重录 / 删除、清除历史和清除个人数据；个人重置不删除模型文件。
+- `ConversationStorage` 已加入 session 生命周期、冻结快照、标题、总结与历史查询。暂停保留同一 session；停止后下一次开始创建新 session。
 
 ## 非目标（本文不决定）
 

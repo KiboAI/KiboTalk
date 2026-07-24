@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@xsai/generate-text": "^0.4.3",
     "@xsai/stream-text": "^0.4.3"
   },
   "devDependencies": {

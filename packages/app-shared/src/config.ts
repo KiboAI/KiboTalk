@@ -1,4 +1,10 @@
-import type { AppLanguage, LearnerLevel, LevelByLang } from '@kibotalk/conversation'
+import type {
+  AppLanguage,
+  LearnerLevel,
+  LevelByLang,
+  SessionAudioSource,
+  UiLanguage,
+} from '@kibotalk/conversation'
 import { defaultVadConfig } from '@kibotalk/audio/vad'
 import { SILERO_VARIANTS } from './audio/silero-vad'
 
@@ -50,6 +56,33 @@ export const defaultLanguagePrefs: {
   conversationLang: 'ja',
   meaningLang: 'zh',
   levelByLang: defaultLevelByLang,
+}
+
+export type ProductTheme = 'system' | 'light' | 'dark'
+
+export const defaultProductPrefs: {
+  conversationLang: AppLanguage
+  levelByLang: LevelByLang
+  languagesConfirmed: boolean
+  theme: ProductTheme
+  launchAtLogin: boolean
+  audioSource: SessionAudioSource
+  microphoneDeviceId: string
+} = {
+  conversationLang: 'ja',
+  levelByLang: defaultLevelByLang,
+  languagesConfirmed: false,
+  theme: 'system',
+  launchAtLogin: false,
+  audioSource: 'microphone',
+  microphoneDeviceId: 'default',
+}
+
+export function systemUiLanguage(language = globalThis.navigator?.language ?? 'en'): UiLanguage {
+  const normalized = language.toLowerCase()
+  if (normalized.startsWith('zh')) return 'zh'
+  if (normalized.startsWith('ja')) return 'ja'
+  return 'en'
 }
 
 export const PASSPHRASE_BY_LANG: Record<AppLanguage, string> = {

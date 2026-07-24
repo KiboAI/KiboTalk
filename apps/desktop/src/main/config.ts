@@ -6,10 +6,15 @@ export type WindowBounds = { x: number; y: number; width: number; height: number
 
 export type AppConfig = {
   onboardingCompleted: boolean
-  islandBounds?: WindowBounds
+  islandBoundsByDisplay: Record<string, WindowBounds>
+  islandContentSide: 'above' | 'below'
 }
 
-const defaultConfig: AppConfig = { onboardingCompleted: false }
+const defaultConfig: AppConfig = {
+  onboardingCompleted: false,
+  islandBoundsByDisplay: {},
+  islandContentSide: 'above',
+}
 
 function configPath(): string {
   return join(app.getPath('userData'), 'config.json')

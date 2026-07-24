@@ -6,12 +6,9 @@ import type { SystemAudioStartResult } from '../shared/ipc'
  * renderer), so this lives directly in `apps/desktop` rather than a shared
  * package (per the desktop plan's Phase D note). Mirrors AIRI's
  * `@proj-airi/electron-screen-capture`, trimmed to the one thing we need:
- * a `getDisplayMedia()` call in the renderer that resolves with system audio
- * (the renderer drops the accompanying video track — see IslandPage).
- *
- * Not yet wired into `useConversationSession`'s VAD/STT pipeline — that's a
- * genuinely new "second audio source" architecture decision beyond this
- * plan's scope, logged as a known gap rather than built here.
+ * a `getDisplayMedia()` call in the renderer that resolves with system audio.
+ * The renderer drops the accompanying video track, then feeds the audio into
+ * its own VAD / segment lane as the counterpart speaker.
  */
 
 let activeHandlerInstalled = false

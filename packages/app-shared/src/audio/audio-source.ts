@@ -36,21 +36,46 @@ class VadProcessor extends AudioWorkletProcessor {
 registerProcessor('vad-processor', VadProcessor)
 `
 
+export type AudioSourceOptions = {
+  deviceId?: string
+  stream?: MediaStream
+  echoCancellation?: boolean
+  onDeviceEnded?: () => void
+}
+
 export class AudioSource {
   private audioContext: AudioContext | null = null
   private stream: MediaStream | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
   private workletNode: AudioWorkletNode | null = null
+  private stopping = false
+
+  constructor(private options: AudioSourceOptions = {}) {}
 
   async start(onChunk: (pcm: Float32Array) => void): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    })
+    this.stopping = false
+    this.stream =
+      this.options.stream ??
+      (await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: this.options.echoCancellation ?? true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          ...(this.options.deviceId && this.options.deviceId !== 'default'
+            ? { deviceId: { exact: this.options.deviceId } }
+            : {}),
+        },
+      }))
+    for (const track of this.stream.getAudioTracks()) {
+      track.addEventListener(
+        'ended',
+        () => {
+          if (!this.stopping) this.options.onDeviceEnded?.()
+        },
+        { once: true },
+      )
+    }
 
     this.audioContext = new AudioContext({ sampleRate: 16000 })
     const blob = new Blob([WORKLET_SOURCE], { type: 'application/javascript' })
@@ -70,6 +95,7 @@ export class AudioSource {
   }
 
   stop(): void {
+    this.stopping = true
     this.workletNode?.disconnect()
     this.sourceNode?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())

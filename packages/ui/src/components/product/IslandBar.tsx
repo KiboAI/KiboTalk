@@ -9,16 +9,15 @@ export type IslandBarProps = React.HTMLAttributes<HTMLDivElement>
  * Desktop Island / playground floating-sim dock chrome: dark glass bar
  * holding a status readout, state toggles, and one-shot nav buttons.
  *
- * Doubles as the frameless window's drag handle (`-webkit-app-region:drag`
- * — inert outside Electron, so this is safe in the playground preview too).
- * Buttons inside opt back out via `no-drag` so they stay clickable.
+ * The bar itself is not draggable: movement is intentionally limited to the
+ * explicit four-way-arrow handle.
  */
 export function IslandBar({ className, children, ...props }: IslandBarProps) {
   return (
     <div
       role="toolbar"
       aria-label="悬浮岛"
-      className={cn('island-bar flex items-center gap-2 px-2.5 py-2 [-webkit-app-region:drag]', className)}
+      className={cn('island-bar flex items-center gap-2 px-2.5 py-2 [-webkit-app-region:no-drag]', className)}
       {...props}
     >
       {children}
@@ -71,10 +70,8 @@ export function IslandSeparator() {
 }
 
 /**
- * Static drag-affordance icon — not a button (no `onClick`, stays inside the
- * bar's `-webkit-app-region:drag` region rather than opting out like the
- * other controls). The whole bar is already draggable; this just signals it,
- * matching AIRI's explicit move icon in `controls-island` (`ph:arrows-out-cardinal`).
+ * Dedicated native window drag region, matching AIRI's four-way-arrow
+ * movement affordance.
  */
 export function IslandDragHandle({ label = '拖动可移动悬浮窗' }: { label?: string }) {
   return (
@@ -83,7 +80,7 @@ export function IslandDragHandle({ label = '拖动可移动悬浮窗' }: { label
         <div
           role="presentation"
           aria-hidden
-          className="flex size-8 shrink-0 cursor-move items-center justify-center rounded-sm bg-white/8 text-island-foreground/70"
+          className="flex size-8 shrink-0 cursor-move items-center justify-center rounded-sm bg-white/8 text-island-foreground/70 [-webkit-app-region:drag]"
         >
           <Move className="size-4" />
         </div>

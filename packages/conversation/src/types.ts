@@ -8,6 +8,20 @@ export type LearnerLevel = 'beginner' | 'intermediate' | 'advanced'
 
 export type LevelByLang = Record<AppLanguage, LearnerLevel>
 
+export type UiLanguage = AppLanguage
+
+export type SessionAudioSource = 'microphone' | 'system' | 'both'
+
+/** Settings frozen when a session starts. */
+export type ConversationSessionSnapshot = {
+  conversationLang: AppLanguage
+  meaningLang: AppLanguage
+  uiLang: UiLanguage
+  level: LearnerLevel
+  audioSource: SessionAudioSource
+  microphoneDeviceId: string
+}
+
 export type ReplySegmentRole = 'content' | 'particle' | 'punct'
 
 /** One surface span of a reply; used for furigana + particle highlight (ja). */
@@ -45,4 +59,42 @@ export type ConversationTurn = {
   suggestions?: ReplyCandidate[]
   userId?: string
   sttFailed?: boolean
+}
+
+export type ConversationSessionStatus = 'running' | 'paused' | 'stopped'
+
+export type ConversationPauseReason = 'user' | 'unexpected'
+
+export type ConversationReviewStatus = 'pending' | 'ready' | 'failed'
+
+/**
+ * Durable session record. Audio is intentionally absent: only text,
+ * suggestions, the frozen settings snapshot, and review metadata persist.
+ */
+export type ConversationSession = {
+  id: string
+  status: ConversationSessionStatus
+  startedAt: number
+  endedAt?: number
+  pausedAt?: number
+  pausedDurationMs: number
+  pauseReason?: ConversationPauseReason
+  snapshot: ConversationSessionSnapshot
+  turns: ConversationTurn[]
+  title: string
+  summary?: string
+  reviewStatus: ConversationReviewStatus
+  reviewError?: string
+}
+
+export type ConversationSessionStart = Pick<
+  ConversationSession,
+  'id' | 'startedAt' | 'snapshot' | 'title'
+>
+
+export type ConversationReviewUpdate = {
+  title?: string
+  summary?: string
+  reviewStatus: ConversationReviewStatus
+  reviewError?: string
 }

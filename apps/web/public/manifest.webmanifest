@@ -1,0 +1,10 @@
+{
+  "name": "KiboTalk · Live Reply Coach",
+  "short_name": "KiboTalk",
+  "description": "Live foreign-language conversation coaching with local transcripts and reply suggestions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#facc15"
+}

@@ -213,6 +213,70 @@
     border-color: rgba(120, 90, 0, 0.35);
   }
 
+  .island-window-shell {
+    position: relative;
+    container-type: size;
+    pointer-events: none;
+  }
+
+  .island-window-shell::after {
+    position: absolute;
+    inset: 0;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    content: "";
+    pointer-events: none;
+    transition:
+      border-color 140ms var(--ease-out-soft),
+      box-shadow 140ms var(--ease-out-soft);
+  }
+
+  .island-window-shell:has(.desktop-interactive:hover)::after,
+  .island-window-shell[data-pointer-active="true"]::after {
+    border-color: rgb(255 255 255 / 0.34);
+    box-shadow:
+      inset 0 0 0 1px rgb(0 0 0 / 0.14),
+      0 0 0 1px rgb(250 204 21 / 0.5);
+  }
+
+  .desktop-interactive {
+    pointer-events: auto;
+  }
+
+  .desktop-float-content .sticky-note {
+    width: 100%;
+  }
+
+  .web-suggestion-stage .sticky-note {
+    width: min(100%, 36rem);
+  }
+
+  @container (max-height: 500px) {
+    .desktop-float-content .sticky-note:not(.sticky-note-older) {
+      min-height: 0;
+      padding: 12px 14px 14px;
+    }
+
+    .desktop-float-content .sticky-note:not(.sticky-note-older) > ol {
+      gap: 0.5rem;
+    }
+
+    .desktop-float-content .sticky-note:not(.sticky-note-older) > ol > li {
+      padding-top: 0.5rem;
+    }
+
+    .desktop-float-content .sticky-note:not(.sticky-note-older) > ol > li > div:first-child {
+      min-height: 0;
+      font-size: 1rem;
+      line-height: 1.55;
+    }
+
+    .desktop-float-content .sticky-note:not(.sticky-note-older) > ol > li > div:nth-child(2) {
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+    }
+  }
+
   /* Dark glass pill — the Island's live-draft caption strip. Same family as
      `.island-bar`, just pill-shaped and without the toolbar's elevation. */
   .glass-chip {
@@ -239,18 +303,18 @@
     opacity: 1;
   }
 
-  .sticky-note-interactive {
-    transition:
-      transform 220ms var(--ease-out-soft),
-      box-shadow 220ms var(--ease-out-soft);
+  .sticky-note-older {
+    min-height: 0;
+    padding-block: 12px 14px;
   }
 
-  .sticky-note-interactive:active {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(120, 90, 0, 0.18);
+  .sticky-round-oldest {
+    -webkit-mask-image: linear-gradient(180deg, #000 56%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 56%, transparent 100%);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .sticky-note-interactive {
+    .sticky-note {
       transition: none;
     }
   }

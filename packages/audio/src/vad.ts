@@ -1,16 +1,26 @@
+import {
+  IOAttributes,
+  IOSpanNames,
+  IOSubsystems,
+  startSpan,
+} from '@kibotalk/observability'
+
 /**
  * Voice Activity Detection state machine (spec §2.4; config shape follows AIRI's
  * `createVAD`).
  *
  * The neural-net inference is injected (`infer` returns a speech probability for
- * a PCM chunk), so this module is provider-agnostic, dependency-free, and
- * testable in Node without loading a model. The playground wires Silero VAD via
+ * a PCM chunk), so this module is provider-agnostic and testable in Node without
+ * loading a model. The playground wires Silero VAD via
  * `@huggingface/transformers` into `infer`.
  *
  * Emits `speech-start`, `speech-end`, and `speech-ready` (with the segmented PCM
  * buffer + duration). Segments shorter than `minSpeechDurationMs` are dropped.
  * Also emits `prob` (the raw speech probability 0–1) after every inference, for
  * live visualization/tuning (mirrors AIRI's `debug` event).
+ *
+ * When IO tracing is leased, emits one VAD span per speech-ready segment
+ * (startTime = speech-start). Short/skipped segments do not emit a span.
  */
 export type VadConfig = {
   sampleRate: number
@@ -89,6 +99,8 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
   let recording: Float32Array[] = []
   // Serialize inference so out-of-order chunk arrival can't race the state machine.
   let chain: Promise<void> = Promise.resolve()
+  /** Wall-clock start of current speech segment (for IO tracer). */
+  let speechStartPerf: number | null = null
 
   const maxPrevBuffers = () =>
     Math.ceil((config.speechPadMs * (config.sampleRate / 1000)) / config.newBufferSize)
@@ -117,6 +129,7 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
         inSpeech = true
         silenceSamples = 0
         speechSamples = 0
+        speechStartPerf = performance.now()
         // Left-pad with the audio immediately preceding the detected speech.
         recording = [...prevBuffers]
         emit('speech-start', undefined)
@@ -135,9 +148,23 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
         const buffer = concat(recording)
         recording = []
         const speechMs = (speechSamples / config.sampleRate) * 1000
+        const startPerf = speechStartPerf
+        speechStartPerf = null
         emit('speech-end', undefined)
         if (speechMs >= config.minSpeechDurationMs) {
-          emit('speech-ready', { buffer, duration: buffer.length / config.sampleRate })
+          const durationSec = buffer.length / config.sampleRate
+          if (startPerf != null) {
+            const span = startSpan(IOSpanNames.VoiceActivity, {
+              startTime: performance.timeOrigin + startPerf,
+              attrs: {
+                [IOAttributes.Subsystem]: IOSubsystems.VAD,
+                [IOAttributes.VadDuration]: durationSec,
+                [IOAttributes.VadSpeechSamples]: speechSamples,
+              },
+            })
+            span.end()
+          }
+          emit('speech-ready', { buffer, duration: durationSec })
         } else {
           emit('status', { type: 'skip', message: `segment too short (${speechMs.toFixed(0)}ms)` })
         }

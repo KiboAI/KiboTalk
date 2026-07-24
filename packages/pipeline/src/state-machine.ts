@@ -9,6 +9,16 @@ import type {
   Segment,
 } from './types'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
+import type { Span } from '@kibotalk/observability'
+import {
+  IOAttributes,
+  IOEvents,
+  IOSpanNames,
+  IOSubsystems,
+  getActiveTurnSpan,
+  setActiveTurnSpan,
+  startSpan,
+} from '@kibotalk/observability'
 import { envNumber } from './env'
 
 const defaultGenerateId = (): string =>
@@ -45,8 +55,9 @@ export class Pipeline {
   private config: Required<import('./types').PipelineConfig>
   private generateId: () => string
   private sleep: (ms: number) => Promise<void>
-  private currentLlm: { abort: AbortController; turnId: string } | null = null
+  private currentLlm: { abort: AbortController; turnId: string; span?: Span } | null = null
   private currentStt: AbortController | null = null
+  private turnSpans = new Map<string, Span>()
 
   constructor(deps: PipelineDeps) {
     this.stt = deps.stt
@@ -90,7 +101,15 @@ export class Pipeline {
     this.setState(segment.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
 
     const turnId = this.generateId()
-    const text = await this.transcribeWithRetry(segment.pcm)
+    const turnSpan = startSpan(IOSpanNames.InteractionTurn, {
+      attrs: {
+        [IOAttributes.TurnId]: turnId,
+      },
+    })
+    this.turnSpans.set(turnId, turnSpan)
+    setActiveTurnSpan(turnSpan)
+
+    const text = await this.transcribeWithRetry(segment.pcm, turnSpan)
     const sttFailed = text === null
 
     await this.commitTurn({
@@ -101,6 +120,7 @@ export class Pipeline {
       endedAt: segment.endedAt,
       sttFailed,
       interrupted: segment.interrupted,
+      turnSpan,
     })
   }
 
@@ -113,6 +133,15 @@ export class Pipeline {
     this.setState(input.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
 
     const turnId = this.generateId()
+    const turnSpan = startSpan(IOSpanNames.InteractionTurn, {
+      attrs: {
+        [IOAttributes.TurnId]: turnId,
+        ...(input.text ? { [IOAttributes.ASRText]: input.text } : {}),
+      },
+    })
+    this.turnSpans.set(turnId, turnSpan)
+    setActiveTurnSpan(turnSpan)
+
     const sttFailed = input.sttFailed === true
     await this.commitTurn({
       turnId,
@@ -122,6 +151,7 @@ export class Pipeline {
       endedAt: input.endedAt,
       sttFailed,
       interrupted: input.interrupted,
+      turnSpan,
     })
   }
 
@@ -130,6 +160,12 @@ export class Pipeline {
     const aborted = this.currentLlm
     aborted.abort.abort()
     this.currentLlm = null
+    aborted.span?.setAttribute(IOAttributes.ASRAbort, true)
+    aborted.span?.end()
+    const turnSpan = this.turnSpans.get(aborted.turnId)
+    turnSpan?.end()
+    this.turnSpans.delete(aborted.turnId)
+    if (getActiveTurnSpan() === turnSpan) setActiveTurnSpan(undefined)
     this.emit({ type: 'llmAborted', turnId: aborted.turnId })
   }
 
@@ -141,6 +177,7 @@ export class Pipeline {
     endedAt: number
     sttFailed: boolean
     interrupted?: boolean
+    turnSpan: Span
   }): Promise<void> {
     const turn: ConversationTurn = {
       id: args.turnId,
@@ -150,6 +187,9 @@ export class Pipeline {
       endedAt: args.endedAt,
       ...(args.sttFailed ? { sttFailed: true } : {}),
     }
+    if (args.text) {
+      args.turnSpan.setAttribute(IOAttributes.ASRText, args.text)
+    }
     await this.conversation.appendTurn(turn)
     this.emit({ type: 'turnAppended', turn })
 
@@ -158,43 +198,80 @@ export class Pipeline {
     }
 
     if (!args.interrupted) {
-      void this.runLlm(args.turnId).catch(() => {})
+      void this.runLlm(args.turnId, args.turnSpan).catch(() => {})
     } else {
+      args.turnSpan.end()
+      this.turnSpans.delete(args.turnId)
+      if (getActiveTurnSpan() === args.turnSpan) setActiveTurnSpan(undefined)
       this.setState('IDLE')
     }
   }
 
-  private async transcribeWithRetry(pcm: Float32Array): Promise<string | null> {
+  private async transcribeWithRetry(pcm: Float32Array, parent: Span): Promise<string | null> {
+    const sttSpan = startSpan(IOSpanNames.SpeechRecognition, {
+      parent,
+      attrs: {
+        [IOAttributes.Subsystem]: IOSubsystems.STT,
+        [IOAttributes.SttPath]: 'batch',
+      },
+    })
     this.currentStt = new AbortController()
     try {
-      return await this.stt.transcribe(pcm, this.currentStt.signal)
-    } catch {
-      this.currentStt = new AbortController()
-      await this.sleep(this.config.sttRetryBackoffMs)
       try {
-        return await this.stt.transcribe(pcm, this.currentStt.signal)
+        const text = await this.stt.transcribe(pcm, this.currentStt.signal)
+        sttSpan.setAttribute(IOAttributes.ASRText, text)
+        sttSpan.end()
+        return text
       } catch {
-        return null
+        this.currentStt = new AbortController()
+        await this.sleep(this.config.sttRetryBackoffMs)
+        try {
+          const text = await this.stt.transcribe(pcm, this.currentStt.signal)
+          sttSpan.setAttribute(IOAttributes.ASRText, text)
+          sttSpan.end()
+          return text
+        } catch {
+          sttSpan.setAttribute(IOAttributes.ASRAbort, true)
+          sttSpan.end()
+          return null
+        }
       }
     } finally {
       this.currentStt = null
     }
   }
 
-  private async runLlm(turnId: string): Promise<void> {
+  private async runLlm(turnId: string, turnSpan: Span): Promise<void> {
     const context = (await this.conversation.loadActiveSession()) ?? []
     const controller = new AbortController()
-    this.currentLlm = { abort: controller, turnId }
+    const llmSpan = startSpan(IOSpanNames.LLMInference, {
+      parent: turnSpan,
+      attrs: {
+        [IOAttributes.Subsystem]: IOSubsystems.LLM,
+        [IOAttributes.TurnId]: turnId,
+      },
+    })
+    this.currentLlm = { abort: controller, turnId, span: llmSpan }
     this.setState('LLM_STREAMING')
     this.emit({ type: 'candidatesStreaming', turnId })
 
     const candidates: ReplyCandidate[] = []
     const partials: Map<number, Partial<Record<CandidateField, string>>> = new Map()
+    let firstTokenMarked = false
+    const llmStart = performance.now()
 
     const streamOnce = async (): Promise<'done' | 'aborted' | 'failed'> => {
       try {
         for await (const ev of this.llm.streamCandidates(context, controller.signal)) {
           if (controller.signal.aborted) return 'aborted'
+          if (!firstTokenMarked && ev.type === 'candidate-delta') {
+            firstTokenMarked = true
+            const ttftMs = performance.now() - llmStart
+            llmSpan.addEvent(IOEvents.LLMFirstToken, {
+              [IOAttributes.LLM_TTFT]: ttftMs,
+            })
+            llmSpan.setAttribute(IOAttributes.LLM_TTFT, ttftMs)
+          }
           this.handleStreamEvent(ev, turnId, candidates, partials)
           if (ev.type === 'done') break
         }
@@ -210,6 +287,7 @@ export class Pipeline {
       // Rule 7: retry once.
       candidates.length = 0
       partials.clear()
+      firstTokenMarked = false
       await this.sleep(this.config.llmRetryBackoffMs)
       this.emit({ type: 'candidatesStreaming', turnId })
       outcome = await streamOnce()
@@ -221,14 +299,23 @@ export class Pipeline {
 
     this.currentLlm = null
     if (outcome === 'done') {
+      llmSpan.setAttribute(IOAttributes.LLMTextLength, candidates.length)
+      llmSpan.end()
+      turnSpan.end()
+      this.turnSpans.delete(turnId)
+      if (getActiveTurnSpan() === turnSpan) setActiveTurnSpan(undefined)
       this.emit({ type: 'candidatesDone', turnId, candidates })
       this.setState('IDLE')
     } else if (outcome === 'failed') {
+      llmSpan.end()
+      turnSpan.end()
+      this.turnSpans.delete(turnId)
+      if (getActiveTurnSpan() === turnSpan) setActiveTurnSpan(undefined)
       this.emit({ type: 'llmFailed', turnId })
       this.setState('IDLE')
     }
     // outcome === 'aborted': partials already discarded by the superseding
-    // segment; emit nothing here.
+    // segment; emit nothing here (abortInFlightLlm already ended spans).
   }
 
   private handleStreamEvent(

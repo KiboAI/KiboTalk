@@ -12,7 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@kibotalk/conversation": "workspace:*"
+    "@kibotalk/conversation": "workspace:*",
+    "@kibotalk/observability": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

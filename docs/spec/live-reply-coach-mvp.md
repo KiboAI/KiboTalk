@@ -428,6 +428,8 @@ F09 结束回顾 = 对当前 `ConversationTurn[]` 调 LLM 生成 summary；turns
 
 **将来演进到 C**：加历史会话列表页 + 详情页；加账号后按 `userId` 把会话同步到 Supabase，实现跨设备。`packages/conversation` 接口不变，只换底层存储（IndexedDB → IndexedDB + Supabase 双写）。
 
+`apps/web`（及 `apps/desktop`）目前就是照方案 B 上线的：`SessionPage`/`IslandPage` 直接用 `IndexedDbConversationStorage`，只提供崩溃/刷新恢复的单个进行中会话，没有历史会话列表/详情页——方案 C 仍是未来工作，尚未排期。
+
 ### 2.5 提示词（Velin TSX）
 
 `packages/prompts` 内按用途拆分：`reply-suggestions.tsx`、`session-summary.tsx` 等。

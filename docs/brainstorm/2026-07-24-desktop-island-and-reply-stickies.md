@@ -58,15 +58,24 @@ Playground 定稿的 Sticky 候选卡应可挂到日后 Island 附近 overlay；
 
 ## 开放问题（未决议 · 桌面壳）
 
-1. 便利贴锚点：永远贴 Island 上沿 / 随屏幕边缘 / 用户可拖？
-2. 三张卡同时出现还是错峰动画？点选一张后其余如何？
-3. 对话历史要不要另开「回顾」窗，还是正式产品刻意不做完整 transcript UI？
-4. Onboarding 是否强制声纹 + 语言，还是可跳过（对照 AIRI 可 skip，但我们的 verify 依赖声纹）？
+1. 便利贴锚点：永远贴 Island 上沿 / 随屏幕边缘 / 用户可拖？（仍开放）
+2. 三张卡同时出现还是错峰动画？点选一张后其余如何？（仍开放）
+3. ~~对话历史要不要另开「回顾」窗，还是正式产品刻意不做完整 transcript UI？~~ **已决议**：要开，走 History 列表页 + 详情页 + 会话内侧边栏（"方案 C"）；但这本身仍是**未来工作**，未随本轮 `design_system_to_web_and_desktop` 计划实现——`apps/web`/`apps/desktop` 目前都还是方案 B（单个可恢复的进行中会话，无历史列表），见 `docs/spec/live-reply-coach-mvp.md` §2.4「会话持久化」。
+4. ~~Onboarding 是否强制声纹 + 语言，还是可跳过？~~ **已决议**：**强制**。`apps/web`/`apps/desktop` 均已按此实现：未确认语言 prefs 前不进 enrollment，未声纹入库前不进会话页/Island。
 
 Playground 本轮布局 / 纸感 / 多轮通知列已写入 [playground-visual-refactor.md](../spec/playground-visual-refactor.md)，不再在此开放。
 
+## 已知缺口（未来工作，本轮不做）
+
+`design_system_to_web_and_desktop` 计划落地 `apps/web` + `apps/desktop` 真实管线时发现、但按决议本轮不解决的用户视角缺口：
+
+- **首次权限体验**：麦克风（web）与 macOS 麦克风 + 屏幕录制（desktop 系统音频）授权目前只有最小化的请求调用，没有设计过的引导/拒绝重试流程。
+- **模型冷启动反馈**：Silero VAD / WavLM 声纹首次使用要加载数秒，产品 UI 目前没有任何「首次加载模型」提示（playground 旧的提示已在便利贴重构中删除，未在产品页找回）。
+- **错误态**：`ConversationTurn.sttFailed` 字段存在，但没有 UI 呈现 STT 失败、低置信度声纹判定、或 LLM/proxy 报错。
+- **隐私/数据控制**：产品面没有「清除声纹 / 清除全部历史」入口（目前只有 playground Enrollment.tsx 里的实验室按钮）。
+- **会话起止与命名语义**：新会话怎么开、何时算续接旧会话、会话标题（如「日语·便利店」）从哪来都还没定义——这也是 schema 债：`ConversationStorage` 还没有 `sessionId`/标题/元数据的概念，是方案 C 历史列表的前提。
+
 ## 非目标（本文不决定）
 
-- 黄色主题与纸感 token → 见视觉重构 spec
+- 黄色主题与纸感 token → 见视觉重构 spec；实际 token 现已落地 [`packages/ui/src/theme.css`](../../packages/ui/src/theme.css)，组件清单见 [product-design-system.md](../spec/product-design-system.md)
 - 不改 MVP 功能边界（仍是听 → 3 候选 → 用户自己说）
-- 不立刻开 `apps/desktop`；P1 Electron 仍以 spec 为准

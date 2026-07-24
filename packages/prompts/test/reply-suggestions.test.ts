@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildReplySuggestionsMessages,
   renderReplySuggestionsPrompt,
-  REPLY_SUGGESTIONS_SYSTEM,
+  buildReplySuggestionsSystem,
 } from '../src/index'
 import type { ConversationTurn } from '@kibotalk/conversation'
 
@@ -16,23 +16,25 @@ function turn(speaker: 'user' | 'other', text: string): ConversationTurn {
   }
 }
 
-describe('reply suggestions prompt (production schema)', async () => {
-  const args = {
-    context: [
-      turn('other', 'いらっしゃいませ'),
-      turn('user', 'これをください'),
-    ],
-    level: 'N5',
-  }
+const baseArgs = {
+  context: [
+    turn('other', 'いらっしゃいませ'),
+    turn('user', 'これをください'),
+  ],
+  level: 'beginner' as const,
+  conversationLang: 'ja' as const,
+  meaningLang: 'zh' as const,
+}
 
-  const messages = await buildReplySuggestionsMessages(args)
-  const output = await renderReplySuggestionsPrompt(args)
+describe('reply suggestions prompt (production schema)', async () => {
+  const messages = await buildReplySuggestionsMessages(baseArgs)
+  const output = await renderReplySuggestionsPrompt(baseArgs)
 
   it('returns system + user messages', () => {
     expect(messages).toHaveLength(2)
     expect(messages[0]?.role).toBe('system')
     expect(messages[1]?.role).toBe('user')
-    expect(messages[0]?.content).toBe(REPLY_SUGGESTIONS_SYSTEM)
+    expect(messages[0]?.content).toBe(buildReplySuggestionsSystem('ja'))
   })
 
   it('debug render includes SYSTEM and USER sections', () => {
@@ -40,17 +42,16 @@ describe('reply suggestions prompt (production schema)', async () => {
     expect(output).toContain('USER:')
   })
 
-  it('requires meaningZh, targetText, segments — not top-level reading', () => {
+  it('requires meaning, targetText, segments — not top-level reading (ja)', () => {
     const user = messages[1]!.content
-    expect(user).toContain('meaningZh')
+    expect(user).toContain('meaning')
     expect(user).toContain('targetText')
     expect(user).toContain('segments')
     expect(user).toContain('particle')
     expect(user).toMatch(/Do NOT include top-level/)
     expect(user).toMatch(/NEVER put/)
     expect(user).toContain('こんにちは')
-    // Schema keys list should not demand phrase-level reading as required.
-    expect(user).toMatch(/keys ONLY:\s*meaningZh, targetText, segments/i)
+    expect(user).toMatch(/keys ONLY:\s*meaning, targetText, segments/i)
   })
 
   it('includes the conversation context (prior turn texts)', () => {
@@ -58,8 +59,10 @@ describe('reply suggestions prompt (production schema)', async () => {
     expect(messages[1]!.content).toContain('これをください')
   })
 
-  it('includes the level and not a scene field', () => {
-    expect(messages[1]!.content).toContain('N5')
+  it('includes the level, langs, and not a scene field', () => {
+    expect(messages[1]!.content).toContain('beginner')
+    expect(messages[1]!.content).toContain('Japanese')
+    expect(messages[1]!.content).toContain('中文')
     expect(output).not.toMatch(/Scene:/i)
   })
 
@@ -78,9 +81,28 @@ describe('reply suggestions prompt (production schema)', async () => {
   })
 
   it('handles an empty context gracefully', async () => {
-    const msgs = await buildReplySuggestionsMessages({ context: [], level: 'N4' })
+    const msgs = await buildReplySuggestionsMessages({
+      context: [],
+      level: 'intermediate',
+      conversationLang: 'ja',
+      meaningLang: 'zh',
+    })
     expect(msgs[1]!.content).toContain('no prior turns')
-    expect(msgs[1]!.content).toContain('N4')
+    expect(msgs[1]!.content).toContain('intermediate')
     expect(msgs[1]!.content).toContain('none (opening)')
+  })
+
+  it('omits furigana rules for non-Japanese conversation language', async () => {
+    const msgs = await buildReplySuggestionsMessages({
+      context: [],
+      level: 'beginner',
+      conversationLang: 'en',
+      meaningLang: 'zh',
+    })
+    const user = msgs[1]!.content
+    expect(user).toMatch(/keys ONLY:\s*meaning, targetText/i)
+    expect(user).not.toContain('Furigana')
+    expect(user).toContain('English')
+    expect(msgs[0]!.content).toContain('English learner')
   })
 })

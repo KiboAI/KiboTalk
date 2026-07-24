@@ -31,7 +31,7 @@ Score overall quality on 0.0–1.0 and EACH dimension on 0.0–1.0:
   Top-level "reading" is whole-phrase kana fallback; do not confuse it with per-segment ruby.
 - particle_quality: CRITICAL — 助詞 (は/が/を/に/で/と/も/へ/から/まで/より/の/や/か/ね/よ…) should be
   separate segments with role "particle", not merged into content; punct → role "punct".
-- schema_faithfulness: JSON shape / surfaces concat to targetText / Chinese meaningZh OK
+- schema_faithfulness: JSON shape / surfaces concat to targetText / Chinese meaning OK
 
 Return STRICT JSON only:
 {"score":0.0,"dimensions":{"level_fit":0.0,"naturalness":0.0,"diversity":0.0,"usefulness":0.0,"furigana_quality":0.0,"particle_quality":0.0,"schema_faithfulness":0.0},"reason":"short 中文 or English","annotationNotes":"list concrete bad ruby/particle examples if any"}

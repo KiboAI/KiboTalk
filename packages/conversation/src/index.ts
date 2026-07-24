@@ -1,6 +1,9 @@
 export type { ConversationStorage } from './storage'
 export type {
+  AppLanguage,
   ConversationTurn,
+  LearnerLevel,
+  LevelByLang,
   ReplyCandidate,
   ReplySegment,
   ReplySegmentRole,

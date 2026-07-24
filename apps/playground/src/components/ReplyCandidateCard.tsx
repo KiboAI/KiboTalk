@@ -25,11 +25,12 @@ export type ReplyCandidateCardProps = {
 }
 
 /**
- * Renders a reply candidate: ruby over kanji, particle highlight, Chinese below.
- * Falls back to plain targetText when segments are missing (optional legacy reading).
+ * Renders a reply candidate: target text (ruby/particles when segments exist),
+ * meaning below. Falls back to plain targetText when segments are missing
+ * (optional legacy reading).
  */
 export function ReplyCandidateCard({ candidate, compact = false, className }: ReplyCandidateCardProps) {
-  const { meaningZh, targetText, reading, segments } = candidate
+  const { meaning, targetText, reading, segments } = candidate
   const jp =
     segments && segments.length > 0 ? (
       <span className="leading-relaxed">
@@ -45,7 +46,7 @@ export function ReplyCandidateCard({ candidate, compact = false, className }: Re
     return (
       <li className={cn('text-xs text-muted-foreground', className)}>
         <span className="text-foreground">{jp}</span>
-        {meaningZh ? <span className="ml-1">（{meaningZh}）</span> : null}
+        {meaning ? <span className="ml-1">（{meaning}）</span> : null}
         {!segments?.length && reading ? <span className="ml-1">[{reading}]</span> : null}
       </li>
     )
@@ -54,7 +55,7 @@ export function ReplyCandidateCard({ candidate, compact = false, className }: Re
   return (
     <li className={cn('rounded-md border p-3', className)}>
       <div className="text-base font-medium leading-loose">{jp}</div>
-      {meaningZh ? <div className="mt-1 text-xs text-muted-foreground">{meaningZh}</div> : null}
+      {meaning ? <div className="mt-1 text-xs text-muted-foreground">{meaning}</div> : null}
       {!segments?.length && reading ? (
         <div className="mt-0.5 text-xs text-muted-foreground/80">{reading}</div>
       ) : null}

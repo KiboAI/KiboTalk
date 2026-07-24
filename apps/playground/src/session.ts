@@ -34,9 +34,9 @@ export class PlaygroundLlm implements LlmClient {
     const lastOther = [...context].reverse().find((t) => t.speaker === 'other')
     const prompt = lastOther?.text ?? '(empty)'
     const candidates: ReplyCandidate[] = [
-      { id: 'c0', meaningZh: `回复A·${prompt}`, targetText: `そうですか（A）`, reading: 'sou desu ka (A)' },
-      { id: 'c1', meaningZh: `回复B·${prompt}`, targetText: `なるほど（B）`, reading: 'naruhodo (B)' },
-      { id: 'c2', meaningZh: `回复C·${prompt}`, targetText: `もう一度お願いします（C）`, reading: 'mou ichido onegaai shimasu (C)' },
+      { id: 'c0', meaning: `回复A·${prompt}`, targetText: `そうですか（A）`, reading: 'sou desu ka (A)' },
+      { id: 'c1', meaning: `回复B·${prompt}`, targetText: `なるほど（B）`, reading: 'naruhodo (B)' },
+      { id: 'c2', meaning: `回复C·${prompt}`, targetText: `もう一度お願いします（C）`, reading: 'mou ichido onegaai shimasu (C)' },
     ]
     for (let i = 0; i < candidates.length; i++) {
       yield { type: 'candidate-start', index: i }

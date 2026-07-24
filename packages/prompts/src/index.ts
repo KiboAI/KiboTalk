@@ -3,6 +3,7 @@ import { renderComponent } from '@velin-dev/core-react'
 import {
   REPLY_SUGGESTIONS_SYSTEM,
   ReplySuggestionsUserPrompt,
+  buildReplySuggestionsSystem,
 } from './reply-suggestions'
 import type {
   ReplySuggestionsChatMessage,
@@ -13,18 +14,22 @@ export type {
   ReplySuggestionsChatMessage,
   ReplySuggestionsPromptArgs,
 } from './reply-suggestions'
-export { REPLY_SUGGESTIONS_SYSTEM, ReplySuggestionsUserPrompt } from './reply-suggestions'
+export {
+  REPLY_SUGGESTIONS_SYSTEM,
+  ReplySuggestionsUserPrompt,
+  buildReplySuggestionsSystem,
+} from './reply-suggestions'
 
 /**
  * Build system + user messages for the reply-suggestions coach
- * (production: system_split + ruby_kanji_no_phrase).
+ * (production: system_split + ruby_kanji_no_phrase for ja).
  */
 export async function buildReplySuggestionsMessages(
   args: ReplySuggestionsPromptArgs,
 ): Promise<ReplySuggestionsChatMessage[]> {
   const user = await renderComponent(ReplySuggestionsUserPrompt, args)
   return [
-    { role: 'system', content: REPLY_SUGGESTIONS_SYSTEM },
+    { role: 'system', content: buildReplySuggestionsSystem(args.conversationLang) },
     { role: 'user', content: user },
   ]
 }

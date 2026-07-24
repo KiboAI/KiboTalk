@@ -29,7 +29,7 @@ export function looksLikeParticle(surface: string): boolean {
 }
 
 export type ParsedReplyCandidate = {
-  meaningZh: string
+  meaning: string
   targetText: string
   reading?: string
   segments?: Array<{
@@ -103,11 +103,11 @@ export function validateReplyCandidates(
       errors.push(`[${i}] not an object`)
       continue
     }
-    const meaningZh = item.meaningZh
+    const meaning = item.meaning
     const targetText = item.targetText
     const reading = item.reading
-    if (typeof meaningZh !== 'string' || meaningZh.trim() === '') {
-      errors.push(`[${i}].meaningZh missing/empty`)
+    if (typeof meaning !== 'string' || meaning.trim() === '') {
+      errors.push(`[${i}].meaning missing/empty`)
     }
     if (typeof targetText !== 'string' || targetText.trim() === '') {
       errors.push(`[${i}].targetText missing/empty`)
@@ -186,7 +186,7 @@ export function validateReplyCandidates(
     }
 
     candidates.push({
-      meaningZh: typeof meaningZh === 'string' ? meaningZh : '',
+      meaning: typeof meaning === 'string' ? meaning : '',
       targetText: typeof targetText === 'string' ? targetText : '',
       reading: typeof reading === 'string' ? reading : undefined,
       segments,

@@ -4,10 +4,8 @@ import type { Speaker } from '@kibotalk/conversation'
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@kibotalk/ui'
 import { AudioSource } from './audio/audio-source'
 import { createWorkerEmbedAudio } from './audio/speaker-embed'
-import { useConfig } from './config-store'
+import { useConfig, PASSPHRASE_BY_LANG } from './config-store'
 import { NumberField } from './components/ConfigFields'
-
-const PASSPHRASE = '你好，今天也请多多关照。'
 
 type Mode = 'enroll' | 'verify'
 
@@ -28,6 +26,8 @@ export default function Enrollment() {
   const [enrolled, setEnrolled] = useState(false)
   const [verifyView, setVerifyView] = useState<{ speaker: Speaker; similarity: number } | null>(null)
   const speakerThreshold = useConfig((s) => s.speakerThreshold)
+  const conversationLang = useConfig((s) => s.conversationLang)
+  const passphrase = PASSPHRASE_BY_LANG[conversationLang]
   const verifierRef = useRef<EmbeddingSpeakerVerifier | null>(null)
   const audioRef = useRef<AudioSource | null>(null)
   const chunksRef = useRef<Float32Array[]>([])
@@ -95,7 +95,7 @@ export default function Enrollment() {
       const v = verifier()
       v.setThreshold(useConfig.getState().speakerThreshold)
       if (mode === 'enroll') {
-        await v.enroll((async function* () { yield pcm.buffer as ArrayBuffer })(), PASSPHRASE)
+        await v.enroll((async function* () { yield pcm.buffer as ArrayBuffer })(), passphrase)
         setVerifyView(null)
         setEnrolled(true)
       } else {
@@ -123,8 +123,8 @@ export default function Enrollment() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-lg bg-muted/60 p-4">
-          <div className="text-sm text-muted-foreground mb-1">固定文案（录入用）：</div>
-          <div className="text-xl font-semibold">{PASSPHRASE}</div>
+          <div className="text-sm text-muted-foreground mb-1">固定文案（录入用，随顶部对话语言）：</div>
+          <div className="text-xl font-semibold">{passphrase}</div>
         </div>
 
         <div className="flex flex-wrap gap-2">

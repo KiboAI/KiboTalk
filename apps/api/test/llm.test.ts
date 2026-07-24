@@ -114,7 +114,7 @@ describe('T3 — real /llm SSE through proxy', () => {
   it('streams token SSE events from the upstream provider', async () => {
     setEnv()
     const fetchSpy = mockUpstream(
-      new Response(sseBody(['[', '{"meaningZh":"hi"}', ']']), {
+      new Response(sseBody(['[', '{"meaning":"hi"}', ']']), {
         status: 200,
         headers: { 'content-type': 'text/event-stream' },
       }),
@@ -127,16 +127,18 @@ describe('T3 — real /llm SSE through proxy', () => {
         context: [
           { id: 't0', speaker: 'other', text: 'こんにちは', startedAt: 0, endedAt: 1 },
         ],
-        level: 'N5',
+        level: 'beginner',
+        conversationLang: 'ja',
+        meaningLang: 'zh',
       }),
     })
 
     expect(res.ok).toBe(true)
     const messages = await readSse(res)
     const promptEvent = messages.find((m) => m.event === 'prompt')
-    expect(promptEvent?.data).toContain('N5')
+    expect(promptEvent?.data).toContain('beginner')
     const tokenEvents = messages.filter((m) => m.event === 'token')
-    expect(tokenEvents.map((m) => m.data)).toEqual(['[', '{"meaningZh":"hi"}', ']'])
+    expect(tokenEvents.map((m) => m.data)).toEqual(['[', '{"meaning":"hi"}', ']'])
 
     const [url, init] = upstreamCall(fetchSpy.mock.calls as Array<[unknown, RequestInit | undefined]>)
     expect(url).toBe(`${ENV.LLM_OPENROUTER_BASE_URL}/chat/completions`)
@@ -154,7 +156,7 @@ describe('T3 — real /llm SSE through proxy', () => {
     expect(sent.messages).toHaveLength(2)
     expect(sent.messages[0]?.role).toBe('system')
     expect(sent.messages[1]?.role).toBe('user')
-    expect(sent.messages[1]?.content).toContain('N5')
+    expect(sent.messages[1]?.content).toContain('beginner')
   })
 
   it('never leaks the env API key in the SSE response body or headers', async () => {
@@ -164,7 +166,7 @@ describe('T3 — real /llm SSE through proxy', () => {
     const res = await fetch(`${baseUrl}/llm`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: [], level: 'N5' }),
+      body: JSON.stringify({ context: [], level: 'beginner' }),
     })
     const bodyText = await res.text()
 
@@ -202,7 +204,7 @@ describe('T3 — real /llm SSE through proxy', () => {
     const request = fetch(`${baseUrl}/llm`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: [], level: 'N5' }),
+      body: JSON.stringify({ context: [], level: 'beginner' }),
       signal: controller.signal,
     })
 
@@ -221,7 +223,7 @@ describe('T3 — real /llm SSE through proxy', () => {
     const res = await fetch(`${baseUrl}/llm`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ context: [], level: 'N5' }),
+      body: JSON.stringify({ context: [], level: 'beginner' }),
     })
     const messages = await readSse(res)
     const errorEvent = messages.find((m) => m.event === 'error')

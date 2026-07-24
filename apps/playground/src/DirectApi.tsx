@@ -8,7 +8,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Label,
   Separator,
   Textarea,
 } from '@kibotalk/ui'
@@ -16,7 +15,7 @@ import { extractCandidates } from './partial-json'
 import { parseSseStream } from './sse'
 import { AudioSource } from './audio/audio-source'
 import { SttProviderSelect, useTranscribeProvider, sttUrl } from './SttProviderSelect'
-import { useConfig } from './config-store'
+import { readLanguageSnapshot, useConfig } from './config-store'
 import { ReplyCandidateCard } from './components/ReplyCandidateCard'
 
 type CandidateState = ReplyCandidate[]
@@ -107,7 +106,13 @@ function SttPanel() {
       // Always via the /stt proxy (keys stay server-side). ?provider= overrides
       // the active provider per request; the server resolves base URL / key /
       // model from its own env. See ADR 0002.
-      const res = await fetch(sttUrl(useConfig.getState().transcribeProvider), { method: 'POST', body: wav })
+      const res = await fetch(
+        sttUrl(
+          useConfig.getState().transcribeProvider,
+          useConfig.getState().conversationLang,
+        ),
+        { method: 'POST', body: wav },
+      )
       const json = (await res.json()) as { text?: string; error?: string }
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
       setTranscription(json.text ?? '')
@@ -165,8 +170,12 @@ function SttPanel() {
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">STT 来源：</span>
             <SttProviderSelect
-              providers={providers}
-              value={provider}
+              providers={providers.filter((p) => (p.mode ?? 'batch') === 'batch')}
+              value={
+                provider && providers.some((p) => p.id === provider && (p.mode ?? 'batch') === 'batch')
+                  ? provider
+                  : null
+              }
               onChange={(p) => patch({ transcribeProvider: p })}
               allowOff={false}
               offLabel=""
@@ -203,7 +212,6 @@ function SttPanel() {
 }
 
 function LlmPanel() {
-  const [level, setLevel] = useState('N5')
   const [contextText, setContextText] = useState(
     'other: 本日はお忙しい中お越しいただきありがとうございます。まずは簡単に自己紹介をお願いします。\nuser: 〇〇大学で情報工学を専攻しております、田中と申します。\nother: では、数ある企業の中で、なぜ弊社を志望されたのでしょうか。',
   )
@@ -259,10 +267,16 @@ function LlmPanel() {
     abortRef.current = controller
     let rawAccum = ''
     try {
+      const snap = readLanguageSnapshot()
       const res = await fetch('/llm', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ context: parseContext(contextText), level }),
+        body: JSON.stringify({
+          context: parseContext(contextText),
+          level: snap.level,
+          conversationLang: snap.conversationLang,
+          meaningLang: snap.meaningLang,
+        }),
         signal: controller.signal,
       })
       if (!res.ok || !res.body) {
@@ -358,22 +372,6 @@ function LlmPanel() {
         <CardTitle>/llm — 3 条回复候选（流式）</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="llm-level">水平</Label>
-            <select
-              id="llm-level"
-              value={level}
-              onChange={(e) => setLevel(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              {['N5', 'N4', 'N3', 'N2', 'N1'].map((l) => (
-                <option key={l} value={l}>{l}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
         <Textarea
           value={contextText}
           onChange={(e) => setContextText(e.target.value)}

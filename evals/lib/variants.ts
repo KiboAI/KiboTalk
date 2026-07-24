@@ -1,4 +1,4 @@
-import type { ConversationTurn } from '@kibotalk/conversation'
+import type { AppLanguage, ConversationTurn, LearnerLevel } from '@kibotalk/conversation'
 import { buildReplySuggestionsMessages } from '@kibotalk/prompts'
 
 import type { ChatMessage } from './chat'
@@ -28,6 +28,28 @@ export type PromptVariant = (typeof PROMPT_VARIANTS)[number]
 export type VariantBuildInput = {
   context: ConversationTurn[]
   level: string
+  conversationLang?: AppLanguage
+  meaningLang?: AppLanguage
+}
+
+/** Map historical JLPT fixture labels (and new unified levels) onto LearnerLevel. */
+function toLearnerLevel(level: string): LearnerLevel {
+  switch (level) {
+    case 'beginner':
+    case 'intermediate':
+    case 'advanced':
+      return level
+    case 'N5':
+    case 'N4':
+      return 'beginner'
+    case 'N3':
+      return 'intermediate'
+    case 'N2':
+    case 'N1':
+      return 'advanced'
+    default:
+      return 'beginner'
+  }
 }
 
 export type BuiltPrompt = {
@@ -65,13 +87,13 @@ const RUBY_RULES = `Furigana / segment rules (STRICT):
 - role "punct" for 。！？、…； everything else "content".`
 
 const SCHEMA_FULL = `Output: a JSON array of EXACTLY 3 objects. Keys:
-- meaningZh: learner intent in 中文, one short phrase
+- meaning: learner intent in 中文, one short phrase
 - targetText: Japanese reply
 - reading: full-phrase kana reading of targetText (UI fallback)
 - segments: as in furigana rules
 Do not include other keys or a wrapper object.`
 
-const SCHEMA_RUBY_KANJI = `Output: JSON array of EXACTLY 3 objects with keys meaningZh, targetText, reading, segments.
+const SCHEMA_RUBY_KANJI = `Output: JSON array of EXACTLY 3 objects with keys meaning, targetText, reading, segments.
 
 ${RUBY_RULES}
 
@@ -86,10 +108,10 @@ GOOD:
 {"surface":"。","role":"punct"}
 
 Example:
-[{"meaningZh":"请求再说一遍","targetText":"もう一度お願いします。","reading":"もういちどおねがいします。","segments":[{"surface":"もう","role":"content"},{"surface":"一度","reading":"いちど","role":"content"},{"surface":"お願い","reading":"おねがい","role":"content"},{"surface":"します","role":"content"},{"surface":"。","role":"punct"}]},{"meaningZh":"表示明白","targetText":"わかりました。","reading":"わかりました。","segments":[{"surface":"わかりました","role":"content"},{"surface":"。","role":"punct"}]},{"meaningZh":"礼貌确认","targetText":"それでよろしいですか。","reading":"それでよろしいですか。","segments":[{"surface":"それ","role":"content"},{"surface":"で","role":"particle"},{"surface":"よろしい","role":"content"},{"surface":"です","role":"content"},{"surface":"か","role":"particle"},{"surface":"。","role":"punct"}]}]`
+[{"meaning":"请求再说一遍","targetText":"もう一度お願いします。","reading":"もういちどおねがいします。","segments":[{"surface":"もう","role":"content"},{"surface":"一度","reading":"いちど","role":"content"},{"surface":"お願い","reading":"おねがい","role":"content"},{"surface":"します","role":"content"},{"surface":"。","role":"punct"}]},{"meaning":"表示明白","targetText":"わかりました。","reading":"わかりました。","segments":[{"surface":"わかりました","role":"content"},{"surface":"。","role":"punct"}]},{"meaning":"礼貌确认","targetText":"それでよろしいですか。","reading":"それでよろしいですか。","segments":[{"surface":"それ","role":"content"},{"surface":"で","role":"particle"},{"surface":"よろしい","role":"content"},{"surface":"です","role":"content"},{"surface":"か","role":"particle"},{"surface":"。","role":"punct"}]}]`
 
 const SCHEMA_NO_PHRASE = `Output: JSON array of EXACTLY 3 objects with keys ONLY:
-- meaningZh, targetText, segments
+- meaning, targetText, segments
 Do NOT include top-level "reading".
 
 ${RUBY_RULES}
@@ -98,7 +120,7 @@ Learners see ruby only from segment.reading on kanji spans; kana spans need no r
 
 /** Combined: kanji-only segment ruby + drop obsolete phrase-level reading. */
 const SCHEMA_RUBY_KANJI_NO_PHRASE = `Output: JSON array of EXACTLY 3 objects with keys ONLY:
-- meaningZh: learner intent in 中文, one short phrase
+- meaning: learner intent in 中文, one short phrase
 - targetText: Japanese reply
 - segments: as in furigana rules
 Do NOT include top-level "reading" (obsolete — UI renders furigana from segment.reading only).
@@ -108,7 +130,7 @@ ${RUBY_RULES}
 BAD (do not do this):
 {"surface":"こんにちは","reading":"こんにちは","role":"content"}
 {"surface":"です","reading":"です","role":"content"}
-{"meaningZh":"...","targetText":"...","reading":"...","segments":[...]}  ← no top-level reading
+{"meaning":"...","targetText":"...","reading":"...","segments":[...]}  ← no top-level reading
 
 GOOD:
 {"surface":"こんにちは","role":"content"}
@@ -117,9 +139,9 @@ GOOD:
 {"surface":"。","role":"punct"}
 
 Example:
-[{"meaningZh":"请求再说一遍","targetText":"もう一度お願いします。","segments":[{"surface":"もう","role":"content"},{"surface":"一度","reading":"いちど","role":"content"},{"surface":"お願い","reading":"おねがい","role":"content"},{"surface":"します","role":"content"},{"surface":"。","role":"punct"}]},{"meaningZh":"表示明白","targetText":"わかりました。","segments":[{"surface":"わかりました","role":"content"},{"surface":"。","role":"punct"}]},{"meaningZh":"礼貌确认","targetText":"それでよろしいですか。","segments":[{"surface":"それ","role":"content"},{"surface":"で","role":"particle"},{"surface":"よろしい","role":"content"},{"surface":"です","role":"content"},{"surface":"か","role":"particle"},{"surface":"。","role":"punct"}]}]`
+[{"meaning":"请求再说一遍","targetText":"もう一度お願いします。","segments":[{"surface":"もう","role":"content"},{"surface":"一度","reading":"いちど","role":"content"},{"surface":"お願い","reading":"おねがい","role":"content"},{"surface":"します","role":"content"},{"surface":"。","role":"punct"}]},{"meaning":"表示明白","targetText":"わかりました。","segments":[{"surface":"わかりました","role":"content"},{"surface":"。","role":"punct"}]},{"meaning":"礼貌确认","targetText":"それでよろしいですか。","segments":[{"surface":"それ","role":"content"},{"surface":"で","role":"particle"},{"surface":"よろしい","role":"content"},{"surface":"です","role":"content"},{"surface":"か","role":"particle"},{"surface":"。","role":"punct"}]}]`
 
-const SCHEMA_PARTICLE_STRICT = `Output: JSON array of EXACTLY 3 objects: meaningZh, targetText, reading, segments.
+const SCHEMA_PARTICLE_STRICT = `Output: JSON array of EXACTLY 3 objects: meaning, targetText, reading, segments.
 
 ${RUBY_RULES}
 
@@ -145,8 +167,13 @@ export async function buildPromptVariant(
 ): Promise<BuiltPrompt> {
   switch (variant) {
     case 'baseline': {
-      // Production prompt (system_split + ruby_kanji_no_phrase).
-      const messages = await buildReplySuggestionsMessages(input)
+      // Production prompt (system_split + ruby_kanji_no_phrase for ja).
+      const messages = await buildReplySuggestionsMessages({
+        context: input.context,
+        level: toLearnerLevel(input.level),
+        conversationLang: input.conversationLang ?? 'ja',
+        meaningLang: input.meaningLang ?? 'zh',
+      })
       return {
         messages,
         promptText: messages

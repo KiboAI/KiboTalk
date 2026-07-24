@@ -83,7 +83,7 @@ export function extractCandidates(buffer: string): ReplyCandidate[] {
     .map((o, i) => {
       const candidate: ReplyCandidate = {
         id: typeof o.id === 'string' ? o.id : `c${i}`,
-        meaningZh: typeof o.meaningZh === 'string' ? o.meaningZh : '',
+        meaning: typeof o.meaning === 'string' ? o.meaning : '',
         targetText: typeof o.targetText === 'string' ? o.targetText : '',
       }
       if (typeof o.reading === 'string' && o.reading.length > 0) {

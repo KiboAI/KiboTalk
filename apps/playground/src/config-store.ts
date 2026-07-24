@@ -2,10 +2,13 @@ import { create } from 'zustand'
 import type { AppLanguage, LearnerLevel, LevelByLang } from '@kibotalk/conversation'
 import { defaultVadConfig } from '@kibotalk/audio/vad'
 import { SILERO_VARIANTS } from './audio/silero-vad'
-import type { SttProvider } from './SttProviderSelect'
-import { defaultSttProvider } from './SttProviderSelect'
+import type { SttProvider } from './stt-providers'
+import { defaultSttProvider } from './stt-providers'
 
 export type TranscribeMode = 'perSegment' | 'aggregated'
+
+/** Product preview surface: window app vs simulated floating Island+stickies. */
+export type ProductSurfaceMode = 'window' | 'floating'
 
 const LANGUAGE_PREFS_KEY = 'kibotalk.playground.languagePrefs'
 
@@ -84,6 +87,17 @@ type ConfigState = {
   transcribeMode: TranscribeMode
   // Speaker verification (live session only, but shared for consistency)
   speakerThreshold: number
+  /** Max candidate rounds visible in Live sticky stack (playground debug). */
+  candidateRoundsMax: number
+  /** Island: speech-to-text on/off (live session honors this). */
+  islandSttEnabled: boolean
+  /** Island: reply-suggestion LLM on/off. */
+  islandReplyEnabled: boolean
+  /**
+   * Playground product surface: `window` = in-app cards (no stickies);
+   * `floating` = simulated Island + sticky notes.
+   */
+  productSurfaceMode: ProductSurfaceMode
   // Language prefs (persisted)
   conversationLang: AppLanguage
   meaningLang: AppLanguage
@@ -118,6 +132,10 @@ const audioDefaults = {
   transcribeProvider: null as string | null,
   transcribeMode: 'aggregated' as TranscribeMode,
   speakerThreshold: 0.8,
+  candidateRoundsMax: 2,
+  islandSttEnabled: true,
+  islandReplyEnabled: true,
+  productSurfaceMode: 'window' as ProductSurfaceMode,
   liveSessionRunning: false,
   providerBootstrapped: false,
 }

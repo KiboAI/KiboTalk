@@ -9,12 +9,18 @@ import { sttUrl, providerMode, useSttProviders } from './SttProviderSelect'
 import {
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  ScrollArea,
 } from '@kibotalk/ui'
+import {
+  AudioLines,
+  ChartLine,
+  ListTree,
+  Loader2,
+  Mic,
+  Play,
+  Settings2,
+  Square,
+} from 'lucide-react'
 import { AudioSource } from './audio/audio-source'
 import { createSileroInfer, SILERO_VARIANTS } from './audio/silero-vad'
 import {
@@ -25,6 +31,7 @@ import {
   TranscribeModeSelect,
   TranscribeProviderSelect,
 } from './components/ConfigFields'
+import { StageShell } from './components/StageShell'
 
 type Segment = {
   id: number
@@ -288,212 +295,174 @@ export default function VadPanel() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>VAD 检测 — 是否有语音输入</CardTitle>
-        <CardDescription>
-          真实麦克风 → Silero VAD。实时显示说话/静音状态，并记录每一段被切出来的语音片段时长。
-          用于验证 §2.4 的「一句结束」切段能力（F03 前置）。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex gap-2">
+    <StageShell
+      stage={
+        <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
+          <div className="space-y-1 text-center">
+            <h2 className="inline-flex items-center gap-2 text-xl font-semibold">
+              <AudioLines className="size-5" />
+              VAD 检测
+            </h2>
+            <p className="text-sm text-muted-foreground">麦克风 → Silero · 验证一句切段</p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
             {!running ? (
-              <Button onClick={start} disabled={!!loading}>{loading || '开始检测'}</Button>
+              <Button size="lg" onClick={start} disabled={!!loading}>
+                {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                {loading || '开始检测'}
+              </Button>
             ) : (
-              <Button variant="destructive" onClick={stop}>停止检测</Button>
+              <Button size="lg" variant="destructive" onClick={stop}>
+                <Square className="size-4" />
+                停止
+              </Button>
             )}
-          </div>
-          <TranscribeProviderSelect modeFilter="batch" />
-          <VadModelSelect disabled={running} />
-          <TranscribeModeSelect disabled={running} />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium">状态：</span>
-          <Badge variant={STATUS_VARIANT[status]}>
-            {status === 'speech' ? '说话中' : status === 'silence' ? '静音' : '空闲'}
-          </Badge>
-          <span className="text-muted-foreground">·</span>
-          <span className="font-medium">已切段：</span>
-          <span>{segments.length}</span>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <VadParamsFields />
-          <AsrPadFields />
-          <MergeParamsFields disabled={transcribeMode === 'perSegment'} />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">语音概率：</span>
-            <span className={(prob > speechThreshold ? 'text-green-600' : prob > speechThreshold * 0.5 ? 'text-yellow-600' : 'text-muted-foreground') + ' font-mono'}>
-              {(prob * 100).toFixed(1)}%
-            </span>
-            <span
-              className={`inline-block h-3 w-3 rounded-full ${
-                prob > speechThreshold
-                  ? 'bg-green-500 shadow-sm shadow-green-500/50'
-                  : prob > speechThreshold * 0.5
-                    ? 'bg-yellow-500'
-                    : 'bg-muted border border-muted-foreground/30'
-              }`}
-            />
-            <span className="text-muted-foreground text-xs">
-              （绿 = 超过进入阈值 {speechThreshold.toFixed(2)}；黄 = 接近；灰 = 静音）
+            <Badge variant={STATUS_VARIANT[status]}>
+              {status === 'speech' ? '说话中' : status === 'silence' ? '静音' : '空闲'}
+            </Badge>
+            <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+              <Mic className="size-3.5" />
+              已切段 {segments.length}
             </span>
           </div>
-
-          {/* Probability bar 0–1 with threshold markers */}
-          <div className="relative h-4 w-full rounded-md border bg-muted/40 overflow-hidden">
-            <div
-              className={`h-full transition-[width] duration-75 ${
-                prob > speechThreshold ? 'bg-green-500/70' : prob > speechThreshold * 0.5 ? 'bg-yellow-500/70' : 'bg-muted-foreground/30'
-              }`}
-              style={{ width: `${Math.min(100, prob * 100)}%` }}
-            />
-            <div className="absolute top-0 bottom-0 w-px bg-green-600" style={{ left: `${speechThreshold * 100}%` }} title={`进入阈值 ${speechThreshold}`} />
-            <div className="absolute top-0 bottom-0 w-px bg-red-500/70" style={{ left: `${exitThreshold * 100}%` }} title={`退出阈值 ${exitThreshold}`} />
-          </div>
-
-          {/* Sparkline of recent probability with threshold line */}
-          <div className="rounded-md border bg-muted/20 p-1">
-            <svg viewBox="0 0 120 40" preserveAspectRatio="none" className="h-20 w-full">
-              <line
-                x1={0} x2={120} y1={40 - speechThreshold * 40} y2={40 - speechThreshold * 40}
-                stroke="rgb(22 163 74)" strokeWidth={0.5} strokeDasharray="2 2"
+          <div className="w-full max-w-md space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">语音概率</span>
+              <span className="tabular-nums">{(prob * 100).toFixed(1)}%</span>
+            </div>
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={`h-full transition-[width] duration-75 ${
+                  prob > speechThreshold
+                    ? 'bg-emerald-500'
+                    : prob > speechThreshold * 0.5
+                      ? 'bg-primary'
+                      : 'bg-muted-foreground/30'
+                }`}
+                style={{ width: `${Math.min(100, prob * 100)}%` }}
               />
-              <line
-                x1={0} x2={120} y1={40 - exitThreshold * 40} y2={40 - exitThreshold * 40}
-                stroke="rgb(239 68 68)" strokeWidth={0.5} strokeDasharray="2 2" opacity={0.6}
-              />
-              {probHistory.length > 1 && (
-                <polyline
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1}
-                  points={probHistory
-                    .map((p, i) => `${(i / (probHistory.length - 1)) * 120},${40 - p * 40}`)
-                    .join(' ')}
-                />
-              )}
-            </svg>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            实时概率历史（最近 {probHistory.length} 个 chunk）。绿虚线 = 进入阈值，红虚线 = 退出阈值。说话时曲线应越过绿线。
-          </p>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
-
-        {error && <p className="text-sm text-destructive">错误：{error}</p>}
-
-        <div className="rounded-lg border p-3 space-y-3">
-          <h4 className="text-sm font-semibold">
-            {transcribeMode === 'aggregated' ? '合并片段（最新在上，含组成片段）' : '语音片段（最新在上）'}
-          </h4>
-
-          {transcribeMode === 'aggregated' ? (
-            mergedSegments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                （还没有合并片段——说几句话后停顿 {pauseMs}ms 以上会触发一次合并转写）
+      }
+      debug={
+        <ScrollArea className="h-full pr-2">
+          <div className="space-y-5 pb-6">
+            <div className="space-y-3">
+              <TranscribeProviderSelect modeFilter="batch" />
+              <VadModelSelect disabled={running} />
+              <TranscribeModeSelect disabled={running} />
+            </div>
+            <div className="space-y-2">
+              <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Settings2 className="size-3.5" />
+                参数
               </p>
-            ) : (
-              <ol className="space-y-3 text-sm">
-                {[...mergedSegments].reverse().map((m) => {
-                  return (
-                    <li key={m.id} className="rounded-md border bg-card p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">合并 #{m.id}</span>
-                        <span className="text-muted-foreground">{(m.duration * 1000).toFixed(0)} ms</span>
-                        <span className="text-muted-foreground">· 含 {m.constituents.length} 个片段</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => playSegment(m.buffer)}
-                        >
-                          播放合并
-                        </Button>
-                      </div>
-                      {transcribeProvider !== null && (
-                        <div className="ml-1 flex items-start gap-2">
-                          <span className="flex-1">
+              <div className="grid gap-3">
+                <VadParamsFields />
+                <AsrPadFields />
+                <MergeParamsFields disabled={transcribeMode === 'perSegment'} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <ChartLine className="size-3.5" />
+                概率曲线
+              </p>
+              <div className="rounded-md border bg-muted/30 p-1">
+                <svg viewBox="0 0 120 40" preserveAspectRatio="none" className="h-16 w-full">
+                  <line
+                    x1={0} x2={120} y1={40 - speechThreshold * 40} y2={40 - speechThreshold * 40}
+                    stroke="currentColor" strokeWidth={0.5} strokeDasharray="2 2" className="text-emerald-600"
+                  />
+                  <line
+                    x1={0} x2={120} y1={40 - exitThreshold * 40} y2={40 - exitThreshold * 40}
+                    stroke="currentColor" strokeWidth={0.5} strokeDasharray="2 2" className="text-destructive" opacity={0.6}
+                  />
+                  {probHistory.length > 1 && (
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1}
+                      points={probHistory
+                        .map((p, i) => `${(i / (probHistory.length - 1)) * 120},${40 - p * 40}`)
+                        .join(' ')}
+                    />
+                  )}
+                </svg>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <ListTree className="size-3.5" />
+                {transcribeMode === 'aggregated' ? '合并片段' : '语音片段'}
+              </p>
+              {transcribeMode === 'aggregated' ? (
+                mergedSegments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    停顿 {pauseMs}ms 以上会触发一次合并转写
+                  </p>
+                ) : (
+                  <ol className="space-y-3 text-sm">
+                    {[...mergedSegments].reverse().map((m) => (
+                      <li key={m.id} className="space-y-2 rounded-md border p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">#{m.id}</span>
+                          <span className="text-muted-foreground">{(m.duration * 1000).toFixed(0)} ms</span>
+                          <span className="text-muted-foreground">{m.constituents.length} 段</span>
+                          <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => playSegment(m.buffer)}>
+                            播放
+                          </Button>
+                        </div>
+                        {transcribeProvider !== null ? (
+                          <div className="text-sm">
                             {m.transcribing ? (
                               <span className="text-muted-foreground">转写中…</span>
                             ) : m.sttError ? (
-                              <span className="text-destructive">转写失败：{m.sttError}</span>
+                              <span className="text-destructive">{m.sttError}</span>
                             ) : (
                               <span>{m.text ?? ''}</span>
                             )}
-                          </span>
-                          {m.sttMs != null && !m.transcribing && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">耗时 {m.sttMs} ms</span>
+                            {m.sttMs != null && !m.transcribing ? (
+                              <span className="ml-2 text-xs text-muted-foreground">{m.sttMs} ms</span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                )
+              ) : segments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">还没有检测到语音</p>
+              ) : (
+                <ol className="space-y-2 text-sm">
+                  {[...segments].reverse().map((s) => (
+                    <li key={s.id} className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">#{s.id}</span>
+                      <span>{(s.duration * 1000).toFixed(0)} ms</span>
+                      <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => playSegment(s.buffer)}>
+                        播放
+                      </Button>
+                      {transcribeProvider !== null ? (
+                        <span className="w-full text-sm">
+                          {s.transcribing ? (
+                            <span className="text-muted-foreground">转写中…</span>
+                          ) : s.sttError ? (
+                            <span className="text-destructive">{s.sttError}</span>
+                          ) : (
+                            <span>{s.text ?? ''}</span>
                           )}
-                        </div>
-                      )}
-                      <ol className="ml-3 border-l pl-3 space-y-1">
-                        {m.constituents.map((c, i) => (
-                          <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>片段 {i + 1}</span>
-                            <span>{(c.duration * 1000).toFixed(0)} ms</span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-5 px-1.5 text-xs"
-                              onClick={() => playSegment(c.buffer)}
-                            >
-                              播放
-                            </Button>
-                          </li>
-                        ))}
-                      </ol>
+                        </span>
+                      ) : null}
                     </li>
-                  )
-                })}
-              </ol>
-            )
-          ) : segments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">（还没有检测到语音）</p>
-          ) : (
-            <ol className="space-y-2 text-sm">
-              {[...segments].reverse().map((s) => (
-                <li key={s.id} className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">#{s.id}</span>
-                    <span>{(s.duration * 1000).toFixed(0)} ms</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => playSegment(s.buffer)}
-                    >
-                      播放
-                    </Button>
-                  </div>
-                  {transcribeProvider !== null && (
-                    <div className="ml-6 flex items-start gap-2">
-                      <span className="flex-1">
-                        {s.transcribing ? (
-                          <span className="text-muted-foreground">转写中…</span>
-                        ) : s.sttError ? (
-                          <span className="text-destructive">转写失败：{s.sttError}</span>
-                        ) : (
-                          <span>{s.text ?? ''}</span>
-                        )}
-                      </span>
-                      {s.sttMs != null && !s.transcribing && (
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">耗时 {s.sttMs} ms</span>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-
-      </CardContent>
-    </Card>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
+        </ScrollArea>
+      }
+    />
   )
 }

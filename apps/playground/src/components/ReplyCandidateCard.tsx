@@ -1,9 +1,10 @@
 import type { ReplyCandidate, ReplySegment } from '@kibotalk/conversation'
 import { cn } from '@kibotalk/ui'
+import { StickyNote } from './StickyNote'
 
 function SegmentSpan({ segment }: { segment: ReplySegment }) {
   const className = cn(
-    segment.role === 'particle' && 'rounded-sm bg-amber-100 px-0.5 text-amber-900',
+    segment.role === 'particle' && 'rounded-sm bg-muted px-0.5',
     segment.role === 'punct' && 'text-muted-foreground',
   )
   if (segment.reading) {
@@ -19,17 +20,21 @@ function SegmentSpan({ segment }: { segment: ReplySegment }) {
 
 export type ReplyCandidateCardProps = {
   candidate: ReplyCandidate
-  /** Timeline one-liner vs bordered card. */
   compact?: boolean
+  /** When rendering a full round as one sticky. */
+  roundCandidates?: ReplyCandidate[]
   className?: string
 }
 
 /**
- * Renders a reply candidate: target text (ruby/particles when segments exist),
- * meaning below. Falls back to plain targetText when segments are missing
- * (optional legacy reading).
+ * Compact one-liner for transcript; sticky mode takes a whole round.
  */
-export function ReplyCandidateCard({ candidate, compact = false, className }: ReplyCandidateCardProps) {
+export function ReplyCandidateCard({
+  candidate,
+  compact = false,
+  roundCandidates,
+  className,
+}: ReplyCandidateCardProps) {
   const { meaning, targetText, reading, segments } = candidate
   const jp =
     segments && segments.length > 0 ? (
@@ -53,12 +58,9 @@ export function ReplyCandidateCard({ candidate, compact = false, className }: Re
   }
 
   return (
-    <li className={cn('rounded-md border p-3', className)}>
-      <div className="text-base font-medium leading-loose">{jp}</div>
-      {meaning ? <div className="mt-1 text-xs text-muted-foreground">{meaning}</div> : null}
-      {!segments?.length && reading ? (
-        <div className="mt-0.5 text-xs text-muted-foreground/80">{reading}</div>
-      ) : null}
-    </li>
+    <StickyNote
+      candidates={roundCandidates ?? [candidate]}
+      className={className}
+    />
   )
 }

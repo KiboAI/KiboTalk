@@ -45,6 +45,7 @@ export class ProxySttClient implements SttClient {
   }
 
   async transcribe(pcm: Float32Array, signal: AbortSignal): Promise<string> {
+    if (!useConfig.getState().islandSttEnabled) return ''
     const provider = this.providerOverride ?? useConfig.getState().transcribeProvider
     const padded = padBuffer(pcm, this.prePadMs, this.postPadMs, this.sampleRate)
     const wav = encodeWav(padded, this.sampleRate)
@@ -89,6 +90,10 @@ export class ProxyLlmClient implements LlmClient {
     context: ConversationTurn[],
     signal: AbortSignal,
   ): AsyncIterable<CandidateStreamEvent> {
+    if (!useConfig.getState().islandReplyEnabled) {
+      yield { type: 'done' }
+      return
+    }
     const res = await fetch('/llm', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -110,6 +115,10 @@ export class ProxyLlmClient implements LlmClient {
     for await (const msg of parseSseStream(res)) {
       if (msg.event === 'error') throw new Error(msg.data)
       if (msg.event !== 'token') continue
+      if (!useConfig.getState().islandReplyEnabled) {
+        yield { type: 'done' }
+        return
+      }
       raw += msg.data
       const complete = extractCandidates(raw)
       while (emitted < complete.length) {

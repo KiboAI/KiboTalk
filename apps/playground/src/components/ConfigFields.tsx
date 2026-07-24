@@ -1,4 +1,16 @@
-import { Input, Label } from '@kibotalk/ui'
+import {
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Slider,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@kibotalk/ui'
 import type { AppLanguage, LearnerLevel } from '@kibotalk/conversation'
 import {
   APP_LANGUAGE_OPTIONS,
@@ -48,6 +60,52 @@ export function NumberField({
   )
 }
 
+/** 0–1 threshold with Slider + numeric readout. */
+export function ThresholdSlider({
+  label,
+  hint,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: number
+  disabled?: boolean
+  onChange: (v: number) => void
+}) {
+  const readout = value.toFixed(2)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        {hint ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Label className="cursor-help text-xs text-muted-foreground">{label}</Label>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs">
+              {hint}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Label className="text-xs text-muted-foreground">{label}</Label>
+        )}
+        <span className="text-xs tabular-nums text-foreground">{readout}</span>
+      </div>
+      <Slider
+        value={[value]}
+        min={0}
+        max={1}
+        step={0.01}
+        disabled={disabled}
+        onValueChange={([v]) => {
+          if (typeof v === 'number' && Number.isFinite(v)) onChange(v)
+        }}
+      />
+    </div>
+  )
+}
+
 /** VAD cut stage: thresholds, silence, min speech. */
 export function VadParamsFields() {
   const speechThreshold = useConfig((s) => s.speechThreshold)
@@ -57,10 +115,18 @@ export function VadParamsFields() {
   const patch = useConfig((s) => s.patch)
   return (
     <>
-      <NumberField label="进入阈值（0.5）" value={speechThreshold} step={0.01} min={0} max={1}
-        onChange={(v) => patch({ speechThreshold: v })} />
-      <NumberField label="退出阈值（0.3）" value={exitThreshold} step={0.01} min={0} max={1}
-        onChange={(v) => patch({ exitThreshold: v })} />
+      <ThresholdSlider
+        label="进入阈值"
+        hint="语音概率超过此值视为开始说话（默认 0.5）"
+        value={speechThreshold}
+        onChange={(v) => patch({ speechThreshold: v })}
+      />
+      <ThresholdSlider
+        label="退出阈值"
+        hint="语音概率低于此值并持续静音后结束本段（默认 0.3）"
+        value={exitThreshold}
+        onChange={(v) => patch({ exitThreshold: v })}
+      />
       <NumberField label="静音结束 ms（200）" value={minSilenceDurationMs} step={50} min={0}
         onChange={(v) => patch({ minSilenceDurationMs: v })} />
       <NumberField label="最短语音 ms（200）" value={minSpeechDurationMs} step={50} min={0}
@@ -104,19 +170,23 @@ export function VadModelSelect({ disabled }: { disabled?: boolean }) {
   const vadVariantId = useConfig((s) => s.vadVariantId)
   const patch = useConfig((s) => s.patch)
   return (
-    <span className="flex items-center gap-2 text-sm">
-      <span className="font-medium">VAD 模型：</span>
-      <select
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs text-muted-foreground">VAD 模型</Label>
+      <Select
         value={vadVariantId}
-        onChange={(e) => patch({ vadVariantId: e.target.value })}
+        onValueChange={(v) => patch({ vadVariantId: v })}
         disabled={disabled}
-        className="h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50"
       >
-        {SILERO_VARIANTS.map((v) => (
-          <option key={v.id} value={v.id}>{v.label}</option>
-        ))}
-      </select>
-    </span>
+        <SelectTrigger className="h-9">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SILERO_VARIANTS.map((v) => (
+            <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   )
 }
 
@@ -125,25 +195,28 @@ export function TranscribeModeSelect({ disabled }: { disabled?: boolean }) {
   const transcribeMode = useConfig((s) => s.transcribeMode)
   const patch = useConfig((s) => s.patch)
   return (
-    <span className="flex items-center gap-2 text-sm">
-      <span className="font-medium">转写模式：</span>
-      <select
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs text-muted-foreground">转写模式</Label>
+      <Select
         value={transcribeMode}
-        onChange={(e) => patch({ transcribeMode: e.target.value as TranscribeMode })}
+        onValueChange={(v) => patch({ transcribeMode: v as TranscribeMode })}
         disabled={disabled}
-        className="h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50"
       >
-        <option value="aggregated">聚合（合并多段，保留中间静音）</option>
-        <option value="perSegment">逐段（每个 VAD 片段单独转写）</option>
-      </select>
-    </span>
+        <SelectTrigger className="h-9">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="aggregated">聚合（合并多段）</SelectItem>
+          <SelectItem value="perSegment">逐段</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   )
 }
 
 /** STT provider selector wired to the shared store (auto-bootstraps to active). */
 export function TranscribeProviderSelect({
   allowOff = true,
-  /** When set, only providers of this mode are listed (VAD/DirectApi = batch). */
   modeFilter,
 }: {
   allowOff?: boolean
@@ -156,26 +229,28 @@ export function TranscribeProviderSelect({
     : providers
   const value =
     provider && filtered.some((p) => p.id === provider) ? provider : null
+  const warnRealtimeOnBatchPage =
+    modeFilter === 'batch'
+    && provider
+    && providers.find((p) => p.id === provider)?.mode === 'realtime'
+
   return (
-    <span className="flex items-center gap-2 text-sm">
-      <span className="font-medium">自动转写：</span>
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs text-muted-foreground">自动转写</Label>
       <SttProviderSelect
         providers={filtered}
         value={value}
         onChange={(p) => patch({ transcribeProvider: p })}
         allowOff={allowOff}
       />
-      {modeFilter === 'batch' && provider && (providers.find((p) => p.id === provider)?.mode === 'realtime') && (
-        <span className="text-xs text-amber-700">
+      {warnRealtimeOnBatchPage ? (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
           当前为实时 provider，本页仅 batch；请另选 batch，或到「实时会话」使用
-        </span>
-      )}
-    </span>
+        </p>
+      ) : null}
+    </div>
   )
 }
-
-const selectClass =
-  'h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50'
 
 /** Conversation / meaning language + current conversation-lang level. */
 export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
@@ -188,54 +263,57 @@ export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
   const level = levelByLang[conversationLang]
 
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <div className="flex items-center gap-2">
-        <Label htmlFor="conversation-lang" className="text-xs text-muted-foreground whitespace-nowrap">
-          对话语言
-        </Label>
-        <select
-          id="conversation-lang"
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">对话语言</Label>
+        <Select
           value={conversationLang}
+          onValueChange={(v) => setConversationLang(v as AppLanguage)}
           disabled={disabled}
-          onChange={(e) => setConversationLang(e.target.value as AppLanguage)}
-          className={selectClass}
         >
-          {APP_LANGUAGE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {APP_LANGUAGE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <div className="flex items-center gap-2">
-        <Label htmlFor="meaning-lang" className="text-xs text-muted-foreground whitespace-nowrap">
-          翻译语言
-        </Label>
-        <select
-          id="meaning-lang"
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">翻译语言</Label>
+        <Select
           value={meaningLang}
+          onValueChange={(v) => setMeaningLang(v as AppLanguage)}
           disabled={disabled}
-          onChange={(e) => setMeaningLang(e.target.value as AppLanguage)}
-          className={selectClass}
         >
-          {APP_LANGUAGE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {APP_LANGUAGE_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <div className="flex items-center gap-2">
-        <Label htmlFor="learner-level" className="text-xs text-muted-foreground whitespace-nowrap">
-          水平
-        </Label>
-        <select
-          id="learner-level"
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-xs text-muted-foreground">水平</Label>
+        <Select
           value={level}
+          onValueChange={(v) => setCurrentLevel(v as LearnerLevel)}
           disabled={disabled}
-          onChange={(e) => setCurrentLevel(e.target.value as LearnerLevel)}
-          className={selectClass}
         >
-          {LEARNER_LEVEL_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LEARNER_LEVEL_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   )

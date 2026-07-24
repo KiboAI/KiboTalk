@@ -9,34 +9,32 @@ import { createVAD } from '@kibotalk/audio/vad'
 import type { VAD } from '@kibotalk/audio/vad'
 import { createSegmentAggregator } from '@kibotalk/audio/aggregator'
 import type { SegmentAggregator, AggregatedSegment } from '@kibotalk/audio/aggregator'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Label,
-} from '@kibotalk/ui'
+import { Button, Separator, toast } from '@kibotalk/ui'
 import { AudioSource } from './audio/audio-source'
 import { createSileroInfer, SILERO_VARIANTS } from './audio/silero-vad'
 import { createWorkerEmbedAudio } from './audio/speaker-embed'
 import { ProxySttClient, ProxyLlmClient } from './proxy-clients'
 import { readLanguageSnapshot, useConfig } from './config-store'
-import { ReplyCandidateCard } from './components/ReplyCandidateCard'
 import {
-  VadParamsFields,
-  AsrPadFields,
-  MergeParamsFields,
-  VadModelSelect,
-  TranscribeModeSelect,
-  NumberField,
-} from './components/ConfigFields'
+  CandidateRoundStack,
+  type CandidateRound,
+} from './components/StickyCandidateStack'
+import { SessionToolbar } from './components/SessionToolbar'
+import { TranscriptPanel } from './components/TranscriptPanel'
+import { DebugPanel } from './components/DebugPanel'
+import { IslandBar } from './components/IslandBar'
+import { StageShell } from './components/StageShell'
+import {
+  IOAttributes,
+  IOSpanNames,
+  IOSubsystems,
+  initIOTracer,
+  startSpan,
+} from '@kibotalk/observability'
+import { useIoTracerStore } from './io-tracer/store'
 import {
   useTranscribeProvider,
   providerMode,
-  SttProviderSelect,
   type SttProvider,
 } from './SttProviderSelect'
 import {
@@ -53,14 +51,13 @@ type DraftTurn = {
   endedAt: number
 }
 
-const STATE_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  IDLE: 'secondary',
-  OTHER_SPEAKING: 'default',
-  USER_SPEAKING: 'default',
-  LLM_STREAMING: 'outline',
-}
-
-export default function LiveSession() {
+export default function LiveSession({
+  hasEmbedding,
+  onGoEnroll,
+}: {
+  hasEmbedding: boolean
+  onGoEnroll: () => void
+}) {
   const [speaker, setSpeaker] = useState<'user' | 'other'>('other')
   const [running, setRunning] = useState(false)
   const [loading, setLoading] = useState('')
@@ -69,8 +66,8 @@ export default function LiveSession() {
   const [state, setState] = useState('IDLE')
   const [turns, setTurns] = useState<TurnView[]>([])
   const [draft, setDraft] = useState<DraftTurn | null>(null)
-  const [latestCandidates, setLatestCandidates] = useState<ReplyCandidate[] | null>(null)
-  const [vadStatus, setVadStatus] = useState('idle')
+  const [candidateRounds, setCandidateRounds] = useState<CandidateRound[]>([])
+  const [vadStatus, setVadStatus] = useState<'idle' | 'speech' | 'silence'>('idle')
   const [mode, setMode] = useState<'auto' | 'manual' | 'checking'>('checking')
   const [confidence, setConfidence] = useState<number | null>(null)
   /** Actual STT path for the running session (may differ from UI after session-only R4 degrade). */
@@ -84,13 +81,14 @@ export default function LiveSession() {
   const postPadMs = useConfig((s) => s.postPadMs)
   const pauseMs = useConfig((s) => s.pauseMs)
   const mergeMaxMs = useConfig((s) => s.mergeMaxMs)
-  const transcribeMode = useConfig((s) => s.transcribeMode)
   const speakerThreshold = useConfig((s) => s.speakerThreshold)
-  const mergeEnabled = transcribeMode === 'aggregated'
-  const setLiveSessionRunning = useConfig((s) => s.setLiveSessionRunning)
-  const { providers, provider } = useTranscribeProvider()
+  const candidateRoundsMax = useConfig((s) => s.candidateRoundsMax)
+  const islandSttEnabled = useConfig((s) => s.islandSttEnabled)
+  const islandReplyEnabled = useConfig((s) => s.islandReplyEnabled)
+  const productSurfaceMode = useConfig((s) => s.productSurfaceMode)
   const patch = useConfig((s) => s.patch)
-  const sttIsRealtime = providerMode(providers, provider) === 'realtime'
+  const setLiveSessionRunning = useConfig((s) => s.setLiveSessionRunning)
+  const { providers } = useTranscribeProvider()
 
   const speakerRef = useRef(speaker)
   speakerRef.current = speaker
@@ -138,20 +136,27 @@ export default function LiveSession() {
       maxMs: mergeMaxMs,
     })
   }, [pauseMs, mergeMaxMs])
+  const transcribeMode = useConfig((s) => s.transcribeMode)
   useEffect(() => {
-    if (!mergeEnabled) aggregatorRef.current?.flush()
-  }, [mergeEnabled])
+    if (transcribeMode !== 'aggregated') aggregatorRef.current?.flush()
+  }, [transcribeMode])
 
   useEffect(() => {
     return () => {
       useConfig.getState().setLiveSessionRunning(false)
+      useIoTracerStore.getState().stopRecording()
     }
   }, [])
+
+  function reportError(message: string) {
+    setError(message)
+    toast.error(message)
+  }
 
   function degradeToBatch(reason: string) {
     const batch = providersRef.current.find((p) => p.mode !== 'realtime' && p.id)
     if (!batch) {
-      setError(`实时转写失败：${reason}（无可用 batch provider 可降级）`)
+      reportError(`实时转写失败：${reason}（无可用 batch provider 可降级）`)
       return false
     }
     // Session-only: keep UI on realtime selection, but STT POSTs must use a batch id.
@@ -160,12 +165,70 @@ export default function LiveSession() {
     realtimeModeRef.current = false
     sttRef.current?.setProviderOverride(batch.id)
     setActiveSttPath('batch')
+    const degradeSpan = startSpan(IOSpanNames.SpeechRecognition, {
+      attrs: {
+        [IOAttributes.Subsystem]: IOSubsystems.STT,
+        [IOAttributes.SttPath]: 'realtime',
+        [IOAttributes.SttDegraded]: true,
+      },
+    })
+    degradeSpan.end()
     setStatusNote(
       `本会话实时转写已降级为 batch（${batch.label}）：${reason}。停止后重新开始可再试实时。`,
     )
     setDraft(null)
     draftMetaRef.current = null
     return true
+  }
+
+  async function verifyWithSpan(
+    buffer: ArrayBuffer,
+  ): Promise<'user' | 'other'> {
+    const span = startSpan(IOSpanNames.SpeakerVerify, {
+      attrs: {
+        [IOAttributes.Subsystem]: IOSubsystems.SpeakerVerify,
+        [IOAttributes.SpeakerThreshold]: useConfig.getState().speakerThreshold,
+      },
+    })
+    try {
+      if (!autoRef.current || !embeddingRef.current || !verifierRef.current) {
+        span.setAttribute(IOAttributes.SpeakerResult, speakerRef.current)
+        span.end()
+        return speakerRef.current
+      }
+      const r = await verifierRef.current.verify(buffer, embeddingRef.current)
+      setConfidence(r.confidence)
+      span.setAttribute(IOAttributes.SpeakerConfidence, r.confidence)
+      span.setAttribute(IOAttributes.SpeakerResult, r.speaker)
+      span.end()
+      return r.speaker as 'user' | 'other'
+    } catch (err) {
+      reportError(`说话人判定失败：${String(err)}`)
+      span.setAttribute(IOAttributes.SpeakerResult, 'other')
+      span.end()
+      return 'other'
+    }
+  }
+
+  async function waitRealtimeCompletedWithSpan(
+    rt: NonNullable<typeof realtimeRef.current>,
+  ): Promise<string> {
+    const span = startSpan(IOSpanNames.SpeechRecognition, {
+      attrs: {
+        [IOAttributes.Subsystem]: IOSubsystems.STT,
+        [IOAttributes.SttPath]: 'realtime',
+      },
+    })
+    try {
+      const text = await rt.waitCompleted()
+      span.setAttribute(IOAttributes.ASRText, text)
+      span.end()
+      return text
+    } catch (e) {
+      span.setAttribute(IOAttributes.ASRAbort, true)
+      span.end()
+      throw e
+    }
   }
 
   async function handleRealtimeFlush(merged: AggregatedSegment, pipeline: Pipeline) {
@@ -184,7 +247,7 @@ export default function LiveSession() {
     }
     try {
       rt.commit()
-      const text = await rt.waitCompleted()
+      const text = await waitRealtimeCompletedWithSpan(rt)
       uncommittedRef.current = false
       setDraft(null)
       draftMetaRef.current = null
@@ -217,8 +280,12 @@ export default function LiveSession() {
     setLoading('正在检查声纹录入…')
     setTurns([])
     setDraft(null)
-    setLatestCandidates(null)
+    setCandidateRounds([])
     try {
+      initIOTracer()
+      useIoTracerStore.getState().clear()
+      useIoTracerStore.getState().startRecording()
+
       if (!verifierRef.current) {
         verifierRef.current = new EmbeddingSpeakerVerifier({
           embedAudio: createWorkerEmbedAudio(),
@@ -285,7 +352,7 @@ export default function LiveSession() {
                 })
               },
               onError: (message) => {
-                setError(`实时转写：${message}`)
+                reportError(`实时转写：${message}`)
               },
             },
           })
@@ -334,8 +401,12 @@ export default function LiveSession() {
             }
             break
           case 'candidatesDone':
+            if (!useConfig.getState().islandReplyEnabled) break
             if (e.candidates.length === 3) {
-              setLatestCandidates(e.candidates)
+              setCandidateRounds((prev) => [
+                { id: e.turnId, candidates: e.candidates },
+                ...prev,
+              ])
             }
             setTurns((prev) =>
               prev.map((t) => (t.id === e.turnId ? { ...t, candidates: e.candidates } : t)),
@@ -356,6 +427,10 @@ export default function LiveSession() {
 
       vad.on('speech-start', () => {
         setVadStatus('speech')
+        if (!useConfig.getState().islandSttEnabled) {
+          inSpeechRef.current = true
+          return
+        }
         const startedAt = Date.now()
         if (realtimeModeRef.current) {
           // Safety: if prior segment never committed, seal buffer before new audio.
@@ -366,7 +441,7 @@ export default function LiveSession() {
             uncommittedRef.current = false
             void (async () => {
               try {
-                const text = await rt.waitCompleted()
+                const text = await waitRealtimeCompletedWithSpan(rt)
                 await pipeline.ingestFinalizedTurn({
                   speaker: meta?.speaker ?? speakerRef.current,
                   text,
@@ -389,6 +464,7 @@ export default function LiveSession() {
         inSpeechRef.current = false
       })
       vad.on('speech-ready', (e) => {
+        if (!useConfig.getState().islandSttEnabled) return
         const now = Date.now()
         const startedAt =
           draftMetaRef.current?.startedAt ?? now - e.duration * 1000
@@ -406,23 +482,11 @@ export default function LiveSession() {
             const buffer = e.buffer
             void (async () => {
               try {
-                const verifyPromise =
-                  autoRef.current && embeddingRef.current && verifierRef.current
-                    ? verifierRef.current
-                        .verify(buffer.buffer as ArrayBuffer, embeddingRef.current)
-                        .then((r) => {
-                          setConfidence(r.confidence)
-                          return r.speaker as 'user' | 'other'
-                        })
-                        .catch((err) => {
-                          setError(`说话人判定失败：${String(err)}`)
-                          return 'other' as const
-                        })
-                    : Promise.resolve(speakerRef.current as 'user' | 'other')
+                const verifyPromise = verifyWithSpan(buffer.buffer as ArrayBuffer)
 
                 // Spec: speaker gate runs in parallel with STT finalization.
                 const [text, who] = await Promise.all([
-                  rt.waitCompleted(),
+                  waitRealtimeCompletedWithSpan(rt),
                   verifyPromise,
                 ])
                 draftMetaRef.current = { speaker: who, startedAt }
@@ -449,17 +513,15 @@ export default function LiveSession() {
             })()
           } else if (autoRef.current && embeddingRef.current && verifierRef.current) {
             // Already committed (e.g. speech-start safety flush); still label async.
-            void verifierRef.current
-              .verify(e.buffer.buffer as ArrayBuffer, embeddingRef.current)
-              .then((r) => {
-                setConfidence(r.confidence)
-                draftMetaRef.current = { speaker: r.speaker, startedAt }
+            void verifyWithSpan(e.buffer.buffer as ArrayBuffer)
+              .then((who) => {
+                draftMetaRef.current = { speaker: who, startedAt }
                 const turnId = lastRealtimeTurnIdRef.current
                 if (turnId) {
                   setTurns((prev) =>
                     prev.map((t) =>
-                      t.id === turnId && t.speaker !== r.speaker
-                        ? { ...t, speaker: r.speaker }
+                      t.id === turnId && t.speaker !== who
+                        ? { ...t, speaker: who }
                         : t,
                     ),
                   )
@@ -474,19 +536,7 @@ export default function LiveSession() {
         const buffer = e.buffer
         void (async () => {
           try {
-            const verifyPromise =
-              autoRef.current && embeddingRef.current && verifierRef.current
-                ? verifierRef.current
-                    .verify(buffer.buffer as ArrayBuffer, embeddingRef.current)
-                    .then((r) => {
-                      setConfidence(r.confidence)
-                      return r.speaker as 'user' | 'other'
-                    })
-                    .catch((err) => {
-                      setError(`说话人判定失败：${String(err)}`)
-                      return 'other' as const
-                    })
-                : Promise.resolve(speakerRef.current as 'user' | 'other')
+            const verifyPromise = verifyWithSpan(buffer.buffer as ArrayBuffer)
 
             if (useConfig.getState().transcribeMode === 'aggregated') {
               const who = await verifyPromise
@@ -511,7 +561,7 @@ export default function LiveSession() {
               endedAt,
             })
           } catch (err) {
-            setError(`转写失败：${String(err)}`)
+            reportError(`转写失败：${String(err)}`)
             const who = speakerRef.current
             await pipeline.ingestFinalizedTurn({
               speaker: who,
@@ -526,6 +576,7 @@ export default function LiveSession() {
 
       await audio.start(async (chunk) => {
         await vad.processAudio(chunk)
+        if (!useConfig.getState().islandSttEnabled) return
         if (!realtimeModeRef.current || !inSpeechRef.current) return
         const rt = realtimeRef.current
         if (!rt) return
@@ -536,7 +587,7 @@ export default function LiveSession() {
       setLiveSessionRunning(true)
       setLoading('')
     } catch (e) {
-      setError((e as Error).message)
+      reportError((e as Error).message)
       setLoading('')
       stop()
     }
@@ -564,197 +615,105 @@ export default function LiveSession() {
     setActiveSttPath('idle')
     setVadStatus('idle')
     setConfidence(null)
+    useIoTracerStore.getState().stopRecording()
   }
 
   async function clearSession() {
     await storageRef.current.clearActiveSession()
     setTurns([])
     setDraft(null)
-    setLatestCandidates(null)
+    setCandidateRounds([])
     setState('IDLE')
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>实时会话</CardTitle>
-          <CardDescription>
-            麦克风 → Silero VAD → 说话人判定 → TurnGate → batch `/stt` 或 realtime `/stt-realtime` → 管线 → `/llm`。
-            实时路径边说边出草稿；定稿后才入库并请求教练（ADR 0004）。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="live-speaker">当前说话人</Label>
-              <select
-                id="live-speaker"
-                value={speaker}
-                onChange={(e) => setSpeaker(e.target.value as 'user' | 'other')}
-                disabled={mode === 'auto'}
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50"
-              >
-                <option value="other">对方（相手）</option>
-                <option value="user">我（学习者）</option>
-              </select>
+    <StageShell
+      leftTitle="对话"
+      left={<TranscriptPanel turns={turns} draft={draft} />}
+      debugTitle="调试"
+      debug={
+        <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto">
+          <SessionToolbar
+            running={running}
+            loading={loading}
+            state={state}
+            vadStatus={vadStatus}
+            activeSttPath={activeSttPath}
+            mode={mode}
+            confidence={confidence}
+            speaker={speaker}
+            onSpeakerChange={setSpeaker}
+            hasEmbedding={hasEmbedding}
+            statusNote={statusNote}
+            error={error}
+            onStart={() => void start()}
+            onStop={stop}
+            onClear={() => void clearSession()}
+            onGoEnroll={onGoEnroll}
+          />
+          <Separator />
+          <DebugPanel running={running} />
+        </div>
+      }
+      stage={
+        productSurfaceMode === 'floating' ? (
+          <div className="floating-sim relative flex h-full min-h-0 flex-col">
+            <p className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium tracking-wide text-muted-foreground/80">
+              悬浮模拟 · Island + 便利贴
+            </p>
+            <div className="min-h-0 flex-1 px-2 pt-6 sm:px-4">
+              <CandidateRoundStack
+                surface="floating"
+                rounds={candidateRounds}
+                maxRounds={candidateRoundsMax}
+                streaming={state === 'LLM_STREAMING' && islandReplyEnabled}
+              />
+            </div>
+            <IslandBar
+              running={running}
+              loading={loading}
+              state={state}
+              vadStatus={vadStatus}
+              sttEnabled={islandSttEnabled}
+              replyEnabled={islandReplyEnabled}
+              onToggleStt={() =>
+                patch({ islandSttEnabled: !useConfig.getState().islandSttEnabled })
+              }
+              onToggleReply={() =>
+                patch({ islandReplyEnabled: !useConfig.getState().islandReplyEnabled })
+              }
+              onStart={() => void start()}
+              onStop={stop}
+            />
+          </div>
+        ) : (
+          <div className="flex h-full min-h-0 flex-col bg-background">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-2.5">
+              <div>
+                <p className="text-sm font-medium">回复建议</p>
+                <p className="text-xs text-muted-foreground">窗口模式 · 应用内卡片</p>
+              </div>
+              {!running ? (
+                <Button size="sm" onClick={() => void start()} disabled={!!loading}>
+                  {loading || '开始会话'}
+                </Button>
+              ) : (
+                <Button size="sm" variant="destructive" onClick={stop}>
+                  停止
+                </Button>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 px-3 py-3 sm:px-5">
+              <CandidateRoundStack
+                surface="window"
+                rounds={candidateRounds}
+                maxRounds={candidateRoundsMax}
+                streaming={state === 'LLM_STREAMING' && islandReplyEnabled}
+              />
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <VadModelSelect disabled={running} />
-            {!sttIsRealtime && <TranscribeModeSelect disabled={running} />}
-            <span className="flex items-center gap-2 text-sm">
-              <span className="font-medium">STT：</span>
-              <SttProviderSelect
-                providers={providers}
-                value={provider}
-                onChange={(id) => patch({ transcribeProvider: id })}
-                allowOff={false}
-                disabled={running}
-              />
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            {!running ? (
-              <Button onClick={start} disabled={!!loading}>{loading || '开始会话'}</Button>
-            ) : (
-              <Button variant="destructive" onClick={stop}>停止会话</Button>
-            )}
-            <Button variant="outline" onClick={clearSession} disabled={running}>清空会话</Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">状态：</span>
-            <Badge variant={STATE_VARIANT[state] ?? 'secondary'}>{state}</Badge>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-medium">转写路径：</span>
-            <Badge variant={activeSttPath === 'realtime' ? 'default' : 'secondary'}>
-              {activeSttPath === 'realtime'
-                ? '实时流式'
-                : activeSttPath === 'batch'
-                  ? 'batch（无实时草稿）'
-                  : '未开始'}
-            </Badge>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-medium">VAD：</span>
-            <span>{vadStatus === 'speech' ? '说话中' : vadStatus === 'silence' ? '静音' : '空闲'}</span>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-medium">说话人：</span>
-            {mode === 'auto' ? (
-              <span>自动{confidence !== null ? `（置信度 ${confidence.toFixed(2)}）` : ''}</span>
-            ) : mode === 'manual' ? (
-              <span>
-                手动
-                <span className="text-muted-foreground ml-2">
-                 （到「声纹录入」页录入后可启用自动判定）
-                </span>
-              </span>
-            ) : (
-              <span>检测中…</span>
-            )}
-          </div>
-
-          {statusNote && <p className="text-sm text-amber-700">{statusNote}</p>}
-          {error && <p className="text-sm text-destructive">错误：{error}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>调试参数</CardTitle>
-          <CardDescription>
-            VAD、说话人判定与成句阈值，改动实时生效。暂停 ms：静音超过该值才成句（双方同一阈值，spec §2.4）。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-            <VadParamsFields />
-            <AsrPadFields />
-            <NumberField
-              label="说话人阈值（0.8）"
-              value={speakerThreshold}
-              step={0.05}
-              min={0}
-              max={1}
-              onChange={(v) => useConfig.getState().patch({ speakerThreshold: v })}
-            />
-            <MergeParamsFields disabled={!mergeEnabled && !sttIsRealtime} />
-          </div>
-          <Button variant="outline" size="sm" onClick={() => useConfig.getState().reset()}>
-            恢复默认
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>最新候选</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {latestCandidates && latestCandidates.length > 0 ? (
-              <ul className="space-y-2">
-                {latestCandidates.map((c) => (
-                  <ReplyCandidateCard key={c.id} candidate={c} />
-                ))}
-              </ul>
-            ) : state === 'LLM_STREAMING' ? (
-              <p className="text-sm text-muted-foreground">正在流式生成…</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">（还没有候选）</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>时间轴</CardTitle>
-            <CardDescription>最新在上；实时路径可显示进行中草稿</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!draft && turns.length === 0 ? (
-              <p className="text-sm text-muted-foreground">（还没有对话轮次）</p>
-            ) : (
-              <ol className="space-y-2">
-                {draft && (
-                  <li
-                    className={`border-l-4 pl-3 py-2 rounded-r-md border-dashed opacity-80 ${
-                      draft.speaker === 'other' ? 'border-blue-500' : 'border-emerald-500'
-                    } bg-muted/30`}
-                  >
-                    <div className="font-semibold text-sm">
-                      {draft.speaker === 'other' ? '对方' : '我'} · 草稿
-                    </div>
-                    <div className="text-sm">{draft.text || '…'}</div>
-                  </li>
-                )}
-                {[...turns].reverse().map((t) => (
-                  <li
-                    key={t.id}
-                    className={`border-l-4 pl-3 py-2 rounded-r-md ${
-                      t.speaker === 'other' ? 'border-blue-500' : 'border-emerald-500'
-                    } ${t.sttFailed ? 'bg-red-50' : 'bg-muted/50'}`}
-                  >
-                    <div className="font-semibold text-sm">
-                      {t.speaker === 'other' ? '对方' : '我'}{t.sttFailed ? ' · STT 失败' : ''}
-                    </div>
-                    <div className="text-sm">{t.sttFailed ? '（空·转写失败）' : t.text}</div>
-                    {t.candidates && t.candidates.length > 0 && (
-                      <ul className="mt-1 ml-4 list-disc space-y-1">
-                        {t.candidates.map((c) => (
-                          <ReplyCandidateCard key={c.id} candidate={c} compact />
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+        )
+      }
+    />
   )
 }

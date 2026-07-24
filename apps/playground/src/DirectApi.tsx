@@ -3,20 +3,20 @@ import { encodeWav } from '@kibotalk/audio'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 import {
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Separator,
+  Label,
+  ScrollArea,
   Textarea,
+  toast,
 } from '@kibotalk/ui'
+import { Cable, Loader2, Mic, Sparkles, Square, StopCircle } from 'lucide-react'
 import { extractCandidates } from './partial-json'
 import { parseSseStream } from './sse'
 import { AudioSource } from './audio/audio-source'
 import { SttProviderSelect, useTranscribeProvider, sttUrl } from './SttProviderSelect'
 import { readLanguageSnapshot, useConfig } from './config-store'
-import { ReplyCandidateCard } from './components/ReplyCandidateCard'
+import { StickyNote, StickyNotePlaceholder } from './components/StickyNote'
+import { WindowRoundCard, WindowRoundPlaceholder } from './components/WindowRoundCard'
+import { StageShell } from './components/StageShell'
 
 type CandidateState = ReplyCandidate[]
 
@@ -24,11 +24,8 @@ type LlmRunStatus = 'idle' | 'waiting' | 'generating' | 'done' | 'aborted'
 
 type LlmMetrics = {
   status: LlmRunStatus
-  /** Request start → first token (ms). */
   ttftMs: number | null
-  /** First token → end (ms). */
   genMs: number | null
-  /** Request start → end (ms). */
   totalMs: number | null
   charCount: number
   charsPerSec: number | null
@@ -45,7 +42,6 @@ function formatRate(rate: number | null): string {
   return `${rate.toFixed(1)} chars/s`
 }
 
-/** Pretty-print complete JSON; otherwise show buffered tail for readability. */
 function formatStreamBuffer(raw: string): { label: string; text: string } {
   const trimmed = raw.trim()
   if (!trimmed) return { label: '（空）', text: '' }
@@ -69,43 +65,52 @@ const STATUS_LABEL: Record<LlmRunStatus, string> = {
 }
 
 export default function DirectApi() {
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>直连 API — 真实 /stt + /llm</CardTitle>
-          <CardDescription>
-            直接调用代理路由。需要在 api 服务端配置 <code>STT_OPENROUTER_*</code> /{' '}
-            <code>LLM_*</code> 环境变量（见仓库根目录 .env.example；本地 LM Studio 用 <code>LLM_OPENAI_*</code>）。
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
-      <SttPanel />
-      <Separator />
-      <LlmPanel />
-    </div>
-  )
-}
-
-function SttPanel() {
   const { providers, provider } = useTranscribeProvider()
   const patch = useConfig((s) => s.patch)
+  const productSurfaceMode = useConfig((s) => s.productSurfaceMode)
+
   const [transcription, setTranscription] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [sttError, setSttError] = useState('')
+  const [sttBusy, setSttBusy] = useState(false)
   const [recording, setRecording] = useState(false)
   const audioRef = useRef<AudioSource | null>(null)
   const chunksRef = useRef<Float32Array[]>([])
 
+  const [contextText, setContextText] = useState(
+    'other: 本日はお忙しい中お越しいただきありがとうございます。まずは簡単に自己紹介をお願いします。\nuser: 〇〇大学で情報工学を専攻しております、田中と申します。\nother: では、数ある企業の中で、なぜ弊社を志望されたのでしょうか。',
+  )
+  const [candidates, setCandidates] = useState<CandidateState>([])
+  const [raw, setRaw] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [llmError, setLlmError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [metrics, setMetrics] = useState<LlmMetrics>({
+    status: 'idle',
+    ttftMs: null,
+    genMs: null,
+    totalMs: null,
+    charCount: 0,
+    charsPerSec: null,
+  })
+  const [tokenBatches, setTokenBatches] = useState<Array<{ atMs: number; chars: number }>>([])
+  const abortRef = useRef<AbortController | null>(null)
+  const batchRef = useRef({ chars: 0, lastFlush: 0 })
+
+  function failStt(message: string) {
+    setSttError(message)
+    toast.error(message)
+  }
+
+  function failLlm(message: string) {
+    setLlmError(message)
+    toast.error(message)
+  }
+
   async function sendWav(wav: ArrayBuffer) {
-    setBusy(true)
-    setError('')
+    setSttBusy(true)
+    setSttError('')
     setTranscription('')
     try {
-      // Always via the /stt proxy (keys stay server-side). ?provider= overrides
-      // the active provider per request; the server resolves base URL / key /
-      // model from its own env. See ADR 0002.
       const res = await fetch(
         sttUrl(
           useConfig.getState().transcribeProvider,
@@ -117,14 +122,14 @@ function SttPanel() {
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
       setTranscription(json.text ?? '')
     } catch (e) {
-      setError((e as Error).message)
+      failStt((e as Error).message)
     } finally {
-      setBusy(false)
+      setSttBusy(false)
     }
   }
 
   async function startRecording() {
-    setError('')
+    setSttError('')
     setTranscription('')
     try {
       const audio = new AudioSource()
@@ -135,7 +140,7 @@ function SttPanel() {
       })
       setRecording(true)
     } catch (e) {
-      setError((e as Error).message)
+      failStt((e as Error).message)
       audioRef.current?.stop()
       audioRef.current = null
     }
@@ -160,78 +165,6 @@ function SttPanel() {
     await sendWav(encodeWav(pcm, sampleRate))
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>/stt — 语音转写</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">STT 来源：</span>
-            <SttProviderSelect
-              providers={providers.filter((p) => (p.mode ?? 'batch') === 'batch')}
-              value={
-                provider && providers.some((p) => p.id === provider && (p.mode ?? 'batch') === 'batch')
-                  ? provider
-                  : null
-              }
-              onChange={(p) => patch({ transcribeProvider: p })}
-              allowOff={false}
-              offLabel=""
-            />
-          </div>
-        </div>
-
-        {provider === 'openai' && (
-          <p className="text-xs text-muted-foreground">
-            本地模式：服务端需在 <code>.env</code> 配置 <code>STT_OPENAI_*</code>（指向本机
-            <code>mlx-qwen3-asr serve</code>，默认 :8765）并运行 <code>pnpm dev:api</code>。
-            key / base URL / 模型都在服务端，浏览器只选 provider。仅 Apple Silicon。见 ADR 0002。
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {!recording ? (
-            <Button onClick={startRecording} disabled={busy}>开始录音</Button>
-          ) : (
-            <Button variant="destructive" onClick={stopAndTranscribe}>停止并转写</Button>
-          )}
-          {recording && <span className="text-sm text-amber-600">录音中…（再次点击结束）</span>}
-        </div>
-        {busy && <p className="text-sm text-muted-foreground">转写中…</p>}
-        {error && <p className="text-sm text-destructive">错误：{error}</p>}
-        {transcription && (
-          <p className="rounded-md bg-muted/60 p-3 text-sm">
-            <b>文本：</b>{transcription}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function LlmPanel() {
-  const [contextText, setContextText] = useState(
-    'other: 本日はお忙しい中お越しいただきありがとうございます。まずは簡単に自己紹介をお願いします。\nuser: 〇〇大学で情報工学を専攻しております、田中と申します。\nother: では、数ある企業の中で、なぜ弊社を志望されたのでしょうか。',
-  )
-  const [candidates, setCandidates] = useState<CandidateState>([])
-  const [raw, setRaw] = useState('')
-  const [prompt, setPrompt] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [metrics, setMetrics] = useState<LlmMetrics>({
-    status: 'idle',
-    ttftMs: null,
-    genMs: null,
-    totalMs: null,
-    charCount: 0,
-    charsPerSec: null,
-  })
-  const [tokenBatches, setTokenBatches] = useState<Array<{ atMs: number; chars: number }>>([])
-  const abortRef = useRef<AbortController | null>(null)
-  const batchRef = useRef({ chars: 0, lastFlush: 0 })
-
   function parseContext(text: string): ConversationTurn[] {
     return text
       .split('\n')
@@ -247,7 +180,7 @@ function LlmPanel() {
 
   async function generate() {
     setBusy(true)
-    setError('')
+    setLlmError('')
     setRaw('')
     setPrompt('')
     setCandidates([])
@@ -285,7 +218,7 @@ function LlmPanel() {
       }
       for await (const msg of parseSseStream(res)) {
         if (msg.event === 'error') {
-          setError(msg.data)
+          failLlm(msg.data)
           continue
         }
         if (msg.event === 'prompt') {
@@ -316,7 +249,6 @@ function LlmPanel() {
           charsPerSec: elapsedGen > 0 ? (next.length / elapsedGen) * 1000 : null,
         }))
 
-        // Coalesce SSE token log ~every 100ms to keep the list readable.
         batchRef.current.chars += msg.data.length
         if (now - batchRef.current.lastFlush >= 100 && batchRef.current.chars > 0) {
           const chars = batchRef.current.chars
@@ -351,7 +283,7 @@ function LlmPanel() {
           genMs: firstTokenAt != null ? tEnd - firstTokenAt : m.genMs,
         }))
       } else {
-        setError((e as Error).message)
+        failLlm((e as Error).message)
         setMetrics((m) => ({ ...m, status: 'idle' }))
       }
     } finally {
@@ -360,112 +292,179 @@ function LlmPanel() {
     }
   }
 
-  function abort() {
-    abortRef.current?.abort()
-  }
-
   const streamView = formatStreamBuffer(raw)
 
+  const replyPreview =
+    candidates.length > 0 ? (
+      productSurfaceMode === 'floating' ? (
+        <StickyNote candidates={candidates} />
+      ) : (
+        <WindowRoundCard candidates={candidates} label="本轮建议" />
+      )
+    ) : busy ? (
+      productSurfaceMode === 'floating' ? (
+        <StickyNotePlaceholder label="正在流式生成…" />
+      ) : (
+        <WindowRoundPlaceholder label="正在流式生成…" />
+      )
+    ) : productSurfaceMode === 'floating' ? (
+      <StickyNotePlaceholder label="（还没有候选）" />
+    ) : (
+      <WindowRoundPlaceholder label="（还没有候选）" />
+    )
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>/llm — 3 条回复候选（流式）</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Textarea
-          value={contextText}
-          onChange={(e) => setContextText(e.target.value)}
-          rows={4}
-          className="font-mono"
-        />
-
-        <div className="flex gap-2">
-          <Button onClick={generate} disabled={busy}>生成</Button>
-          <Button variant="outline" onClick={abort} disabled={!busy}>中止</Button>
-        </div>
-
-        {metrics.status !== 'idle' && (
-          <div className="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-3 text-xs sm:grid-cols-3 md:grid-cols-6">
-            <div>
-              <div className="text-muted-foreground">状态</div>
-              <div className="font-medium">{STATUS_LABEL[metrics.status]}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">预填充 (TTFT)</div>
-              <div className="font-medium tabular-nums">{formatMs(metrics.ttftMs)}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">生成时长</div>
-              <div className="font-medium tabular-nums">{formatMs(metrics.genMs)}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">总耗时</div>
-              <div className="font-medium tabular-nums">{formatMs(metrics.totalMs)}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">输出字符</div>
-              <div className="font-medium tabular-nums">{metrics.charCount}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">速率</div>
-              <div className="font-medium tabular-nums">{formatRate(metrics.charsPerSec)}</div>
-            </div>
+    <StageShell
+      stage={
+        <div className="flex h-full min-h-0 flex-col gap-4 p-5">
+          <div className="space-y-1">
+            <h2 className="inline-flex items-center gap-2 text-lg font-semibold">
+              <Cable className="size-4" />
+              回复预览
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              用户侧看到的回复预览 · 旁栏调试代理调用
+            </p>
           </div>
-        )}
+          <Textarea
+            value={contextText}
+            onChange={(e) => setContextText(e.target.value)}
+            rows={4}
+            className="min-h-[6rem]"
+          />
+          <div className="flex gap-2">
+            <Button onClick={() => void generate()} disabled={busy}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              生成
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => abortRef.current?.abort()}
+              disabled={!busy}
+            >
+              <StopCircle className="size-4" />
+              中止
+            </Button>
+          </div>
+          {llmError ? <p className="text-sm text-destructive">{llmError}</p> : null}
+          <div className="flex flex-1 items-start justify-center overflow-auto py-4">
+            {replyPreview}
+          </div>
+        </div>
+      }
+      debug={
+        <ScrollArea className="h-full pr-2">
+          <div className="space-y-5 pb-6">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">/stt 探针</p>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs text-muted-foreground">STT 来源</Label>
+                <SttProviderSelect
+                  providers={providers.filter((p) => (p.mode ?? 'batch') === 'batch')}
+                  value={
+                    provider && providers.some((p) => p.id === provider && (p.mode ?? 'batch') === 'batch')
+                      ? provider
+                      : null
+                  }
+                  onChange={(p) => patch({ transcribeProvider: p })}
+                  allowOff={false}
+                  offLabel=""
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {!recording ? (
+                  <Button size="sm" onClick={() => void startRecording()} disabled={sttBusy}>
+                    <Mic className="size-3.5" />
+                    开始录音
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="destructive" onClick={() => void stopAndTranscribe()}>
+                    <Square className="size-3.5" />
+                    停止并转写
+                  </Button>
+                )}
+              </div>
+              {sttBusy ? (
+                <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  转写中…
+                </p>
+              ) : null}
+              {sttError ? <p className="text-xs text-destructive">{sttError}</p> : null}
+              {transcription ? (
+                <p className="rounded-md bg-muted/60 p-2 text-xs">
+                  <b>文本：</b>
+                  {transcription}
+                </p>
+              ) : null}
+            </div>
 
-        {error && <p className="text-sm text-destructive">错误：{error}</p>}
+            {metrics.status !== 'idle' ? (
+              <div className="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-2 text-[11px]">
+                <div>
+                  <div className="text-muted-foreground">状态</div>
+                  <div className="font-medium">{STATUS_LABEL[metrics.status]}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">TTFT</div>
+                  <div className="font-medium tabular-nums">{formatMs(metrics.ttftMs)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">生成</div>
+                  <div className="font-medium tabular-nums">{formatMs(metrics.genMs)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">总耗时</div>
+                  <div className="font-medium tabular-nums">{formatMs(metrics.totalMs)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">字符</div>
+                  <div className="font-medium tabular-nums">{metrics.charCount}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">速率</div>
+                  <div className="font-medium tabular-nums">{formatRate(metrics.charsPerSec)}</div>
+                </div>
+              </div>
+            ) : null}
 
-        {candidates.length > 0 ? (
-          <ol className="space-y-2">
-            {candidates.map((c) => (
-              <ReplyCandidateCard key={c.id} candidate={c} />
-            ))}
-          </ol>
-        ) : busy ? (
-          <p className="text-sm text-muted-foreground">正在流式生成…</p>
-        ) : (
-          <p className="text-sm text-muted-foreground">（还没有候选）</p>
-        )}
-
-        <details open={Boolean(prompt)}>
-          <summary className="cursor-pointer text-sm">
-            发给模型的 prompt（role=user；当前无独立 system）
-          </summary>
-          {prompt ? (
-            <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-200 whitespace-pre-wrap">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">prompt</p>
+              {prompt ? (
+                <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 text-[11px] whitespace-pre-wrap">
 {prompt}
-            </pre>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">点「生成」后由服务端渲染并通过 SSE 下发。</p>
-          )}
-        </details>
+                </pre>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">生成后显示</p>
+              )}
+            </div>
 
-        {raw && (
-          <details open>
-            <summary className="cursor-pointer text-sm">
-              输出流 · {streamView.label}
-            </summary>
-            <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-200">
+            {raw ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">输出流 · {streamView.label}</p>
+                <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 text-[11px]">
 {streamView.text}
-            </pre>
-          </details>
-        )}
+                </pre>
+              </div>
+            ) : null}
 
-        {tokenBatches.length > 0 && (
-          <details>
-            <summary className="cursor-pointer text-sm">
-              SSE token 批次（约 100ms 合并，{tokenBatches.length} 批）
-            </summary>
-            <ul className="mt-2 max-h-40 overflow-auto font-mono text-xs text-muted-foreground">
-              {tokenBatches.map((b, i) => (
-                <li key={i}>
-                  +{formatMs(b.atMs)} · {b.chars} chars
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </CardContent>
-    </Card>
+            {tokenBatches.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  token 批次（{tokenBatches.length}）
+                </p>
+                <ul className="max-h-32 overflow-auto text-[11px] text-muted-foreground">
+                  {tokenBatches.map((b, i) => (
+                    <li key={i}>
+                      +{formatMs(b.atMs)} · {b.chars} chars
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </ScrollArea>
+      }
+    />
   )
 }

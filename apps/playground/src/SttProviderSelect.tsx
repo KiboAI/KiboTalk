@@ -1,19 +1,18 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@kibotalk/ui'
 import { useEffect, useState } from 'react'
 import { useConfig } from './config-store'
+import type { SttProvider } from './stt-providers'
+import { defaultSttProvider, providerMode, sttUrl } from './stt-providers'
 
-export type SttProvider = {
-  id: string
-  label: string
-  model: string
-  active: boolean
-  mode?: 'batch' | 'realtime'
-}
+export type { SttProvider }
+export { defaultSttProvider, providerMode, sttUrl }
 
-/**
- * Fetch the configured STT providers from the proxy once on mount. Returns an
- * empty list if the proxy is unreachable or nothing is configured. Keys never
- * arrive — only ids/labels/models/mode.
- */
 export function useSttProviders(): SttProvider[] {
   const [providers, setProviders] = useState<SttProvider[]>([])
   useEffect(() => {
@@ -31,35 +30,6 @@ export function useSttProviders(): SttProvider[] {
   return providers
 }
 
-/** Build the /stt proxy URL for a provider id (null/empty → active provider). */
-export function sttUrl(
-  provider: string | null,
-  language?: string | null,
-): string {
-  const params = new URLSearchParams()
-  if (provider) params.set('provider', provider)
-  if (language) params.set('language', language)
-  const qs = params.toString()
-  return qs ? `/stt?${qs}` : '/stt'
-}
-
-/** Pick the default provider: the active one, else the first available. */
-export function defaultSttProvider(providers: SttProvider[]): string | null {
-  return providers.find((p) => p.active)?.id ?? providers[0]?.id ?? null
-}
-
-export function providerMode(
-  providers: SttProvider[],
-  id: string | null,
-): 'batch' | 'realtime' {
-  if (!id) return 'batch'
-  return providers.find((p) => p.id === id)?.mode ?? 'batch'
-}
-
-/**
- * Shared hook: fetch providers once, bootstrap the store's transcribeProvider
- * to the active one (only the first time), and return the current selection.
- */
 export function useTranscribeProvider(): { providers: SttProvider[]; provider: string | null } {
   const providers = useSttProviders()
   const provider = useConfig((s) => s.transcribeProvider)
@@ -74,14 +44,13 @@ type SttProviderSelectProps = {
   providers: SttProvider[]
   value: string | null
   onChange: (provider: string | null) => void
-  /** Include an "off" option (default true). Set false for panels that always transcribe. */
   allowOff?: boolean
   offLabel?: string
   disabled?: boolean
   id?: string
 }
 
-/** Shared STT provider selector. Used by the VAD panel and the direct-API panel. */
+/** Shared STT provider selector (shadcn Select). */
 export function SttProviderSelect({
   providers,
   value,
@@ -91,27 +60,31 @@ export function SttProviderSelect({
   disabled,
   id,
 }: SttProviderSelectProps) {
+  const selectValue = value ?? (allowOff ? '__off__' : '')
   return (
-    <span className="flex items-center gap-2 text-sm">
-      <select
-        id={id}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || null)}
+    <div className="w-full space-y-1.5">
+      <Select
+        value={selectValue || undefined}
+        onValueChange={(v) => onChange(v === '__off__' ? null : v)}
         disabled={disabled || providers.length === 0}
-        className="h-9 rounded-md border border-input bg-transparent px-2 text-sm disabled:opacity-50"
       >
-        {allowOff && <option value="">{offLabel}</option>}
-        {providers.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}（{p.model}）
-            {p.mode === 'realtime' ? ' · 实时' : ' · batch'}
-            {p.active ? ' · 默认' : ''}
-          </option>
-        ))}
-      </select>
-      {providers.length === 0 && (
-        <span className="text-xs text-muted-foreground">（服务端未配置任何 STT provider）</span>
-      )}
-    </span>
+        <SelectTrigger id={id} className="h-9 w-full">
+          <SelectValue placeholder={providers.length === 0 ? '无可用 provider' : '选择'} />
+        </SelectTrigger>
+        <SelectContent>
+          {allowOff ? <SelectItem value="__off__">{offLabel}</SelectItem> : null}
+          {providers.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.label}
+              {p.mode === 'realtime' ? ' · 实时' : ' · batch'}
+              {p.active ? ' · 默认' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {providers.length === 0 ? (
+        <p className="text-xs text-muted-foreground">服务端未配置 STT provider</p>
+      ) : null}
+    </div>
   )
 }

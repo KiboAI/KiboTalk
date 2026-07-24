@@ -445,23 +445,23 @@ Velin 在 **Node / CI / eval** 中 `renderComponent`；浏览器运行时消费�
 
 重点测：用户上轮 STT 是否进入下轮建议、难度是否达标、ja 时 furigana/助詞质量。
 
-### 2.7 开发 Playground（功能验证，非 UI 组件库）
+### 2.7 开发 Playground（功能验证 + 产品 UI 试炼）
 
-**背景**：整产品（`apps/web` + 完整页面流）在原型图 / UI 设计定稿前**跑不起来**，也不该为了调一个模块就把全应用拉起来。参考 [AIRI `dev:ui`](https://airi.moeru.ai/ui/)（Histoire 测 `stage-ui` 组件），我们要的是**另一层 playground**——测**能力模块**，不是测 shadcn 按钮长什么样。
+**背景**：整产品（`apps/web` + 完整页面流）在原型图 / UI 设计定稿前**跑不起来**，也不该为了调一个模块就把全应用拉起来。参考 [AIRI `dev:ui`](https://airi.moeru.ai/ui/)（Histoire 测 `stage-ui` 组件），我们要的是**另一层 playground**——主测**能力模块**，并逐渐承接**产品 UI 组件预演**（便利贴候选、声纹向导等），不是只测 shadcn 按钮长什么样。
 
 | | AIRI `dev:ui` | 本项目 `apps/playground` |
 |---|---|---|
-| 目的 | UI 组件库隔离预览（Story / Variant） | 语音与对话 pipeline 功能验证 |
+| 目的 | UI 组件库隔离预览（Story / Variant） | 语音与对话 pipeline 功能验证 + 产品面视觉试炼 |
 | 典型内容 | Input、Chat History、Level Meter… | VAD、STT、声纹录入+同页验证、说话人判定、LLM 出候选 |
-| 界面要求 | 接近成品视觉 | **极简即可**：录音按钮、波形/日志、结果区 |
+| 界面要求 | 接近成品视觉 | **产品主舞台须精致**（纸感 / 品牌黄 / 便利贴）；实验室可高密度，但同壳不可糊弄。详见 [Playground 视觉重构](./playground-visual-refactor.md) |
 | 与主应用关系 | 与 `stage-web` 并行 | 与 `apps/web` 并行；**共用 `packages/*`** |
 
 **原则**
 
 1. **先小后大**：先把可独立验证的模块在 playground 里打通，再接到完整会话流。
-2. **不等 UI 设计**：神奈子原型图定稿前，用 playground 推进 F01–F05、基础 LLM 回复等**后端 / pipeline 能力**；正式页面壳子后补。
-3. **UI 组件库测试后置**：`packages/ui` 的 Storybook / Histoire 类工具**以后再做**；MVP 阶段不阻塞 pipeline 开发。
-4. **Playground 可拆页**：每个模块一页或一个 tab，避免做成第二个完整产品。
+2. **能力优先，视觉跟进**：pipeline 能力已通的模块（尤其 Live、声纹）按 [视觉重构 spec](./playground-visual-refactor.md) 提升到可迁入正式 app 的组件质量；仍允许暴露用户不可见参数，但须与产品面分层。
+3. **UI 组件库 Story 后置**：`packages/ui` 的 Storybook / Histoire 类工具**以后再做**；不阻塞 pipeline，但 shadcn 组件与 design token 须在 playground 实战中补齐。
+4. **Playground 可拆页**：每个模块一页或一个 tab；删除已冗余的管线模拟器；Live = 产品主舞台，VAD/直连 = 实验室。
 
 **建议页面 / 模块（按开发顺序）**
 
@@ -488,8 +488,8 @@ Velin 在 **Node / CI / eval** 中 `renderComponent`；浏览器运行时消费�
 
 **与 `apps/web` 的分工**
 
-- **`apps/playground`**：开发期工具；可注入 mock speaker 标签（绕过 speaker 模型测下游）、暴露原始 embedding、中间日志；**不**追求响应式 / PWA / 上架形态。
-- **`apps/web`**：等产品 UI 定稿后，把已在 playground 验过的 `packages/pipeline`、`packages/speaker`、`packages/llm` **接进正式路由**；用户看到的才是 F10/F11 那套界面。
+- **`apps/playground`**：开发期工具 + 产品 UI 试炼；可注入 mock、暴露原始 embedding / 中间日志与调试旋钮；视觉按 [playground-visual-refactor.md](./playground-visual-refactor.md)（纸感主舞台 / 实验室分层）。**不**承担 PWA / 上架形态。
+- **`apps/web`**：等产品 UI 定稿后，把已在 playground 验过的 `packages/pipeline`、`packages/speaker`、`packages/llm` 与可复用 UI 组件 **接进正式路由**；用户看到的才是 F10/F11 那套界面。
 
 ```text
 packages/pipeline、speaker、llm、conversation  （真实实现）

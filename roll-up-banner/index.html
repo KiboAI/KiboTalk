@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="KiboTalk Live Reply Coach — 真人外语对话时的开口教练" />
+  <title>KiboTalk · 真人对话时的开口教练</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body class="m-0 min-h-screen overflow-x-auto bg-stone-200 font-sans text-stone-800 antialiased">
+  <main id="poster"
+    class="mx-auto my-6 flex h-500 w-200 shrink-0 flex-col gap-11 overflow-hidden bg-stone-50 pb-10 pe-12 ps-12 pt-10 shadow-2xl max-lg:my-0 max-lg:shadow-none"
+    aria-label="KiboTalk 产品海报">
+    <header class="flex h-19 mt-10 shrink-0 items-center justify-between">
+      <img class="h-18 w-60 object-contain object-left" src="./assets/kibotalk-wordmark.svg" alt="KiboTalk" />
+      <div class="flex items-center gap-4 text-xs font-extrabold tracking-widest text-stone-500">
+        <span>ADVENTUREX 2026</span>
+      </div>
+    </header>
+
+    <section class="h-65 shrink-0 pt-2" aria-labelledby="hero-title">
+      <h1 id="hero-title"
+        class="mb-4 mt-4 flex flex-col text-6xl font-black leading-none tracking-tighter text-stone-800">
+        <span>听懂了，</span>
+        <mark class="w-fit bg-transparent text-inherit underline decoration-yellow-400 decoration-8 underline-offset-0">
+          却答不上来？
+        </mark>
+      </h1>
+      <p class="m-0 max-w-100 text-xl font-semibold leading-relaxed text-stone-800">
+        翻译让你听懂，<strong class="font-black">KiboTalk 让你答得上来。</strong>
+      </p>
+      <p class="mb-0 mt-3 text-sm font-medium leading-relaxed text-stone-500">AI 提示，你开口。</p>
+    </section>
+
+    <section class="flex h-120 shrink-0 flex-row items-center gap-6" aria-labelledby="map-title">
+      <div class="flex min-w-0 flex-1 flex-col justify-center text-left mb-18">
+        <p class="m-0 text-xs font-extrabold tracking-widest text-yellow-700">REAL LIFE, REAL VOICE</p>
+        <h2 id="map-title" class="mb-0 mt-2 text-4xl font-black leading-tight tracking-tighter text-stone-800">
+          每一次开口，<mark class="bg-transparent text-yellow-700"><br />都在真实世界。</mark>
+        </h2>
+      </div>
+
+      <div class="relative h-118 w-105 shrink-0 rounded-3xl" aria-label="日本真实生活场景地图">
+        <img class="absolute left-0 top-18 h-100 w-96 object-contain" src="./assets/map.png" alt="日本地图" />
+        <img class="pointer-events-none absolute left-41 top-23 rotate-40 z-10 w-18" src="./assets/connector-1.png"
+          alt="" />
+        <img class="pointer-events-none absolute left-19.5 top-59 rotate-70 z-10 w-18" src="./assets/connector-1.png"
+          alt="" />
+        <img class="pointer-events-none absolute left-57 top-54 rotate-55 z-10 w-18" src="./assets/connector-1.png"
+          alt="" />
+        <img class="pointer-events-none absolute left-52 top-70 rotate-80 z-10 w-18" src="./assets/connector-1.png"
+          alt="" />
+        <img class="pointer-events-none absolute left-8 top-71 rotate-10 z-10 w-18" src="./assets/connector-1.png"
+          alt="" />
+        <span class="pointer-events-none absolute left-59 top-25 z-20 -rotate-20 text-lg">
+          📌
+        </span>
+        <span class="pointer-events-none absolute left-52 top-62 z-20 -rotate-20 text-lg">
+          📌
+        </span>
+        <span class="pointer-events-none absolute left-55 top-50 z-20 -rotate-20 text-lg">
+          📌
+        </span>
+        <span class="pointer-events-none absolute left-35 top-66 z-20 -rotate-20 text-lg">
+          📌
+        </span>
+        <span class="pointer-events-none absolute left-26 top-68 z-20 -rotate-20 text-lg">
+          📌
+        </span>
+
+        <article
+          class="absolute left-18 top-5 z-20 flex w-31 rotate-10 flex-col items-center overflow-hidden rounded-xl border-4 border-orange-500 bg-amber-50 text-center shadow-lg">
+          <img class="h-17 w-29 object-cover" src="./assets/card-convenience.jpg" alt="便利店场景" />
+          <strong class="mt-1 text-xs font-extrabold leading-tight">便利店兼职</strong>
+          <span class="whitespace-nowrap pb-1 pt-0.5 text-xs leading-none text-stone-500 scale-75">
+            コンビニのアルバイト
+          </span>
+        </article>
+        <article
+          class="absolute -left-2 top-38 z-20 flex w-31 -rotate-6 flex-col items-center overflow-hidden rounded-xl border-4 border-orange-500 bg-amber-50 text-center shadow-lg">
+          <img class="h-17 w-29 object-cover" src="./assets/card-clinic.jpg" alt="就医场景" />
+          <strong class="mt-1 text-xs font-extrabold leading-tight">就医问诊</strong>
+          <span class="whitespace-nowrap pb-1 pt-0.5 text-xs leading-none text-stone-500 scale-75">
+            診察を受ける
+          </span>
+        </article>
+        <article
+          class="absolute right-2 top-38 z-20 flex w-31 rotate-6 flex-col items-center overflow-hidden rounded-xl border-4 border-orange-500 bg-amber-50 text-center shadow-lg">
+          <img class="h-17 w-29 object-cover" src="./assets/card-rent.jpg" alt="租房场景" />
+          <strong class="mt-1 text-xs font-extrabold leading-tight">租房签约</strong>
+          <span class="whitespace-nowrap pb-1 pt-0.5 text-xs leading-none text-stone-500 scale-75">
+            賃貸物件の契約
+          </span>
+        </article>
+        <article
+          class="absolute -left-18 top-82 z-20 flex w-31 -rotate-10 flex-col items-center overflow-hidden rounded-xl border-4 border-orange-500 bg-amber-50 text-center shadow-lg">
+          <img class="h-17 w-29 object-cover" src="./assets/card-bank.jpg" alt="银行办事场景" />
+          <strong class="mt-1 text-xs font-extrabold leading-tight">银行业务</strong>
+          <span class="whitespace-nowrap pb-1 pt-0.5 text-xs leading-none text-stone-500 scale-75">
+            銀行業務の手続き
+          </span>
+        </article>
+        <article
+          class="absolute right-15 top-72 z-20 flex w-31 rotate-15 flex-col items-center overflow-hidden rounded-xl border-4 border-orange-500 bg-amber-50 text-center shadow-lg">
+          <img class="h-17 w-29 object-cover" src="./assets/card-restaurant.jpg" alt="餐厅点餐场景" />
+          <strong class="mt-1 text-xs font-extrabold leading-tight">餐厅点餐</strong>
+          <span class="whitespace-nowrap pb-1 pt-0.5 text-xs leading-none text-stone-500 scale-75">
+            レストランでの注文
+          </span>
+        </article>
+      </div>
+    </section>
+
+    <section class="flex h-130 shrink-0 flex-col gap-4 justify-center items-center" aria-labelledby="solution-title">
+      <div class="flex h-20 shrink-0 items-end text-left">
+        <div>
+          <p class="m-0 text-xs font-extrabold tracking-widest text-yellow-700">THE SOLUTION</p>
+          <h2 id="solution-title" class="mb-0 mt-2 text-4xl font-black leading-tight tracking-tighter text-stone-800">
+            AI 给提示，<mark class="bg-transparent text-yellow-700">你自己开口。</mark>
+          </h2>
+        </div>
+      </div>
+
+      <article class="flex items-center" aria-label="KiboTalk 实时会话产品界面">
+        <div class="pointer-events-none flex w-110 flex-col justify-center gap-3">
+          <div class="flex flex-col gap-2">
+            <div
+              class="pointer-events-auto rounded-xl border border-white/15 bg-neutral-800/80 pb-2 pe-3 ps-3 pt-2 text-sm font-semibold leading-snug text-white/85 shadow-xl backdrop-blur-xl">
+              <strong class="me-2 text-xs text-white/50">我</strong>「すみません、それは……」
+            </div>
+
+            <section
+              class="pointer-events-auto rounded-2xl bg-gradient-to-br from-yellow-200 via-yellow-300 to-yellow-400 p-4 text-yellow-950 shadow-xl"
+              aria-label="本轮建议">
+              <div class="mb-1 flex items-center justify-between text-xs font-extrabold text-yellow-950/60">
+                <span>本轮建议</span><span>刚刚</span>
+              </div>
+              <ol class="m-0 list-none divide-y divide-dashed divide-yellow-950/20 p-0">
+                <li class="pb-2 pt-0">
+                  <p class="m-0 text-lg font-extrabold leading-snug">
+                    すみません、それ<span
+                      class="rounded-sm border-b-2 border-yellow-800/50 bg-yellow-100 pb-0.5 pe-0.5 ps-0.5 font-bold">は</span>いくらです<span
+                      class="rounded-sm border-b-2 border-yellow-800/50 bg-yellow-100 pb-0.5 pe-0.5 ps-0.5 font-bold">か</span>？
+                  </p>
+                  <p class="mb-0 mt-0.5 text-xs font-semibold text-yellow-950/65">不好意思，那个多少钱？</p>
+                </li>
+                <li class="py-2">
+                  <p class="m-0 text-lg font-extrabold leading-snug">
+                    はい、<ruby>お願<rt class="text-xs font-bold text-yellow-950/60">おねが</rt></ruby>いします。
+                  </p>
+                  <p class="mb-0 mt-0.5 text-xs font-semibold text-yellow-950/65">好的，麻烦您了。</p>
+                </li>
+                <li class="pb-0 pt-2">
+                  <p class="m-0 text-lg font-extrabold leading-snug">
+                    <ruby>少々<rt class="text-xs font-bold text-yellow-950/60">しょうしょう</rt></ruby>お<ruby>待<rt
+                        class="text-xs font-bold text-yellow-950/60">ま</rt></ruby>ちください。
+                  </p>
+                  <p class="mb-0 mt-0.5 text-xs font-semibold text-yellow-950/65">请稍等一下。</p>
+                </li>
+              </ol>
+            </section>
+          </div>
+
+          <div
+            class="pointer-events-auto mx-auto flex items-center gap-1.5 rounded-2xl border border-white/15 bg-neutral-900/90 p-2 text-white shadow-2xl backdrop-blur-xl"
+            aria-label="KiboTalk 悬浮控制条">
+            <span class="flex items-center gap-2 pe-1 ps-0.5 text-xs font-bold whitespace-nowrap">
+              <span class="size-2 shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20"></span>
+              转写中
+            </span>
+            <span class="h-5 w-0.5 bg-white/15"></span>
+            <span
+              class="inline-flex size-8 items-center justify-center rounded-lg border border-white/20 bg-white/20 text-white"
+              aria-label="暂停会话">
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <rect x="14" y="3" width="5" height="18" rx="1" />
+                <rect x="5" y="3" width="5" height="18" rx="1" />
+              </svg>
+            </span>
+            <span
+              class="inline-flex size-8 items-center justify-center rounded-lg border border-transparent bg-white/10 text-white/90"
+              aria-label="停止并保存">
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+              </svg>
+            </span>
+            <span
+              class="inline-flex size-8 items-center justify-center rounded-lg border border-white/20 bg-white/20 text-white"
+              aria-label="切换 AI 建议">
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <path
+                  d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
+                <path d="M20 2v4" />
+                <path d="M22 4h-4" />
+              </svg>
+            </span>
+            <span class="h-5 w-0.5 bg-white/15"></span>
+            <span
+              class="inline-flex size-8 items-center justify-center rounded-lg border border-transparent bg-white/10 text-white/90"
+              aria-label="移动悬浮窗">
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <path d="M12 2v20" />
+                <path d="m15 19-3 3-3-3" />
+                <path d="m19 9 3 3-3 3" />
+                <path d="M2 12h20" />
+                <path d="m5 9-3 3 3 3" />
+                <path d="m9 5 3-3 3 3" />
+              </svg>
+            </span>
+            <span
+              class="inline-flex size-8 items-center justify-center rounded-lg border border-transparent bg-white/10 text-white/90"
+              aria-label="更多操作">
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="19" cy="12" r="1" />
+                <circle cx="5" cy="12" r="1" />
+              </svg>
+            </span>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="flex h-102 shrink-0 items-start justify-between gap-12 py-6 mt-10">
+      <div class="flex min-w-0 flex-1 flex-col items-start mt-6">
+        <p class="m-0 text-xs font-extrabold tracking-widest text-yellow-700">
+          READY FOR THE REAL CONVERSATION
+        </p>
+        <h2 class="mb-4 mt-3 text-4xl font-black leading-tight tracking-tighter text-stone-800">
+          <span class="block">下一次卡壳前，</span>
+          <span class="flex flex-wrap items-center gap-x-2">
+            <span>让</span>
+            <img class="inline-block h-9 w-auto object-contain object-left"
+              src="./assets/kibotalk-wordmark-no-border.svg" alt="KiboTalk" />
+            <span>在场。</span>
+          </span>
+        </h2>
+        <span class="text-xs font-extrabold text-yellow-900">AdventureX 2026 参赛作品</span>
+      </div>
+
+      <div class="flex w-52 shrink-0 flex-col items-center justify-center">
+        <img class="size-40 rounded-xl bg-white" src="./assets/qr.png" alt="KiboTalk 内测二维码" />
+        <strong class="mt-2 text-sm font-extrabold">扫码加入内测</strong>
+        <span class="mt-1 text-xs font-bold text-yellow-700">advx.kibotalk.app</span>
+      </div>
+    </footer>
+  </main>
+</body>
+
+</html>

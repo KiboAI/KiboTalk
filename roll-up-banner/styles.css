@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@source "./index.html";
+
+@media print {
+  @page {
+    size: 80cm 200cm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 80cm;
+    height: 200cm;
+    background: white;
+  }
+
+  #poster {
+    margin: 0;
+    transform: scale(3.7795275591);
+    transform-origin: top left;
+    box-shadow: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

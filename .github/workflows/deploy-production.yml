@@ -84,7 +84,9 @@ jobs:
       - name: Verify HTTPS
         run: |
           for _attempt in $(seq 1 24); do
-            if curl --fail --silent --show-error https://advx.kibotalk.app/health; then
+            if curl --fail --silent --show-error https://advx.kibotalk.app/health \
+              && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
+              && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/"; then
               exit 0
             fi
             sleep 5

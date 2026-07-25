@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo build",
     "dev:api": "pnpm -F @kibotalk/api dev",
+    "dev:landing": "pnpm -F @kibotalk/landing dev",
     "dev:web": "pnpm -F @kibotalk/web dev",
     "dev:desktop": "pnpm -F @kibotalk/desktop dev",
     "dev:playground": "pnpm -F @kibotalk/playground dev",

@@ -1,8 +1,9 @@
-# Competition production deployment
+# Production deployment
 
-This runbook covers the temporary competition deployment at
-`https://advx.kibotalk.app`. It intentionally excludes payments, automated
-backups, alerting, notarization, and automatic desktop updates.
+This runbook covers the public landing page at `https://kibotalk.app` and the
+competition product at `https://advx.kibotalk.app`. It intentionally excludes
+payments, automated backups, alerting, notarization, and automatic desktop
+updates.
 
 ## Runtime layout
 
@@ -11,6 +12,8 @@ backups, alerting, notarization, and automatic desktop updates.
 - `/opt/kibotalk/compose.yaml`: Caddy, stateless Hono API, and PostgreSQL.
 - `/opt/kibotalk/.env`: production secrets; mode `0600`; never uploaded by CI.
 - Caddy's named volumes retain its automatically issued TLS certificate.
+- The Caddy image contains the static `apps/landing` build. `www.kibotalk.app`
+  redirects permanently to the apex domain.
 - `/opt/kibotalk/models`: same revision-pinned Q8 files used only when a Web
   client cannot load the primary Hugging Face copy.
 - Desktop models are bundled into the DMG. The VPS does not store installers.
@@ -40,9 +43,10 @@ Create `/opt/kibotalk/.env` from `.env.example` and set at least:
 
 ## HTTPS
 
-Keep the Cloudflare `advx` A record DNS-only and point it at the Japanese VPS.
-Ports 80 and 443 must be open. Caddy obtains and renews the certificate
-automatically; no `_acme-challenge` update or Certbot installation is needed.
+Keep the Cloudflare apex, `www`, and `advx` records DNS-only and point them at
+the Japanese VPS. Ports 80 and 443 must be open. Caddy obtains and renews the
+certificates automatically; no `_acme-challenge` update or Certbot installation
+is needed.
 
 ## Releases
 

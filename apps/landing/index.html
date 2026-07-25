@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>KiboTalk</title>
+    <script>
+      (() => {
+        const supported = new Set(['zh', 'ja', 'en'])
+        const saved = localStorage.getItem('kibotalk-landing-language')
+        const browserLanguage = navigator.languages?.[0] ?? navigator.language ?? 'en'
+        const detected = browserLanguage.toLowerCase().split('-')[0]
+        const language = supported.has(saved)
+          ? saved
+          : supported.has(detected)
+            ? detected
+            : 'en'
+        window.location.replace(`/${language}/${window.location.search}${window.location.hash}`)
+      })()
+    </script>
+  </head>
+  <body>
+    <noscript>
+      <p>
+        <a href="/en/">English</a>
+        <a href="/ja/">日本語</a>
+        <a href="/zh/">中文</a>
+      </p>
+    </noscript>
+  </body>
+</html>

@@ -605,6 +605,105 @@ a {
   margin-top: auto;
 }
 
+.payment-section {
+  padding-block: clamp(6rem, 12vw, 10rem);
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+  border-bottom: 1px solid var(--border);
+}
+
+.payment-layout {
+  display: grid;
+  gap: clamp(3rem, 8vw, 7rem);
+  align-items: center;
+  grid-template-columns: minmax(16rem, 0.85fr) minmax(25rem, 1.15fr);
+}
+
+.payment-copy {
+  max-width: 34rem;
+}
+
+.payment-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.75rem;
+}
+
+.payment-context > span {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.payment-card {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel);
+}
+
+.payment-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.payment-rail {
+  display: grid;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.payment-icon {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  color: #a65f00;
+  background: color-mix(in srgb, var(--primary) 24%, var(--background));
+  border-radius: var(--radius-md);
+}
+
+.payment-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.payment-rail-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.payment-rail-copy strong {
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.payment-rail-copy > span {
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.payment-disclaimer {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .mission-section {
   padding-block: clamp(6rem, 12vw, 10rem);
 }
@@ -709,12 +808,14 @@ a {
 @media (max-width: 900px) {
   .scene-layout,
   .product-layout,
+  .payment-layout,
   .mission-layout {
     grid-template-columns: 1fr;
   }
 
   .scene-heading,
-  .product-copy {
+  .product-copy,
+  .payment-copy {
     max-width: 38rem;
   }
 
@@ -832,6 +933,11 @@ a {
 
   .story-card a {
     width: 100%;
+  }
+
+  .payment-rail {
+    gap: 0.75rem;
+    padding: 0.85rem;
   }
 
   .mission-layout {

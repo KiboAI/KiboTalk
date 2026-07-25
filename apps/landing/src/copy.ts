@@ -15,6 +15,7 @@ type LandingCopy = {
     scenes: string
     product: string
     story: string
+    payment: string
     mission: string
   }
   actions: {
@@ -69,6 +70,18 @@ type LandingCopy = {
     steps: string[]
     capabilities: string[]
   }
+  payment: {
+    eyebrow: string
+    title: string
+    body: string
+    testnetLabel: string
+    hackathonNote: string
+    injectiveDetail: string
+    usdcDetail: string
+    soon: string
+    button: string
+    disclaimer: string
+  }
   mission: {
     eyebrow: string
     titleLead: string
@@ -99,6 +112,7 @@ export const copy: Record<Locale, LandingCopy> = {
       scenes: '真实场景',
       product: '如何工作',
       story: '开发故事',
+      payment: '支付计划',
       mission: '我们的使命',
     },
     actions: {
@@ -196,6 +210,18 @@ export const copy: Record<Locale, LandingCopy> = {
       steps: ['一句话生成闪应用', '验证“听懂却答不上来”的真实需求', '转向生产级多端自研'],
       capabilities: ['端侧语音活动检测', '声纹验证', '实时转写', '加密会话同步', '账号与额度', 'Web / PWA / 桌面端'],
     },
+    payment: {
+      eyebrow: 'PAYMENT · COMING SOON',
+      title: '更灵活的支付方式，正在准备。',
+      body: '我们计划支持基于 Injective 网络的 USDC 支付。当前仅展示支付入口，尚未开放充值、扣款或链上结算。',
+      testnetLabel: 'Injective EVM Testnet',
+      hackathonNote: 'AdventureX 黑客松预览',
+      injectiveDetail: '计划接入的支付网络',
+      usdcDetail: '计划支持的稳定币',
+      soon: '即将开放',
+      button: 'Injective / USDC 支付即将开放',
+      disclaimer: '这是测试网与黑客松展示，不会发起真实付款。',
+    },
     mission: {
       eyebrow: 'READY FOR THE REAL CONVERSATION',
       titleLead: '下一次卡壳前，',
@@ -216,6 +242,7 @@ export const copy: Record<Locale, LandingCopy> = {
       scenes: 'リアルな場面',
       product: '使い方',
       story: '開発ストーリー',
+      payment: '支払い予定',
       mission: '私たちの使命',
     },
     actions: {
@@ -313,6 +340,18 @@ export const copy: Record<Locale, LandingCopy> = {
       steps: ['一言からFlash Appを生成', '「分かるのに返せない」課題を検証', '本番品質のマルチデバイス開発へ'],
       capabilities: ['端末上の音声区間検出', '話者照合', 'リアルタイム文字起こし', '暗号化された会話同期', 'アカウントと利用枠', 'Web / PWA / デスクトップ'],
     },
+    payment: {
+      eyebrow: 'PAYMENT · COMING SOON',
+      title: 'より柔軟な支払い方法を準備中です。',
+      body: 'Injectiveネットワークを利用したUSDC決済に対応する予定です。現在は案内のみで、入金・請求・オンチェーン決済はまだ利用できません。',
+      testnetLabel: 'Injective EVM Testnet',
+      hackathonNote: 'AdventureX ハッカソン向けプレビュー',
+      injectiveDetail: '対応予定の決済ネットワーク',
+      usdcDetail: '対応予定のステーブルコイン',
+      soon: '近日公開',
+      button: 'Injective / USDC 決済は近日公開',
+      disclaimer: 'テストネットとハッカソン向けの表示です。実際の支払いは発生しません。',
+    },
     mission: {
       eyebrow: 'READY FOR THE REAL CONVERSATION',
       titleLead: '次に言葉に詰まる前に、',
@@ -333,6 +372,7 @@ export const copy: Record<Locale, LandingCopy> = {
       scenes: 'Real moments',
       product: 'How it works',
       story: 'Our build story',
+      payment: 'Payment plans',
       mission: 'Our mission',
     },
     actions: {
@@ -429,6 +469,18 @@ export const copy: Record<Locale, LandingCopy> = {
       productionBody: 'From on-device audio decisions to cross-device conversation sync, we are turning the spark into a product people can rely on.',
       steps: ['Create a Flash App from one sentence', 'Validate the “understood but could not reply” moment', 'Build the production-grade, multi-device product'],
       capabilities: ['On-device voice activity detection', 'Speaker verification', 'Live transcription', 'Encrypted conversation sync', 'Accounts and usage allowance', 'Web / PWA / desktop'],
+    },
+    payment: {
+      eyebrow: 'PAYMENT · COMING SOON',
+      title: 'More flexible ways to pay are on the way.',
+      body: 'We plan to support USDC payments on the Injective network. For now, this is a preview only: deposits, charges, and on-chain settlement are not yet available.',
+      testnetLabel: 'Injective EVM Testnet',
+      hackathonNote: 'AdventureX hackathon preview',
+      injectiveDetail: 'Planned payment network',
+      usdcDetail: 'Planned stablecoin',
+      soon: 'Coming soon',
+      button: 'Injective / USDC payments coming soon',
+      disclaimer: 'Testnet and hackathon preview only. No real payment will be initiated.',
     },
     mission: {
       eyebrow: 'READY FOR THE REAL CONVERSATION',

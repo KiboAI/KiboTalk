@@ -56,6 +56,7 @@ export const IPC_CHANNEL = {
   authGetAccessToken: 'auth:get-access-token',
   authSetAccessToken: 'auth:set-access-token',
   authClearAccessToken: 'auth:clear-access-token',
+  authChangedEvent: 'auth:changed',
   authGetAccountCache: 'auth:get-account-cache',
   authSetAccountCache: 'auth:set-account-cache',
   authClearAccountCache: 'auth:clear-account-cache',
@@ -112,6 +113,7 @@ export type KiboTalkDesktopApi = {
     getAccessToken: () => Promise<string | null>
     setAccessToken: (token: string) => Promise<void>
     clearAccessToken: () => Promise<void>
+    onChanged: (callback: () => void) => () => void
     getAccountCache: () => Promise<string | null>
     setAccountCache: (value: string) => Promise<void>
     clearAccountCache: () => Promise<void>

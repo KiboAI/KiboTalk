@@ -38,9 +38,11 @@ async function getSystemAudioStream(): Promise<MediaStream> {
 function ReadyIsland({
   prefs,
   storage,
+  syncPending,
 }: {
   prefs: LanguagePrefs
   storage: ConversationStorage
+  syncPending: boolean
 }) {
   const { language } = useI18n()
   const [contentSide, setContentSide] = useState<IslandContentSide>('above')
@@ -161,6 +163,7 @@ function ReadyIsland({
     <IslandPage
       controller={controller}
       contentSide={contentSide}
+      syncPending={syncPending}
       onGoSettings={() => void window.kibotalk.onboarding.open('settings')}
       onGoHistory={() => void window.kibotalk.onboarding.open('history')}
       onGoAccount={() => void window.kibotalk.onboarding.open('account')}
@@ -214,15 +217,11 @@ function IslandContent({ prefs }: { prefs: LanguagePrefs }) {
                 ? t('preparing')
                 : !accountState.account
                   ? '登录'
-                  : cloud.error
-                    ? '离线 · 查看历史'
-                    : t('preparing')
+                  : t('preparing')
             }
             onClick={
                 completed === null || accountState.loading
                   ? undefined
-                  : cloud.error
-                  ? () => void window.kibotalk.onboarding.open('settings')
                   : () => void window.kibotalk.onboarding.open(
                       accountState.account ? 'settings' : 'account',
                     )
@@ -235,7 +234,7 @@ function IslandContent({ prefs }: { prefs: LanguagePrefs }) {
     )
   }
 
-  return <ReadyIsland prefs={prefs} storage={cloud.storage} />
+  return <ReadyIsland prefs={prefs} storage={cloud.storage} syncPending={Boolean(cloud.error)} />
 }
 
 export default function IslandApp() {

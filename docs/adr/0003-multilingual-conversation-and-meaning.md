@@ -8,11 +8,11 @@
 |----|------|--------|------|
 | 对话语言 | `conversationLang` | `ja` \| `en` \| `zh` | STT `language` hint、时间轴原文、候选 `targetText`、录入口令 |
 | 翻译语言 | `meaningLang` | `ja` \| `en` \| `zh` | 候选 `meaning`（允许与对话语言相同） |
-| 水平 | `levelByLang` | 每语言 `beginner` \| `intermediate` \| `advanced` | 进 prompt；切换对话语言时带出该语言档位 |
+| 水平 | `level` | `beginner` \| `intermediate` \| `advanced` | 单一全局难度值，进 prompt |
 
 - **同场双方**都用 `conversationLang`（不做对方异语 / 跨语同传）。
 - **设置**仅会话外可改；开新会话时快照 `{ conversationLang, meaningLang, level }`；进行中锁定。
-- **首次**预填 `ja` + `zh` + ja=`beginner`（另两语言水平默认 `intermediate`），须显式确认。
+- **首次**预填 `ja` + `zh` + `beginner`，须显式确认。
 - **Schema**：`meaningZh` → `meaning`；`segments`（ruby + 助詞）仅 `conversationLang === 'ja'` 强制；en/zh 可省略。
 - **Prompt**：单套 Velin 模板，参数注入语言与水平；仅 ja 条件块挂注音规则。
 - **录入口令**随 `conversationLang` 三套；换语言不强制重录声纹。

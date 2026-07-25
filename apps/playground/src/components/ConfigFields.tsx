@@ -256,12 +256,10 @@ export function TranscribeProviderSelect({
 export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
   const conversationLang = useConfig((s) => s.conversationLang)
   const uiLang = useConfig((s) => s.uiLang)
-  const levelByLang = useConfig((s) => s.levelByLang)
+  const level = useConfig((s) => s.level)
   const setConversationLang = useConfig((s) => s.setConversationLang)
   const setUiLang = useConfig((s) => s.setUiLang)
   const setCurrentLevel = useConfig((s) => s.setCurrentLevel)
-  const level = levelByLang[conversationLang]
-
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">

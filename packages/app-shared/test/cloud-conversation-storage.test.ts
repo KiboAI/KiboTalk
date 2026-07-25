@@ -133,6 +133,30 @@ describe('CloudConversationStorage recovery', () => {
     cloud.dispose()
   })
 
+  it('keeps a newly started session locally when its first cloud upload fails', async () => {
+    const local = new SyncAwareMemoryStorage()
+    const syncErrors: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({ error: 'offline' }, { status: 503 }),
+    )
+    const cloud = new CloudConversationStorage(local, 'user-1', (error) => {
+      syncErrors.push(error)
+    })
+
+    await expect(cloud.startSession({
+      id: 'new-session',
+      startedAt: 10,
+      snapshot: session('snapshot').snapshot,
+      title: 'local first',
+    })).resolves.toMatchObject({ id: 'new-session' })
+    await cloud.flush()
+
+    expect((await local.loadSession('new-session'))?.title).toBe('local first')
+    expect(local.dirtySessionIds.has('new-session')).toBe(true)
+    expect(syncErrors.at(-1)).toBe('Session sync HTTP 503')
+    cloud.dispose()
+  })
+
   it('restores pending local preferences and uploads them before using remote preferences', async () => {
     const local = new SyncAwareMemoryStorage()
     await local.setPendingPreferences({ conversationLang: 'ja' })

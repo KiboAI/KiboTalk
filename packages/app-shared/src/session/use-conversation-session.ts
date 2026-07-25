@@ -348,7 +348,7 @@ export function useConversationSession(params: ConversationSessionParams) {
       const isRealtime =
         providerMode(p.providers, selectedProvider) === 'realtime'
 
-      setLoading('正在请求麦克风 + 加载 VAD 模型…')
+      setLoading('正在启动麦克风…')
       const primaryStream =
         audioSourceMode === 'system'
           ? await p.getSystemAudioStream?.()

@@ -211,7 +211,7 @@ export default function VadPanel() {
 
   async function start() {
     setError('')
-    setLoading('正在请求麦克风 + 加载 VAD 模型…')
+    setLoading('正在启动麦克风与音频处理…')
     setSegments([])
     setMergedSegments([])
     setProb(0)

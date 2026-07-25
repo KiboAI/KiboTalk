@@ -39,6 +39,7 @@ import {
 export type IslandPageProps = {
   controller: ProductSessionController
   contentSide: 'above' | 'below'
+  syncPending?: boolean
   onGoSettings?: () => void
   onGoHistory?: () => void
   onGoAccount?: () => void
@@ -82,6 +83,7 @@ function islandStatus(controller: ProductSessionController, translate: ReturnTyp
 export function IslandPage({
   controller,
   contentSide,
+  syncPending = false,
   onGoSettings,
   onGoHistory,
   onGoAccount,
@@ -131,6 +133,11 @@ export function IslandPage({
         pulse={tone.pulse}
         toneClassName={tone.toneClassName}
       />
+      {syncPending ? (
+        <span className="px-1 text-[10px] font-semibold text-island-foreground/55">
+          {t('syncPending')}
+        </span>
+      ) : null}
       <IslandSeparator />
       {session.lifecycle === 'running' ? (
         <IslandToggleButton on label={t('pause')} onClick={() => void session.pause()}>

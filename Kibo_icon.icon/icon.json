@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "automatic-gradient" : "srgb:1.00000,0.78824,0.00000,1.00000"
+    "automatic-gradient" : "srgb:1.00000,0.79216,0.00000,1.00000"
   },
   "groups" : [
     {
@@ -9,15 +9,7 @@
           "image-name" : "Union.svg",
           "name" : "Union"
         }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
-      },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.3
-      }
+      ]
     }
   ],
   "supported-platforms" : {

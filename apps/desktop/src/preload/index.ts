@@ -65,6 +65,11 @@ const api: KiboTalkDesktopApi = {
     getAccessToken: () => ipcRenderer.invoke(IPC_CHANNEL.authGetAccessToken),
     setAccessToken: (token) => ipcRenderer.invoke(IPC_CHANNEL.authSetAccessToken, token),
     clearAccessToken: () => ipcRenderer.invoke(IPC_CHANNEL.authClearAccessToken),
+    onChanged: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on(IPC_CHANNEL.authChangedEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNEL.authChangedEvent, listener)
+    },
     getAccountCache: () => ipcRenderer.invoke(IPC_CHANNEL.authGetAccountCache),
     setAccountCache: (value) => ipcRenderer.invoke(IPC_CHANNEL.authSetAccountCache, value),
     clearAccountCache: () => ipcRenderer.invoke(IPC_CHANNEL.authClearAccountCache),

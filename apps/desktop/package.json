@@ -1,7 +1,7 @@
 {
   "name": "@kibotalk/desktop",
   "version": "0.1.0",
-  "description": "KiboTalk live reply coach for Apple Silicon Macs",
+  "description": "KiboTalk live reply assistant for Apple Silicon Macs",
   "author": "KiboTalk",
   "private": true,
   "type": "module",

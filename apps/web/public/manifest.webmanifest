@@ -1,7 +1,7 @@
 {
-  "name": "KiboTalk · Live Reply Coach",
+  "name": "KiboTalk · Live Reply Assistant",
   "short_name": "KiboTalk",
-  "description": "Live foreign-language conversation coaching with encrypted text sync and reply suggestions.",
+  "description": "Live foreign-language reply assistance with encrypted text sync and reply suggestions.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

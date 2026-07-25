@@ -12,6 +12,7 @@ export {
 
 export { startModelPreload, useModelPreloadStatus } from './model-preload'
 export type { ModelLoadState, ModelPreloadStatus } from './model-preload'
+export { shouldShowSessionError } from './session/session-presentation'
 
 export { parseSseStream } from './sse'
 export type { SseMessage } from './sse'
@@ -65,9 +66,9 @@ export {
   defaultAppConfig,
   defaultLanguagePrefs,
   defaultProductPrefs,
-  defaultLevelByLang,
   PASSPHRASE_BY_LANG,
   APP_LANGUAGE_OPTIONS,
+  isLearnerLevel,
   LEARNER_LEVEL_OPTIONS,
   systemUiLanguage,
 } from './config'

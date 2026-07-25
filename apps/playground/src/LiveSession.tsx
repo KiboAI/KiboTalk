@@ -302,7 +302,7 @@ export default function LiveSession({
       const selectedProvider = cfg.transcribeProvider
       const isRealtime = providerMode(providers, selectedProvider) === 'realtime'
 
-      setLoading('正在请求麦克风 + 加载 VAD 模型…')
+      setLoading('正在启动麦克风与音频处理…')
       const audio = new AudioSource()
       audioRef.current = audio
       const vadVariant = SILERO_VARIANTS.find((v) => v.id === cfg.vadVariantId) ?? SILERO_VARIANTS[0]

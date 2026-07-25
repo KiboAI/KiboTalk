@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">KiboTalk</h1>
   <p align="center">
-    Live Reply Coach — speak for yourself, with a coach by your side.
+    Live Reply Assistant — speak for yourself, with real-time support.
   </p>
   <p align="center">
     <a href="./docs/README.zh-CN.md">简体中文</a>
@@ -16,7 +16,7 @@ Instant translation lets you **understand**. Real life still asks you to **answe
 
 A convenience-store shift, a phone call, a meeting abroad — you catch what they said, then freeze: *what do I say back?* Apps that speak for you never train your mouth. Apps that only chat with AI never put you in that moment.
 
-**KiboTalk is a live reply coach for real conversations.** It listens to the other person, offers a few lines you could say — meaning, target language, and reading help when you need it — and you choose one and speak it yourself.
+**KiboTalk is a live reply assistant for real conversations.** It listens to the other person, offers a few lines you could say — meaning, target language, and reading help when you need it — and you choose one and speak it yourself.
 
 ## Why it matters
 
@@ -31,7 +31,7 @@ We believe people should keep ownership of their voice. AI can suggest; **you** 
 - **Meaning + sayable line** — understand the intent, then say the sentence in the language of the room.
 - **Stuck mid-sentence?** — get a full, speakable completion instead of a blank pause.
 - **Your level, your languages** — conversation language and meaning language can differ (e.g. speak Japanese, read meaning in Chinese); difficulty follows you.
-- **You open your mouth** — no TTS that talks over you; the coach assists, you deliver.
+- **You open your mouth** — no TTS that talks over you; KiboTalk assists, you deliver.
 
 ## What it is not
 

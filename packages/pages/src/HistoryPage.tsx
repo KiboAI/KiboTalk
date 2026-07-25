@@ -40,22 +40,30 @@ function sessionSubtitle(session: ConversationSession, locale: string, currentLa
   return `${date} · ${durationMinutes} min`
 }
 
-function HistoryTurn({ session }: { session: ConversationSession }) {
+function HistoryTimeline({ session }: { session: ConversationSession }) {
   const { t } = useI18n()
   return (
-    <ol className="space-y-3">
+    <ol className="space-y-5">
       {session.turns.map((turn) => {
         const user = turn.speaker === 'user'
         return (
-          <li key={turn.id} className={`flex ${user ? 'justify-end' : 'justify-start'}`}>
-            <div className="max-w-[82%]">
-              <div className={`mb-1 text-[10.5px] font-bold text-muted-foreground ${user ? 'text-right' : ''}`}>
-                {user ? t('me') : t('other')}
-              </div>
-              <div className={`rounded-md px-3.5 py-2.5 text-sm ${user ? 'bg-accent' : 'bg-foreground/5'}`}>
-                {turn.sttFailed ? t('sttFailed') : turn.text}
+          <li key={turn.id} className="space-y-3">
+            <div className={`flex ${user ? 'justify-end' : 'justify-start'}`}>
+              <div className="max-w-[82%]">
+                <div className={`mb-1 text-[10.5px] font-bold text-muted-foreground ${user ? 'text-right' : ''}`}>
+                  {user ? t('me') : t('other')}
+                </div>
+                <div className={`rounded-md px-3.5 py-2.5 text-sm ${user ? 'bg-accent' : 'bg-foreground/5'}`}>
+                  {turn.sttFailed ? t('sttFailed') : turn.text}
+                </div>
               </div>
             </div>
+            {turn.suggestions?.length ? (
+              <div className="ml-4 border-l-2 border-accent pl-3 sm:ml-8 sm:pl-4">
+                <p className="mb-2 text-xs font-semibold text-muted-foreground">{t('suggestions')}</p>
+                <StickyNoteCard candidates={turn.suggestions} className="mx-0" />
+              </div>
+            ) : null}
           </li>
         )
       })}
@@ -167,70 +175,47 @@ export function HistoryPage({
                 ) : null}
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(20rem,1.15fr)] lg:p-6">
-                  <section className="space-y-4">
-                    <div>
-                      <h3 className="mb-2 text-sm font-bold">{t('sessionSummary')}</h3>
-                      <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
-                        {selected.reviewStatus === 'ready' && selected.summary ? (
-                          selected.summary
-                        ) : selected.reviewStatus === 'failed' ? (
-                          <div className="space-y-3">
-                            <p className="text-destructive">{t('summaryFailed')}</p>
-                            {onRetryReview ? (
-                              <Button
-                                variant="soft"
-                                size="sm"
-                                disabled={retrying}
-                                onClick={async () => {
-                                  setRetrying(true)
-                                  try {
-                                    await onRetryReview(selected.id)
-                                    await refresh()
-                                  } finally {
-                                    setRetrying(false)
-                                  }
-                                }}
-                              >
-                                {retrying ? (
-                                  <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="size-4" />
-                                )}
-                                {t('retry')}
-                              </Button>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">{t('summaryPending')}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="mb-2 text-sm font-bold">{t('conversationHistory')}</h3>
-                      <HistoryTurn session={selected} />
+                <div className="mx-auto max-w-3xl space-y-6 p-4 lg:p-6">
+                  <section>
+                    <h3 className="mb-2 text-sm font-bold">{t('sessionSummary')}</h3>
+                    <div className="rounded-lg border border-border bg-card p-4 text-sm leading-relaxed">
+                      {selected.reviewStatus === 'ready' && selected.summary ? (
+                        selected.summary
+                      ) : selected.reviewStatus === 'failed' ? (
+                        <div className="space-y-3">
+                          <p className="text-destructive">{t('summaryFailed')}</p>
+                          {onRetryReview ? (
+                            <Button
+                              variant="soft"
+                              size="sm"
+                              disabled={retrying}
+                              onClick={async () => {
+                                setRetrying(true)
+                                try {
+                                  await onRetryReview(selected.id)
+                                  await refresh()
+                                } finally {
+                                  setRetrying(false)
+                                }
+                              }}
+                            >
+                              {retrying ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="size-4" />
+                              )}
+                              {t('retry')}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">{t('summaryPending')}</span>
+                      )}
                     </div>
                   </section>
-
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-bold">{t('suggestions')}</h3>
-                    {selected.turns.some((turn) => turn.suggestions?.length) ? (
-                      selected.turns
-                        .filter((turn) => turn.suggestions?.length)
-                        .reverse()
-                        .map((turn, index) => (
-                          <div key={turn.id} className={index > 0 ? 'opacity-65' : undefined}>
-                            {index > 0 ? (
-                              <p className="mb-2 text-center text-xs text-muted-foreground">
-                                {t('previousRound')}
-                              </p>
-                            ) : null}
-                            <StickyNoteCard candidates={turn.suggestions!} className="mx-auto" />
-                          </div>
-                        ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{t('emptySuggestions')}</p>
-                    )}
+                  <section>
+                    <h3 className="mb-3 text-sm font-bold">{t('conversationHistory')}</h3>
+                    <HistoryTimeline session={selected} />
                   </section>
                 </div>
               </ScrollArea>

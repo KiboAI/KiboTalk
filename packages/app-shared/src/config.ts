@@ -1,7 +1,6 @@
 import type {
   AppLanguage,
   LearnerLevel,
-  LevelByLang,
   SessionAudioSource,
   UiLanguage,
 } from '@kibotalk/conversation'
@@ -42,27 +41,21 @@ export const defaultAppConfig: AppConfig = {
   speakerThreshold: 0.8,
 }
 
-export const defaultLevelByLang: LevelByLang = {
-  ja: 'beginner',
-  en: 'intermediate',
-  zh: 'intermediate',
-}
-
 export const defaultLanguagePrefs: {
   conversationLang: AppLanguage
   meaningLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
 } = {
   conversationLang: 'ja',
   meaningLang: 'zh',
-  levelByLang: defaultLevelByLang,
+  level: 'beginner',
 }
 
 export type ProductTheme = 'system' | 'light' | 'dark'
 
 export const defaultProductPrefs: {
   conversationLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
   languagesConfirmed: boolean
   theme: ProductTheme
   launchAtLogin: boolean
@@ -70,7 +63,7 @@ export const defaultProductPrefs: {
   microphoneDeviceId: string
 } = {
   conversationLang: 'ja',
-  levelByLang: defaultLevelByLang,
+  level: 'beginner',
   languagesConfirmed: false,
   theme: 'system',
   launchAtLogin: false,
@@ -102,3 +95,7 @@ export const LEARNER_LEVEL_OPTIONS: Array<{ value: LearnerLevel; label: string }
   { value: 'intermediate', label: '中级' },
   { value: 'advanced', label: '高级' },
 ]
+
+export function isLearnerLevel(value: unknown): value is LearnerLevel {
+  return LEARNER_LEVEL_OPTIONS.some((option) => option.value === value)
+}

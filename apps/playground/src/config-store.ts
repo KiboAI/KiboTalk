@@ -1,10 +1,11 @@
 import { create } from 'zustand'
-import type { AppLanguage, LearnerLevel, LevelByLang } from '@kibotalk/conversation'
+import type { AppLanguage, LearnerLevel } from '@kibotalk/conversation'
 import { defaultVadConfig } from '@kibotalk/audio/vad'
 import {
   SILERO_VARIANTS,
   defaultSttProvider,
   defaultProductPrefs,
+  isLearnerLevel,
   systemUiLanguage,
   APP_LANGUAGE_OPTIONS,
   LEARNER_LEVEL_OPTIONS,
@@ -23,36 +24,34 @@ const LANGUAGE_PREFS_KEY = 'kibotalk.playground.languagePrefs'
 export type LanguagePrefs = {
   conversationLang: AppLanguage
   uiLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
   languagesConfirmed: boolean
 }
 
 const defaultLanguagePrefs: LanguagePrefs = {
   conversationLang: defaultProductPrefs.conversationLang,
   uiLang: systemUiLanguage(),
-  levelByLang: defaultProductPrefs.levelByLang,
+  level: defaultProductPrefs.level,
   languagesConfirmed: defaultProductPrefs.languagesConfirmed,
 }
 
 function loadLanguagePrefs(): LanguagePrefs {
   if (typeof localStorage === 'undefined') {
-    return { ...defaultLanguagePrefs, levelByLang: { ...defaultLanguagePrefs.levelByLang } }
+    return { ...defaultLanguagePrefs }
   }
   try {
     const raw = localStorage.getItem(LANGUAGE_PREFS_KEY)
-    if (!raw) return { ...defaultLanguagePrefs, levelByLang: { ...defaultLanguagePrefs.levelByLang } }
+    if (!raw) return { ...defaultLanguagePrefs }
     const parsed = JSON.parse(raw) as Partial<LanguagePrefs>
+    if (!isLearnerLevel(parsed.level)) return { ...defaultLanguagePrefs }
     return {
       conversationLang: parsed.conversationLang ?? defaultLanguagePrefs.conversationLang,
       uiLang: parsed.uiLang ?? defaultLanguagePrefs.uiLang,
-      levelByLang: {
-        ...defaultLanguagePrefs.levelByLang,
-        ...parsed.levelByLang,
-      },
+      level: parsed.level,
       languagesConfirmed: parsed.languagesConfirmed === true,
     }
   } catch {
-    return { ...defaultLanguagePrefs, levelByLang: { ...defaultLanguagePrefs.levelByLang } }
+    return { ...defaultLanguagePrefs }
   }
 }
 
@@ -105,7 +104,7 @@ type ConfigState = {
   // Language prefs (persisted)
   conversationLang: AppLanguage
   uiLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
   languagesConfirmed: boolean
   /** True while a live session is running — language prefs UI locks (F1). */
   liveSessionRunning: boolean
@@ -148,7 +147,7 @@ function languageSlice(prefs: LanguagePrefs) {
   return {
     conversationLang: prefs.conversationLang,
     uiLang: prefs.uiLang,
-    levelByLang: prefs.levelByLang,
+    level: prefs.level,
     languagesConfirmed: prefs.languagesConfirmed,
   }
 }
@@ -157,7 +156,7 @@ function persistFromState(s: ConfigState): void {
   persistLanguagePrefs({
     conversationLang: s.conversationLang,
     uiLang: s.uiLang,
-    levelByLang: s.levelByLang,
+    level: s.level,
     languagesConfirmed: s.languagesConfirmed,
   })
 }
@@ -172,7 +171,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
     if (
       partial.conversationLang !== undefined
       || partial.uiLang !== undefined
-      || partial.levelByLang !== undefined
+      || partial.level !== undefined
       || partial.languagesConfirmed !== undefined
     ) {
       persistFromState(get())
@@ -187,8 +186,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
     persistFromState(get())
   },
   setCurrentLevel: (level) => {
-    const { conversationLang, levelByLang } = get()
-    set({ levelByLang: { ...levelByLang, [conversationLang]: level } })
+    set({ level })
     persistFromState(get())
   },
   confirmLanguages: () => {
@@ -227,6 +225,6 @@ export function readLanguageSnapshot(): SessionLanguageSnapshot {
   return {
     conversationLang: s.conversationLang,
     meaningLang: s.uiLang,
-    level: s.levelByLang[s.conversationLang],
+    level: s.level,
   }
 }

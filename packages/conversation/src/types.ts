@@ -6,8 +6,6 @@ export type AppLanguage = 'ja' | 'en' | 'zh'
 /** Unified learner level (not JLPT/CEFR/HSK certificate labels). */
 export type LearnerLevel = 'beginner' | 'intermediate' | 'advanced'
 
-export type LevelByLang = Record<AppLanguage, LearnerLevel>
-
 export type UiLanguage = AppLanguage
 
 export type SessionAudioSource = 'microphone' | 'system' | 'both'

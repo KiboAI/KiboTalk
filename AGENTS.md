@@ -15,7 +15,7 @@ completions; other turns almost always get 3. Same card schema for both.
 both speakers use in-session (STT hint + `targetText`); persisted product
 `uiLang` (ja|en|zh) controls the UI and is frozen into internal `meaningLang`
 for candidate `meaning` when a session starts (it may equal conversation).
-Levels are `beginner|intermediate|advanced` per language (`levelByLang`).
+Level is one global `beginner|intermediate|advanced` value (`level`).
 Prefs are session-out only; each session freezes a snapshot. Japanese-only
 `segments` (furigana / particles); rename is `meaning` not `meaningZh`.
 
@@ -84,7 +84,7 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 - **No backward-compatibility guards.** If a rename/breakage is needed, do it directly and update callers in the same change.
 - **Playground UI is Chinese** — labels, examples, and sample content in Chinese.
 - **Tailwind v4 + shadcn/ui** for all UI (playground included). Shared primitives in `packages/ui`（Button、Card、Badge、Input、Textarea、Label、Tabs、Separator、Accordion、Collapsible、Dialog、DropdownMenu、Popover、Progress、ScrollArea、Select、Sheet、Skeleton、Slider、Switch、Tooltip、Toaster）。缺组件先 `shadcn add` 进该包并导出；**改样式改源组件 / token，不要平行重造**。
-- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/ASR/merge/speaker knobs, language prefs (`uiLang` / `conversationLang` / `levelByLang` / `languagesConfirmed`, persisted; `meaningLang` is derived from `uiLang` in the session snapshot), and selectors (provider, VAD model, transcribe mode) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `AsrPadFields`, `MergeParamsFields`, `LanguagePrefsFields`, `VadModelSelect`, `TranscribeModeSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
+- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/ASR/merge/speaker knobs, language prefs (`uiLang` / `conversationLang` / `level` / `languagesConfirmed`, persisted; `meaningLang` is derived from `uiLang` in the session snapshot), and selectors (provider, VAD model, transcribe mode) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `AsrPadFields`, `MergeParamsFields`, `LanguagePrefsFields`, `VadModelSelect`, `TranscribeModeSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
 
 ## Commands
 

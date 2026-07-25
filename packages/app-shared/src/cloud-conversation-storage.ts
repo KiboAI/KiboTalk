@@ -52,6 +52,7 @@ export class CloudConversationStorage implements ConversationStorage {
   constructor(
     private readonly local: ConversationStorage,
     private readonly userId: string,
+    private readonly onSyncError: (error: string) => void = () => undefined,
   ) {
     this.metadata = syncMetadataStorage(local)
   }
@@ -121,18 +122,10 @@ export class CloudConversationStorage implements ConversationStorage {
   }
 
   async startSession(start: ConversationSessionStart): Promise<ConversationSession> {
+    const session = await this.local.startSession(start)
     await this.markSessionDirty(start.id)
-    try {
-      const session = await this.local.startSession(start)
-      // A new cloud session is only allowed while the service is reachable.
-      // Existing history remains readable offline.
-      await this.pushSession(session)
-      return session
-    } catch (cause) {
-      await this.local.deleteSession(start.id)
-      await this.clearSessionDirty(start.id)
-      throw cause
-    }
+    this.enqueue(() => this.pushSession(session))
+    return session
   }
 
   async appendTurn(turn: ConversationTurn): Promise<void> {
@@ -242,10 +235,16 @@ export class CloudConversationStorage implements ConversationStorage {
   private enqueue(operation: () => Promise<void>): void {
     this.remoteQueue = this.remoteQueue
       .then(async () => {
-        if (!this.disposed) await operation()
+        if (!this.disposed) {
+          await operation()
+          this.onSyncError('')
+        }
       })
-      .catch(() => {
-        this.scheduleRetry()
+      .catch((cause) => {
+        if (!this.disposed) {
+          this.onSyncError(cause instanceof Error ? cause.message : String(cause))
+          this.scheduleRetry()
+        }
       })
   }
 
@@ -364,8 +363,8 @@ export type CloudConversationStorageState = {
 
 /**
  * Shared account-to-cloud-storage lifecycle for web and both desktop windows.
- * The product stays gated when the initial server sync fails, while the user
- * can still inspect onboarding and local history before entering a session.
+ * Local storage is available immediately; initial cloud reconciliation runs
+ * in the background and retries without gating a new session.
  */
 export function useCloudConversationStorage(args: {
   local: ConversationStorage
@@ -378,40 +377,62 @@ export function useCloudConversationStorage(args: {
   const [storage, setStorage] = useState<CloudConversationStorage | null>(null)
   const [syncing, setSyncing] = useState(Boolean(userId))
   const [error, setError] = useState('')
-  const [attempt, setAttempt] = useState(0)
-  const retry = useCallback(() => setAttempt((value) => value + 1), [])
+  const initializeRef = useRef<() => void>(() => undefined)
+  const retry = useCallback(() => initializeRef.current(), [])
 
   useEffect(() => {
     if (!userId) {
+      initializeRef.current = () => undefined
       setStorage(null)
       setSyncing(false)
       setError('')
       return
     }
     let cancelled = false
-    const next = new CloudConversationStorage(local, userId)
-    setStorage(null)
+    const next = new CloudConversationStorage(local, userId, setError)
+    setStorage(next)
     setSyncing(true)
     setError('')
-    void next
-      .initialize()
-      .then((preferences) => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelayMs = 2_000
+    let initializing = false
+    const initialize = async () => {
+      if (initializing) return
+      initializing = true
+      setSyncing(true)
+      try {
+        const preferences = await next.initialize()
         if (cancelled) return
         if (preferences !== null) preferencesHandler.current?.(preferences)
-        setStorage(next)
-      })
-      .catch((cause) => {
+        setError('')
+      } catch (cause) {
         if (cancelled) return
         setError(cause instanceof Error ? cause.message : String(cause))
-      })
-      .finally(() => {
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          retryDelayMs = Math.min(30_000, retryDelayMs * 2)
+          void initialize()
+        }, retryDelayMs)
+      } finally {
+        initializing = false
         if (!cancelled) setSyncing(false)
-      })
+      }
+    }
+    initializeRef.current = () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+        retryTimer = null
+      }
+      void initialize()
+    }
+    void initialize()
     return () => {
       cancelled = true
+      initializeRef.current = () => undefined
+      if (retryTimer) clearTimeout(retryTimer)
       next.dispose()
     }
-  }, [attempt, local, userId])
+  }, [local, userId])
 
   return { storage, syncing, error, retry }
 }

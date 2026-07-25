@@ -61,12 +61,13 @@ const config: Configuration = {
   // Populated by `pnpm download-models` — bundled models, not runtime-fetched (see `src/main/model-protocol.ts`).
   extraResources: [
     { from: 'resources/bundle-models', to: 'models' },
-    { from: '../../prototypes/assets/kibotalk-mark.svg', to: 'tray/kibotalk-mark.svg' },
+    { from: 'build/tray/kibotalk.png', to: 'tray/kibotalk.png' },
+    { from: 'build/tray/kibotalk@2x.png', to: 'tray/kibotalk@2x.png' },
   ],
   mac: {
     category: 'public.app-category.productivity',
     target: [{ target: 'dmg', arch: ['arm64'] }],
-    icon: 'build/icon-assets/Kibo_icon.icns',
+    icon: 'build/icon-assets/Kibo_icon.png',
     identity: null,
     minimumSystemVersion: '13.0.0',
     hardenedRuntime: false,

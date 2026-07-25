@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ProductSessionController, SessionTurn } from '@kibotalk/app-shared'
-import { languageLabel, levelLabel, useI18n } from '@kibotalk/app-shared'
+import {
+  languageLabel,
+  levelLabel,
+  shouldShowSessionError,
+  useI18n,
+} from '@kibotalk/app-shared'
 import {
   Button,
   Dialog,
@@ -84,7 +89,7 @@ function TurnBubble({ turn }: { turn: SessionTurn }) {
 
 function statusLabel(controller: ProductSessionController, translate: ReturnType<typeof useI18n>['t']) {
   const { lifecycle, loading } = controller.session
-  if (loading) return translate('preparing')
+  if (loading) return translate('preparingMicrophone')
   if (lifecycle === 'paused') return translate('paused')
   if (lifecycle === 'stopped') return translate('stopped')
   if (lifecycle === 'restoring' || lifecycle === 'starting') return translate('preparing')
@@ -212,7 +217,7 @@ export function SessionPage({ controller, onGoSettings, onGoHistory, onGoAccount
           {t('activeSessionRecovered')}
         </div>
       ) : null}
-      {session.error ? (
+      {shouldShowSessionError(session.lifecycle, session.error) ? (
         <div className="shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {session.error === 'VOICEPRINT_REQUIRED' ? t('voiceprintRequired') : t('sessionUnavailable')}
         </div>

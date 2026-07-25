@@ -30,6 +30,7 @@ import {
   OnboardingPage,
   SessionPage,
   SettingsPage,
+  SyncPendingNotice,
 } from '@kibotalk/pages'
 import { Button, ModelPreloadBadge } from '@kibotalk/ui'
 
@@ -195,7 +196,7 @@ function AppContent({
         remotePreferences
         && typeof remotePreferences === 'object'
         && 'conversationLang' in remotePreferences
-        && 'levelByLang' in remotePreferences
+        && 'level' in remotePreferences
       ) {
         onPrefsChange(remotePreferences as LanguagePrefs)
       }
@@ -250,17 +251,12 @@ function AppContent({
         <OnboardingPage
           uiLang={prefs.uiLang}
           conversationLang={prefs.conversationLang}
-          level={prefs.levelByLang[prefs.conversationLang]}
+          level={prefs.level}
           onUiLangChange={(uiLang) => onPrefsChange({ ...prefs, uiLang })}
           onConversationLangChange={(conversationLang) =>
             onPrefsChange({ ...prefs, conversationLang })
           }
-          onLevelChange={(level) =>
-            onPrefsChange({
-              ...prefs,
-              levelByLang: { ...prefs.levelByLang, [prefs.conversationLang]: level },
-            })
-          }
+          onLevelChange={(level) => onPrefsChange({ ...prefs, level })}
           onRequestPermissions={async () => {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
             stream.getTracks().forEach((track) => track.stop())
@@ -343,24 +339,12 @@ function AppContent({
     )
   }
 
-  if (cloud.syncing || !cloud.storage) {
+  if (!cloud.storage) {
     return (
       <>
         {modelsBadge}
         <div className="flex min-h-dvh items-center justify-center">
-          <div className="space-y-3 text-center">
-            <p className="text-sm text-muted-foreground">
-              {cloud.error ? '无法连接云同步，暂不能开始新会话。' : '正在同步会话历史…'}
-            </p>
-            {cloud.error ? (
-              <div className="flex justify-center gap-2">
-                <Button variant="soft" onClick={cloud.retry}>重试连接</Button>
-                <Button variant="soft" onClick={() => setHistoryOnly(true)}>
-                  查看本地历史
-                </Button>
-              </div>
-            ) : null}
-          </div>
+          <p className="text-sm text-muted-foreground">正在打开本地会话…</p>
         </div>
       </>
     )
@@ -381,6 +365,7 @@ function AppContent({
           await new IndexedDbEmbeddingStorage().clear()
         }}
       />
+      <SyncPendingNotice pending={Boolean(cloud.error)} onRetry={cloud.retry} />
     </>
   )
 }

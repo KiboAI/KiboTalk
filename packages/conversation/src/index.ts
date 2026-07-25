@@ -13,7 +13,6 @@ export type {
   ConversationSessionStatus,
   ConversationTurn,
   LearnerLevel,
-  LevelByLang,
   ReplyCandidate,
   ReplySegment,
   ReplySegmentRole,

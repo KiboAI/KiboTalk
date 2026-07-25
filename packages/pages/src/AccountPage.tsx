@@ -10,7 +10,6 @@ import {
   verifyLoginCode,
 } from '@kibotalk/app-shared'
 import {
-  Badge,
   Button,
   Card,
   CardContent,
@@ -26,10 +25,18 @@ import {
   DialogTitle,
   Input,
   Label,
-  Progress,
   Separator,
 } from '@kibotalk/ui'
-import { ArrowLeft, Gift, Laptop, LogOut, RefreshCw, Shield, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Gift,
+  Laptop,
+  LogOut,
+  RefreshCw,
+  Shield,
+  Trash2,
+  UserRound,
+} from 'lucide-react'
 
 export type AccountPageProps = {
   account: AccountSession | null
@@ -115,7 +122,7 @@ function LoginCard({
                 autoComplete="one-time-code"
                 maxLength={6}
                 value={code}
-                placeholder="000000"
+                placeholder="输入邮件中的验证码"
                 onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && code.length === 6) void signIn()
@@ -169,15 +176,18 @@ function AccountContent({
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [section, setSection] = useState<'quota' | 'devices' | 'account'>('quota')
 
   useEffect(() => {
     void fetchAccountDevices().then(setDevices).catch(() => setDevices([]))
   }, [account.deviceSessionId])
 
   const quota = account.quota
-  const monthlyTotal = quota.proUntil ? 600 * 60 : 10 * 60
-  const monthlyRemaining = quota.freeSeconds + quota.proSeconds
-  const progress = Math.min(100, monthlyRemaining / monthlyTotal * 100)
+  const sections = [
+    { id: 'quota' as const, label: '额度', icon: Gift },
+    { id: 'devices' as const, label: '设备', icon: Laptop },
+    { id: 'account' as const, label: '账户', icon: UserRound },
+  ]
 
   async function redeem() {
     setBusy(true)
@@ -213,174 +223,168 @@ function AccountContent({
   }
 
   return (
-    <div className="min-h-dvh bg-background p-3 sm:p-6">
-      <div className="mx-auto max-w-4xl space-y-4">
-        <header className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+    <div className="min-h-dvh bg-background p-2 sm:p-5">
+      <div className="paper-sheet mx-auto grid min-h-[calc(100dvh-1rem)] max-w-6xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:min-h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
+        <aside className="border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
+          <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             {onBack ? (
               <Button variant="ghost" size="icon" onClick={onBack} aria-label="返回">
                 <ArrowLeft className="size-4" />
               </Button>
             ) : null}
-            <div>
-              <h1 className="text-xl font-bold">账户与额度</h1>
-              <p className="text-xs text-muted-foreground">{account.user.email}</p>
-            </div>
+            <strong>KiboTalk</strong>
           </div>
-          <div className="flex gap-2">
-            {showAdminLink && account.user.isAdmin ? (
-              <Button variant="soft" onClick={() => window.location.assign('/admin')}>
-                <Shield className="size-4" />
-                管理后台
-              </Button>
-            ) : null}
-            <Button variant="soft" disabled={busy} onClick={() => void logout()}>
-              <LogOut className="size-4" />
-              退出
-            </Button>
-          </div>
-        </header>
+          <nav className="flex gap-1 overflow-x-auto pb-1 sm:grid sm:overflow-visible">
+            {sections.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSection(item.id)}
+                  className={`flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors sm:w-full ${
+                    section === item.id
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-foreground/5'
+                  }`}
+                >
+                  <Icon className="size-4" />
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+        </aside>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle>可用 {minutes(quota.totalSeconds)} 分钟</CardTitle>
-                <CardDescription>
-                  扣减顺序：每月免费额度 → Pro 额度 → 永久充值额度
-                </CardDescription>
-              </div>
-              {quota.proUntil ? <Badge>Pro</Badge> : <Badge variant="secondary">免费版</Badge>}
+        <main className="min-w-0 p-4 sm:p-8">
+          <header className="mb-6">
+            <h1 className="text-xl font-bold">
+              {sections.find((item) => item.id === section)?.label}
+            </h1>
+            <p className="mt-1 text-xs text-muted-foreground">账户与额度</p>
+          </header>
+
+          {section === 'quota' ? (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardDescription>当前可用</CardDescription>
+                  <CardTitle className="text-3xl">{minutes(quota.totalSeconds)} 分钟</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">
+                    免费额度将在 {new Date(quota.resetsAt).toLocaleDateString()} 更新。
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>兑换码</CardTitle>
+                  <CardDescription>输入有效兑换码，额度到账后会自动同步到所有设备。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={voucher}
+                      placeholder="KIBO-XXXX-XXXX"
+                      onChange={(event) => setVoucher(event.target.value.toUpperCase())}
+                    />
+                    <Button disabled={busy || !voucher.trim()} onClick={() => void redeem()}>
+                      <Gift className="size-4" />
+                      兑换
+                    </Button>
+                  </div>
+                  {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
+                </CardContent>
+              </Card>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Progress value={progress} />
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="rounded-md bg-muted p-2">
-                <strong className="block text-base">{minutes(quota.freeSeconds)}</strong>免费
-              </div>
-              <div className="rounded-md bg-muted p-2">
-                <strong className="block text-base">{minutes(quota.proSeconds)}</strong>Pro
-              </div>
-              <div className="rounded-md bg-muted p-2">
-                <strong className="block text-base">{minutes(quota.paidSeconds)}</strong>永久
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Pro · ¥30</CardTitle>
-              <CardDescription>30 天 · 600 分钟，不结转</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Badge variant="secondary">比赛期间仅支持兑换码开通</Badge>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>兑换码</CardTitle>
-              <CardDescription>兑换 Pro 或永久分钟数</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  value={voucher}
-                  placeholder="KIBO-XXXX-XXXX"
-                  onChange={(event) => setVoucher(event.target.value.toUpperCase())}
-                />
-                <Button disabled={busy || !voucher.trim()} onClick={() => void redeem()}>
-                  <Gift className="size-4" />
-                  兑换
-                </Button>
-              </div>
-              {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>分钟包</CardTitle>
-            <CardDescription>展示价格，暂不开放支付</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-3">
-            {[
-              ['¥10', '120 分钟'],
-              ['¥30', '400 分钟'],
-              ['¥50', '800 分钟'],
-            ].map(([price, amount]) => (
-              <div key={price} className="rounded-md border border-border p-3">
-                <strong>{price}</strong>
-                <p className="text-sm">{amount}</p>
-                <Badge className="mt-2" variant="secondary">即将开放</Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>登录设备</CardTitle>
-            <CardDescription>同一账号可登录多台设备，但同时只能进行一个 AI 会话。</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {devices.map((device, index) => (
-              <div key={device.id}>
-                {index > 0 ? <Separator className="my-2" /> : null}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Laptop className="size-4 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {device.deviceName} {device.current ? '· 当前设备' : ''}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(device.lastSeenAt).toLocaleString()}
-                      </p>
+          {section === 'devices' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>登录设备</CardTitle>
+                <CardDescription>同一账号可登录多台设备，但同时只能进行一个 AI 会话。</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {devices.map((device, index) => (
+                  <div key={device.id}>
+                    {index > 0 ? <Separator className="my-2" /> : null}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Laptop className="size-5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {device.deviceName} {device.current ? '· 当前设备' : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(device.lastSeenAt).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="soft"
+                        disabled={busy}
+                        onClick={async () => {
+                          const current = await revokeAccountDevice(device.id)
+                          if (current) {
+                            onAccountChange(null)
+                          } else {
+                            setDevices(await fetchAccountDevices())
+                          }
+                        }}
+                      >
+                        撤销
+                      </Button>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    disabled={busy}
-                    onClick={async () => {
-                      const current = await revokeAccountDevice(device.id)
-                      if (current) {
-                        onAccountChange(null)
-                      } else {
-                        setDevices(await fetchAccountDevices())
-                      }
-                    }}
-                  >
-                    撤销
+                ))}
+                {devices.length === 0 ? (
+                  <Button variant="soft" onClick={() => void fetchAccountDevices().then(setDevices)}>
+                    <RefreshCw className="size-4" />
+                    刷新设备
                   </Button>
-                </div>
-              </div>
-            ))}
-            {devices.length === 0 ? (
-              <Button variant="soft" onClick={() => void fetchAccountDevices().then(setDevices)}>
-                <RefreshCw className="size-4" />
-                刷新设备
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
-        <Card className="border-destructive/30">
-          <CardHeader>
-            <CardTitle className="text-destructive">删除账户</CardTitle>
-            <CardDescription>永久删除云端文本历史、额度账本和所有设备会话。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              <Trash2 className="size-4" />
-              删除账户
-            </Button>
-          </CardContent>
-        </Card>
+          {section === 'account' ? (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{account.user.email}</CardTitle>
+                  <CardDescription>当前登录账户</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  {showAdminLink && account.user.isAdmin ? (
+                    <Button variant="soft" onClick={() => window.location.assign('/admin')}>
+                      <Shield className="size-4" />
+                      管理后台
+                    </Button>
+                  ) : null}
+                  <Button variant="soft" disabled={busy} onClick={() => void logout()}>
+                    <LogOut className="size-4" />
+                    退出登录
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="border-destructive/30">
+                <CardHeader>
+                  <CardTitle className="text-destructive">删除账户</CardTitle>
+                  <CardDescription>永久删除云端文本历史、额度账本和所有设备会话。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                    <Trash2 className="size-4" />
+                    删除账户
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </main>
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

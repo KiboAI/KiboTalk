@@ -183,7 +183,6 @@ export function SettingsPage({
         onPrefsChange({
           ...defaultProductPrefs,
           uiLang: systemUiLanguage(),
-          levelByLang: { ...defaultProductPrefs.levelByLang },
         })
         await onResetPersonalData?.()
         setVoiceprintReady(false)
@@ -217,7 +216,7 @@ export function SettingsPage({
 
   return (
     <div className="min-h-dvh bg-background p-2 sm:p-5">
-      <div className="paper-sheet mx-auto grid min-h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden sm:min-h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="paper-sheet mx-auto grid min-h-[calc(100dvh-1rem)] max-w-6xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:min-h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
         <aside className="border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
           <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             <Button variant="ghost" size="icon" onClick={onBack} aria-label={t('back')}>
@@ -233,14 +232,14 @@ export function SettingsPage({
                   key={item.id}
                   type="button"
                   onClick={() => setSection(item.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors sm:w-full ${
+                  className={`flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors sm:w-full ${
                     section === item.id
                       ? 'bg-accent text-accent-foreground'
                       : 'text-muted-foreground hover:bg-foreground/5'
                   }`}
                 >
                   <Icon className="size-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
+                  <span>{item.label}</span>
                 </button>
               )
             })}
@@ -326,16 +325,9 @@ export function SettingsPage({
                 </SettingRow>
                 <SettingRow title={t('level')}>
                   <Select
-                    value={prefs.levelByLang[prefs.conversationLang]}
+                    value={prefs.level}
                     disabled={sessionActive}
-                    onValueChange={(value) =>
-                      update({
-                        levelByLang: {
-                          ...prefs.levelByLang,
-                          [prefs.conversationLang]: value as LearnerLevel,
-                        },
-                      })
-                    }
+                    onValueChange={(value) => update({ level: value as LearnerLevel })}
                   >
                     <SelectTrigger className="w-full sm:w-44">
                       <SelectValue />

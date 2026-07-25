@@ -1,6 +1,6 @@
 import { getDatabase } from './db'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 export async function migrateDatabase(): Promise<void> {
   const sql = getDatabase()
@@ -192,7 +192,19 @@ export async function migrateDatabase(): Promise<void> {
     );
 
     INSERT INTO schema_migrations (version)
-    VALUES (${SCHEMA_VERSION})
+    VALUES (2)
     ON CONFLICT (version) DO NOTHING;
+
+    DO $migration$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(hashtext('kibotalk-schema-migration'));
+      IF NOT EXISTS (
+        SELECT 1 FROM schema_migrations WHERE version = ${SCHEMA_VERSION}
+      ) THEN
+        DELETE FROM synced_preferences;
+        INSERT INTO schema_migrations (version) VALUES (${SCHEMA_VERSION});
+      END IF;
+    END
+    $migration$;
   `)
 }

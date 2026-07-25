@@ -9,6 +9,7 @@ import {
   runtimePlatform,
   saveAccountCache,
   saveAccessToken,
+  subscribeToAccountChanges,
 } from './api-runtime'
 
 export type QuotaSummary = {
@@ -220,6 +221,8 @@ export function useAccount() {
     globalThis.addEventListener?.('kibotalk:quota-changed', handleQuotaChanged)
     return () => globalThis.removeEventListener?.('kibotalk:quota-changed', handleQuotaChanged)
   }, [refresh])
+
+  useEffect(() => subscribeToAccountChanges(() => void refresh()), [refresh])
 
   return { account, setAccount, loading, error, refresh }
 }

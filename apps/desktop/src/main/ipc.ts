@@ -1,5 +1,4 @@
-import type { BrowserWindow } from 'electron'
-import { app, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import {
   IPC_CHANNEL,
   type DesktopSessionState,
@@ -28,6 +27,14 @@ import {
   openOnboardingWindow,
   resizeOnboardingWindow,
 } from './windows/onboarding'
+
+function broadcastAuthChanged(sourceWebContentsId: number): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.webContents.id !== sourceWebContentsId) {
+      window.webContents.send(IPC_CHANNEL.authChangedEvent)
+    }
+  }
+}
 
 /** Registers every `ipcMain.handle` channel the preload bridge exposes as `window.kibotalk`. */
 export function registerIpcHandlers(params: {
@@ -95,11 +102,15 @@ export function registerIpcHandlers(params: {
   ipcMain.handle(IPC_CHANNEL.appQuitReady, () => params.quitReady())
   ipcMain.handle(IPC_CHANNEL.appGetVersion, () => app.getVersion())
   ipcMain.handle(IPC_CHANNEL.authGetAccessToken, () => readAccessToken())
-  ipcMain.handle(IPC_CHANNEL.authSetAccessToken, (_event, token: string) => {
+  ipcMain.handle(IPC_CHANNEL.authSetAccessToken, (event, token: string) => {
     if (!token || token.length > 4096) throw new Error('Invalid access token')
     writeAccessToken(token)
+    broadcastAuthChanged(event.sender.id)
   })
-  ipcMain.handle(IPC_CHANNEL.authClearAccessToken, () => clearAccessToken())
+  ipcMain.handle(IPC_CHANNEL.authClearAccessToken, (event) => {
+    clearAccessToken()
+    broadcastAuthChanged(event.sender.id)
+  })
   ipcMain.handle(IPC_CHANNEL.authGetAccountCache, () => readAccountCache())
   ipcMain.handle(IPC_CHANNEL.authSetAccountCache, (_event, value: string) => {
     if (!value || value.length > 16_384) throw new Error('Invalid account cache')

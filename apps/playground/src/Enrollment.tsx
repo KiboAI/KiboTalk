@@ -159,7 +159,7 @@ export default function Enrollment({
             声纹录入
           </h2>
           <p className="text-sm text-muted-foreground">
-            登记你的声音，好让教练分清谁是你。约半分钟，仅保存在本机。
+            登记你的声音，好让 KiboTalk 分清谁是你。约半分钟，仅保存在本机。
           </p>
         </div>
         <ol className="flex items-center gap-3">

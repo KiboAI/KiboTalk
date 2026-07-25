@@ -93,9 +93,9 @@ const copy = {
 
 function trayImagePath(): string {
   const candidates = [
-    join(process.resourcesPath, 'tray', 'kibotalk-mark.svg'),
-    join(process.cwd(), 'prototypes', 'assets', 'kibotalk-mark.svg'),
-    join(process.cwd(), '..', '..', 'prototypes', 'assets', 'kibotalk-mark.svg'),
+    join(process.resourcesPath, 'tray', 'kibotalk.png'),
+    join(process.cwd(), 'apps', 'desktop', 'build', 'tray', 'kibotalk.png'),
+    join(process.cwd(), 'build', 'tray', 'kibotalk.png'),
   ]
   return candidates.find(existsSync) ?? candidates[0]
 }
@@ -104,7 +104,7 @@ export function createTrayController(params: {
   getIslandWindow: () => BrowserWindow | null
   onQuitConfirmed: () => void
 }) {
-  const image = nativeImage.createFromPath(trayImagePath()).resize({ width: 50, height: 10 })
+  const image = nativeImage.createFromPath(trayImagePath())
   const tray = new Tray(image)
   let sessionState: DesktopSessionState = {
     lifecycle: 'stopped',

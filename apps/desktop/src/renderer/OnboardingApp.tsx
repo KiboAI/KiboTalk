@@ -23,8 +23,9 @@ import {
   HistoryPage,
   OnboardingPage,
   SettingsPage,
+  SyncPendingNotice,
 } from '@kibotalk/pages'
-import { Button, WizardScreen } from '@kibotalk/ui'
+import { WizardScreen } from '@kibotalk/ui'
 import type {
   MediaAccessStatus,
   ProductWindowView,
@@ -67,13 +68,19 @@ function DesktopWindowContent({
         remotePreferences
         && typeof remotePreferences === 'object'
         && 'conversationLang' in remotePreferences
-        && 'levelByLang' in remotePreferences
+        && 'level' in remotePreferences
       ) {
         onPrefsChange(remotePreferences as LanguagePrefs)
       }
     },
   })
   const storage: ConversationStorage = cloud.storage ?? localStorage
+  const withSyncStatus = (content: React.ReactNode) => (
+    <>
+      {content}
+      <SyncPendingNotice pending={Boolean(cloud.error)} onRetry={cloud.retry} />
+    </>
+  )
 
   const refreshSessionState = useCallback(async () => {
     const session = await storage.getActiveSession()
@@ -208,7 +215,7 @@ function DesktopWindowContent({
       )
     }
     if (!accountState.account || view === 'account') {
-      return (
+      return withSyncStatus(
         <AccountPage
           account={accountState.account}
           loading={accountState.loading}
@@ -226,42 +233,11 @@ function DesktopWindowContent({
             await new IndexedDbEmbeddingStorage().clear()
             await window.kibotalk.onboarding.reset()
           }}
-        />
-      )
-    }
-    if (view === 'history' && cloud.error) {
-      return (
-        <HistoryPage
-          storage={localStorage}
-          activeSessionId={activeSessionId}
-          readOnly
-          onBack={() => void window.kibotalk.onboarding.close()}
-        />
-      )
-    }
-    if (!cloud.storage) {
-      return (
-        <WizardScreen embedded className="text-center">
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {cloud.error ? '无法连接云同步，暂不能开始新会话。' : '正在同步会话历史…'}
-            </p>
-            {cloud.error ? (
-              <div className="flex justify-center gap-2">
-                <Button variant="soft" onClick={cloud.retry}>
-                  重试连接
-                </Button>
-                <Button variant="soft" onClick={() => setView('history')}>
-                  查看本地历史
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </WizardScreen>
+        />,
       )
     }
     if (view === 'history') {
-      return (
+      return withSyncStatus(
         <HistoryPage
           storage={storage}
           activeSessionId={activeSessionId}
@@ -270,11 +246,11 @@ function DesktopWindowContent({
             const session = await storage.loadSession(sessionId)
             if (session) await reviewConversationSession(storage, session)
           }}
-        />
+        />,
       )
     }
     if (view === 'voiceprint') {
-      return (
+      return withSyncStatus(
         <EnrollmentPage
           conversationLang={prefs.conversationLang}
           enrolled={enrolled}
@@ -282,10 +258,10 @@ function DesktopWindowContent({
           embedded
           onEnrolled={() => setEnrolled(true)}
           onEnterSession={() => setView('settings')}
-        />
+        />,
       )
     }
-    return (
+    return withSyncStatus(
       <SettingsPage
         platform="desktop"
         prefs={prefs}
@@ -307,7 +283,7 @@ function DesktopWindowContent({
           await refreshPermissions()
         }}
         onResetPersonalData={() => window.kibotalk.onboarding.reset()}
-      />
+      />,
     )
   }
 
@@ -317,17 +293,12 @@ function DesktopWindowContent({
         embedded
         uiLang={prefs.uiLang}
         conversationLang={prefs.conversationLang}
-        level={prefs.levelByLang[prefs.conversationLang]}
+        level={prefs.level}
         onUiLangChange={(uiLang) => onPrefsChange({ ...prefs, uiLang })}
         onConversationLangChange={(conversationLang) =>
           onPrefsChange({ ...prefs, conversationLang })
         }
-        onLevelChange={(level) =>
-          onPrefsChange({
-            ...prefs,
-            levelByLang: { ...prefs.levelByLang, [prefs.conversationLang]: level },
-          })
-        }
+        onLevelChange={(level) => onPrefsChange({ ...prefs, level })}
         onRequestPermissions={async () => {
           await window.kibotalk.permissions.requestMicrophone()
           await window.kibotalk.permissions.requestScreenRecording()

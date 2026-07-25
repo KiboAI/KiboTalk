@@ -1,11 +1,16 @@
 import type {
   AppLanguage,
   ConversationSessionSnapshot,
-  LevelByLang,
+  LearnerLevel,
   SessionAudioSource,
   UiLanguage,
 } from '@kibotalk/conversation'
-import { defaultProductPrefs, systemUiLanguage, type ProductTheme } from './config'
+import {
+  defaultProductPrefs,
+  isLearnerLevel,
+  systemUiLanguage,
+  type ProductTheme,
+} from './config'
 
 const LANGUAGE_PREFS_KEY = 'kibotalk.languagePrefs'
 const LANGUAGE_PREFS_EVENT = 'kibotalk:language-prefs'
@@ -13,7 +18,7 @@ const LANGUAGE_PREFS_EVENT = 'kibotalk:language-prefs'
 export type LanguagePrefs = {
   uiLang: UiLanguage
   conversationLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
   languagesConfirmed: boolean
   theme: ProductTheme
   launchAtLogin: boolean
@@ -31,16 +36,16 @@ export function loadLanguagePrefs(): LanguagePrefs {
   const fallback: LanguagePrefs = {
     ...defaultProductPrefs,
     uiLang: systemUiLanguage(),
-    levelByLang: { ...defaultProductPrefs.levelByLang },
   }
   try {
     const raw = localStorage.getItem(LANGUAGE_PREFS_KEY)
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as Partial<LanguagePrefs>
+    if (!isLearnerLevel(parsed.level)) return fallback
     return {
       uiLang: parsed.uiLang ?? fallback.uiLang,
       conversationLang: parsed.conversationLang ?? fallback.conversationLang,
-      levelByLang: { ...fallback.levelByLang, ...parsed.levelByLang },
+      level: parsed.level,
       languagesConfirmed: parsed.languagesConfirmed === true,
       theme: parsed.theme ?? fallback.theme,
       launchAtLogin: parsed.launchAtLogin === true,
@@ -82,7 +87,7 @@ export function createSessionSnapshot(prefs: LanguagePrefs): ConversationSession
     conversationLang: prefs.conversationLang,
     meaningLang: prefs.uiLang,
     uiLang: prefs.uiLang,
-    level: prefs.levelByLang[prefs.conversationLang],
+    level: prefs.level,
     audioSource: prefs.audioSource,
     microphoneDeviceId: prefs.microphoneDeviceId,
   }

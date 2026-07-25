@@ -60,7 +60,7 @@
 | 对话语言 | `conversationLang` | `ja` \| `en` \| `zh` | 同场双方用语；STT hint、时间轴原文、候选 `targetText`、录入口令 |
 | 界面语言 | `uiLang` | `ja` \| `en` \| `zh` | 产品界面文案；首次跟随系统，停止时可切换并立即生效 |
 | 候选释义语言（内部） | `meaningLang` | `ja` \| `en` \| `zh` | 不单独展示设置；开会话时由 `uiLang` 派生并冻结，允许与对话语言相同 |
-| 水平 | `levelByLang` | 每语言 `beginner` \| `intermediate` \| `advanced` | 进 prompt；切换对话语言时带出该语言上次水平 |
+| 水平 | `level` | `beginner` \| `intermediate` \| `advanced` | 单一全局难度值，进 prompt |
 
 产品界面做中 / 日 / 英三语。界面语言、对话语言、水平、音频来源、麦克风设备及声纹只可在 stopped / 无活跃会话时修改；新会话开始时冻结快照。主题、登录时启动和会话内 AI 建议开关不受该锁定约束。
 
@@ -78,14 +78,14 @@
 | F03 | VAD + STT | 按「一句」切段并转写（STT `language` = 会话快照的 `conversationLang`）；转写**可见但不可编辑**（ASR 错误由 LLM 上下文消化）。Realtime 路径可显示进行中草稿（partial）；**正式 turn / LLM 仅定稿** | 时间轴显示转写原文（可含草稿行） |
 | F04 | 回复候选（教练闸门） | **任一** `speaker` turn 入库后**一律**请求 LLM。输出 **恰好 3 条**或 **`[]`**。续写与应答同一套三卡（不加 `kind`）。卡壳 = user 停顿后半句 → 给**补全后的完整可念句** | 有 3 条时含 meaning / targetText；`conversationLang===ja` 时含 segments；`[]` / 失败 / 请求中均**保留**上一轮已提交候选（不先清空） |
 | F05 | 用户轮次感知 | `speaker === 'user'` 时 STT 写入对话，并与 other 一样触发 F04 | 上下文含用户实际说的；闸门见 §1.4 |
-| F06 | 语言水平 | 统一三档 beginner / intermediate / advanced，按语言存 `levelByLang`；进 prompt | 初级与高级输出可肉眼区分 |
+| F06 | 语言水平 | 统一三档 beginner / intermediate / advanced，存单一全局 `level`；进 prompt | 初级与高级输出可肉眼区分 |
 | F07 | 语言与 i18n | 首次确认界面语言 / 对话语言 / 水平；界面语言首次跟随系统，产品支持中日英；`meaningLang` 由 `uiLang` 派生 | 只在停止时可切换语言，UI 立即生效；新会话 STT/LLM 用新快照 |
 | F08 | 对话时间轴 | 单条 turn 流，按 speaker 区分展示 | 可回看每轮原文 |
 | F09 | 历史与结束回顾 | 本地长期保留会话；停止后后台生成冻结 `uiLang` 的短标题与小结，失败可重试 | 列表 / 详情可回看转写和候选；不保存原始音频 |
 | F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL；宽屏 A+B 可折叠双栏，窄屏内容区对话层 | 无页面横向溢出；两栏等高并独立滚动 |
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
 | F12 | 账号与设备 | 开放邮箱 OTP 注册；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
-| F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 多设备可见；离线可读历史但不能新建云会话；支持单会话和账户删除 |
+| F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 本地先持久化并后台补同步；同步故障不阻塞新会话；支持单会话和账户删除 |
 | F14 | 额度与兑换 | 免费 10 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
 | F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `advx.kibotalk.app` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
 
@@ -117,13 +117,11 @@
 type AppLanguage = 'ja' | 'en' | 'zh'
 type LearnerLevel = 'beginner' | 'intermediate' | 'advanced'
 
-type LevelByLang = Record<AppLanguage, LearnerLevel>
-
 /** Persisted user prefs (session-out editable). */
 type LanguagePrefs = {
   uiLang: AppLanguage
   conversationLang: AppLanguage
-  levelByLang: LevelByLang
+  level: LearnerLevel
   languagesConfirmed: boolean
   theme: 'system' | 'light' | 'dark'
   launchAtLogin: boolean
@@ -136,7 +134,7 @@ type ConversationSessionSnapshot = {
   uiLang: AppLanguage
   conversationLang: AppLanguage
   meaningLang: AppLanguage // = uiLang at start; not a user-facing preference
-  level: LearnerLevel // = levelByLang[conversationLang] at start
+  level: LearnerLevel
   audioSource: 'microphone' | 'system' | 'both'
   microphoneDeviceId: string
 }

@@ -15,6 +15,7 @@
     "@kibotalk/audio": "workspace:*",
     "@kibotalk/conversation": "workspace:*",
     "@kibotalk/observability": "workspace:*",
+    "@kibotalk/pages": "workspace:*",
     "@kibotalk/pipeline": "workspace:*",
     "@kibotalk/speaker": "workspace:*",
     "@kibotalk/ui": "workspace:*",

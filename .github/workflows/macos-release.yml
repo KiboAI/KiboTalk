@@ -22,17 +22,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Compile app icon
-        run: |
-          mkdir -p apps/desktop/build/icon-assets
-          xcrun actool \
-            --compile apps/desktop/build/icon-assets \
-            --platform macosx \
-            --minimum-deployment-target 13.0 \
-            --app-icon Kibo_icon \
-            --standalone-icon-behavior all \
-            --output-partial-info-plist apps/desktop/build/icon-assets/icon-info.plist \
-            Kibo_icon.icon
       - name: Download Q8 models
         run: pnpm --filter @kibotalk/desktop download-models
       - name: Q8 speaker regression

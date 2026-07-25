@@ -46,35 +46,45 @@ type SileroForward = (args: {
   state: Tensor
 }) => Promise<{ stateN: Tensor; output: Tensor }>
 
-/**
- * Warms the browser's model cache for a Silero variant — same
- * `from_pretrained` call `createSileroInfer` makes, minus the tensor
- * plumbing, so a later real session start resolves from cache instead of
- * the network. Runs on the main thread (Silero has no worker requirement,
- * unlike the speaker-embedding model — see `preloadSpeakerModel`).
- */
-export function preloadSileroModel(variant: SileroVariant, onProgress?: (fraction: number) => void): Promise<void> {
-  return loadModelWithFallback(() =>
+const modelPromises = new Map<string, Promise<SileroForward>>()
+
+function loadSileroModel(
+  variant: SileroVariant,
+  onProgress?: (fraction: number) => void,
+): Promise<SileroForward> {
+  const key = `${variant.modelId}@${variant.revision}`
+  const existing = modelPromises.get(key)
+  if (existing) return existing
+
+  const loading = loadModelWithFallback(() =>
     AutoModel.from_pretrained(variant.modelId, {
       config: { model_type: 'custom' },
       dtype: 'q8',
       revision: variant.revision,
       progress_callback: onProgress ? createProgressAggregator(onProgress) : undefined,
     } as Record<string, unknown>),
-  ).then(() => undefined)
+  ) as Promise<unknown> as Promise<SileroForward>
+  modelPromises.set(key, loading)
+  void loading.catch(() => {
+    if (modelPromises.get(key) === loading) modelPromises.delete(key)
+  })
+  return loading
+}
+
+/**
+ * Loads and retains the same model instance live inference will use. Runs on
+ * the main thread (Silero has no worker requirement, unlike the
+ * speaker-embedding model — see `preloadSpeakerModel`).
+ */
+export function preloadSileroModel(variant: SileroVariant, onProgress?: (fraction: number) => void): Promise<void> {
+  return loadSileroModel(variant, onProgress).then(() => undefined)
 }
 
 export async function createSileroInfer(
   variant: SileroVariant,
   sampleRate = 16000,
 ): Promise<VadInfer> {
-  const model = (await loadModelWithFallback(() =>
-    AutoModel.from_pretrained(variant.modelId, {
-      config: { model_type: 'custom' },
-      dtype: 'q8',
-      revision: variant.revision,
-    } as Record<string, unknown>),
-  )) as unknown as SileroForward
+  const model = await loadSileroModel(variant)
 
   let state = new Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128])
   const sr = new Tensor('int64', [BigInt(sampleRate)], [])

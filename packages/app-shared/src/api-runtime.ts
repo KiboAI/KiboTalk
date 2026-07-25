@@ -5,6 +5,7 @@ type DesktopBridge = {
     getAccessToken: () => Promise<string | null>
     setAccessToken: (token: string) => Promise<void>
     clearAccessToken: () => Promise<void>
+    onChanged?: (callback: () => void) => () => void
     getAccountCache?: () => Promise<string | null>
     setAccountCache?: (value: string) => Promise<void>
     clearAccountCache?: () => Promise<void>
@@ -56,6 +57,10 @@ export async function saveAccessToken(token: string): Promise<void> {
 
 export async function clearAccessToken(): Promise<void> {
   await desktopBridge()?.auth?.clearAccessToken()
+}
+
+export function subscribeToAccountChanges(callback: () => void): () => void {
+  return desktopBridge()?.auth?.onChanged?.(callback) ?? (() => undefined)
 }
 
 const WEB_ACCOUNT_CACHE_KEY = 'kibotalk-account-cache'

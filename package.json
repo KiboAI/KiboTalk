@@ -12,6 +12,9 @@
     "dev:prototypes": "pnpm -F @kibotalk/playground exec vite ../../prototypes --host --port 5175",
     "eval": "vieval run --config ./vieval.config.ts --report-out .vieval/reports --workspace local --experiment multi-turn-ruby --attempt attempt-a",
     "eval:report": "vieval report analyze .vieval/reports --format json",
+    "benchmark:drama": "tsx tools/drama-benchmark.ts",
+    "benchmark:speaker:prepare": "tsx tools/prepare-speaker-trials.ts",
+    "benchmark:speaker": "tsx tools/speaker-model-benchmark.ts",
     "test": "turbo test",
     "typecheck": "turbo typecheck"
   },
@@ -22,7 +25,9 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.1",
     "@xsai/generate-text": "0.4.4",
+    "ffmpeg-static": "5.3.0",
     "tailwindcss": "^4.3.3",
+    "tsx": "4.19.0",
     "turbo": "^2.5.0",
     "typescript": "^5.7.0",
     "vieval": "0.0.12",
@@ -31,7 +36,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
-      "electron"
+      "electron",
+      "ffmpeg-static"
     ]
   }
 }

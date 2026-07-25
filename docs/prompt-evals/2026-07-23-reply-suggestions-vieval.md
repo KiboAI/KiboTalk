@@ -238,6 +238,23 @@ Judge 平均约 9–19s（thinking on），`reasoning_tokens` 约 870–1660。�
 
 生产实现对齐变体：**system_split 角色文案 + ruby_kanji_no_phrase schema**（`REPLY_SUGGESTIONS_SYSTEM` + `ReplySuggestionsUserPrompt`）。
 
+## 2026-07-25：未转写触发轮的确定性门控
+
+故障反馈显示 `sttFailed` turn 会在 prompt context 中变成
+`(untranscribed)`，但原 gate 同时要求“Other 几乎总是返回 3 条”，模型可能从
+更旧的上下文重复生成建议。这里没有新增 vieval run，也不改上面的内容 / ruby
+结论；它是状态机语义的确定性修正：
+
+```text
+If the triggering turn is marked (untranscribed), return [] immediately.
+Do not infer a reply from older turns.
+```
+
+`packages/prompts/test/reply-suggestions.test.ts` 固定检查这条规则。选择 `[]`
+符合现有 schema 和“失败时保留上一组 committed cards”的产品语义，同时避免
+拿不存在的本轮文本做生成。若未来要判断“转写失败时是否给通用救场句”，应另开
+显式产品实验，不能让模型从旧 turn 自行猜测。
+
 ## 相关路径
 
 - 变体实现：`evals/lib/variants.ts`  

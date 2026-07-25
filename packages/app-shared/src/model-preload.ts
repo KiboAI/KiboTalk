@@ -6,7 +6,7 @@ import { defaultAppConfig } from './config'
 export type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error'
 
 export type ModelPreloadStatus = {
-  wavlm: ModelLoadState
+  speaker: ModelLoadState
   vad: ModelLoadState
   /** Combined download progress across both models' files, 0–1, meaningful while either is `loading`. */
   progress: number
@@ -14,10 +14,10 @@ export type ModelPreloadStatus = {
 
 type Listener = (status: ModelPreloadStatus) => void
 
-let status: ModelPreloadStatus = { wavlm: 'idle', vad: 'idle', progress: 0 }
+let status: ModelPreloadStatus = { speaker: 'idle', vad: 'idle', progress: 0 }
 let started = false
 const listeners = new Set<Listener>()
-const fractionByModel = new Map<'wavlm' | 'vad', number>()
+const fractionByModel = new Map<'speaker' | 'vad', number>()
 
 function emit(): void {
   for (const listener of listeners) listener(status)
@@ -28,14 +28,14 @@ function patch(next: Partial<ModelPreloadStatus>): void {
   emit()
 }
 
-function trackFraction(modelKey: 'wavlm' | 'vad', fraction: number): void {
+function trackFraction(modelKey: 'speaker' | 'vad', fraction: number): void {
   fractionByModel.set(modelKey, fraction)
   const fractions = [...fractionByModel.values()]
   patch({ progress: fractions.reduce((sum, f) => sum + f, 0) / fractions.length })
 }
 
 /**
- * Warms the browser's model cache for both product on-device models — WavLM
+ * Warms the browser's model cache for both product on-device models — WeSpeaker
  * speaker embedding and the default Silero VAD variant — as early as
  * possible, so enrollment's and the live session's actual model calls
  * resolve from cache instead of the network. Idempotent: call it from every
@@ -46,11 +46,11 @@ export function startModelPreload(): void {
   if (started) return
   started = true
 
-  patch({ wavlm: 'loading' })
-  trackFraction('wavlm', 0)
-  preloadSpeakerModel((fraction) => trackFraction('wavlm', fraction))
-    .then(() => patch({ wavlm: 'ready' }))
-    .catch(() => patch({ wavlm: 'error' }))
+  patch({ speaker: 'loading' })
+  trackFraction('speaker', 0)
+  preloadSpeakerModel((fraction) => trackFraction('speaker', fraction))
+    .then(() => patch({ speaker: 'ready' }))
+    .catch(() => patch({ speaker: 'error' }))
 
   const vadVariant = SILERO_VARIANTS.find((v) => v.id === defaultAppConfig.vadVariantId) ?? SILERO_VARIANTS[0]
   patch({ vad: 'loading' })

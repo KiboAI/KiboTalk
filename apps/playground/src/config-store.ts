@@ -3,6 +3,7 @@ import type { AppLanguage, LearnerLevel } from '@kibotalk/conversation'
 import { defaultVadConfig } from '@kibotalk/audio/vad'
 import {
   SILERO_VARIANTS,
+  defaultAppConfig,
   defaultSttProvider,
   defaultProductPrefs,
   isLearnerLevel,
@@ -134,7 +135,7 @@ const audioDefaults = {
   vadVariantId: SILERO_VARIANTS[0].id,
   transcribeProvider: null as string | null,
   transcribeMode: 'aggregated' as TranscribeMode,
-  speakerThreshold: 0.8,
+  speakerThreshold: defaultAppConfig.speakerThreshold,
   candidateRoundsMax: 2,
   islandSttEnabled: true,
   islandReplyEnabled: true,

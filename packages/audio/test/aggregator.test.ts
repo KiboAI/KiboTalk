@@ -104,4 +104,43 @@ describe('createSegmentAggregator', () => {
     expect(flushed).toHaveLength(0)
     agg.dispose()
   })
+
+  it('holds a pending turn while the next speech segment is active', () => {
+    const flushed: AggregatedSegment[] = []
+    const agg = createSegmentAggregator({ sampleRate: SR, pauseMs: 1000, maxMs: 10000 })
+    agg.onFlush((s) => flushed.push(s))
+
+    agg.feed(seg(new Float32Array(samples(300)), 'other', 0, 300))
+    vi.advanceTimersByTime(700)
+    agg.hold()
+    vi.advanceTimersByTime(1000)
+    expect(flushed).toHaveLength(0)
+
+    agg.resume()
+    vi.advanceTimersByTime(999)
+    expect(flushed).toHaveLength(0)
+    vi.advanceTimersByTime(2)
+    expect(flushed).toHaveLength(1)
+    agg.dispose()
+  })
+
+  it('preserves caller metadata on constituent segments', () => {
+    type TranscriptSegment = ReturnType<typeof seg> & { text: string }
+    const flushed: AggregatedSegment<TranscriptSegment>[] = []
+    const agg = createSegmentAggregator<TranscriptSegment>({
+      sampleRate: SR,
+      pauseMs: 1000,
+      maxMs: 10000,
+    })
+    agg.onFlush((s) => flushed.push(s))
+
+    agg.feed({
+      ...seg(new Float32Array(samples(300)), 'other', 0, 300),
+      text: 'こんにちは',
+    })
+    agg.flush()
+
+    expect(flushed[0].segments[0].text).toBe('こんにちは')
+    agg.dispose()
+  })
 })

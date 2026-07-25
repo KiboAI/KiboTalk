@@ -23,6 +23,22 @@ export type RealtimeSttClient = {
   waitCompleted(timeoutMs?: number): Promise<string>
 }
 
+export class RealtimeSttError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message)
+    this.name = 'RealtimeSttError'
+  }
+}
+
+export function isTranscriptionFailed(
+  error: unknown,
+): error is RealtimeSttError & { code: 'TRANSCRIPTION_FAILED' } {
+  return error instanceof RealtimeSttError && error.code === 'TRANSCRIPTION_FAILED'
+}
+
 function floatToPcm16Base64(pcm: Float32Array): string {
   const bytes = new Uint8Array(pcm.length * 2)
   const view = new DataView(bytes.buffer)
@@ -84,7 +100,13 @@ export function connectRealtimeStt(opts: {
     }
 
     ws.onmessage = (ev) => {
-      let data: { type?: string; text?: string; message?: string; quota?: QuotaSummary }
+      let data: {
+        type?: string
+        text?: string
+        message?: string
+        code?: string
+        quota?: QuotaSummary
+      }
       try {
         data = JSON.parse(String(ev.data)) as typeof data
       } catch {
@@ -105,15 +127,22 @@ export function connectRealtimeStt(opts: {
         case 'completed': {
           const text = data.text ?? ''
           handlers.onCompleted?.(text)
-          const waiters = completedWaiters
-          completedWaiters = []
-          for (const w of waiters) w.resolve(text)
+          completedWaiters.shift()?.resolve(text)
           break
         }
-        case 'error':
-          handlers.onError?.(data.message ?? 'realtime error')
-          failWaiters(new Error(data.message ?? 'realtime error'))
+        case 'error': {
+          const error = new RealtimeSttError(
+            data.message ?? 'realtime error',
+            data.code,
+          )
+          if (isTranscriptionFailed(error)) {
+            completedWaiters.shift()?.reject(error)
+            break
+          }
+          handlers.onError?.(error.message)
+          failWaiters(error)
           break
+        }
         case 'quota_exhausted':
           handlers.onQuotaExhausted?.(data.quota)
           break

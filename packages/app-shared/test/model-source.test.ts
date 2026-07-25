@@ -1,7 +1,11 @@
 import { env } from '@huggingface/transformers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { defaultAppConfig } from '../src/config'
 import {
   loadModelWithFallback,
+  SPEAKER_MODEL_DTYPE,
+  SPEAKER_MODEL_ID,
+  SPEAKER_MODEL_REVISION,
   useHuggingFaceModels,
 } from '../src/audio/model-source'
 
@@ -11,6 +15,17 @@ afterEach(() => {
 })
 
 describe('model source fallback', () => {
+  it('pins the speaker model and threshold selected by held-out trials', () => {
+    expect(SPEAKER_MODEL_ID).toBe(
+      'onnx-community/wespeaker-voxceleb-resnet34-LM',
+    )
+    expect(SPEAKER_MODEL_REVISION).toBe(
+      '6a61a1833ff2583aabeba044f5c8221f00b67ceb',
+    )
+    expect(SPEAKER_MODEL_DTYPE).toBe('q8')
+    expect(defaultAppConfig.speakerThreshold).toBe(0.49)
+  })
+
   it('uses immutable Hugging Face paths by default', () => {
     useHuggingFaceModels('https://advx.kibotalk.app')
 

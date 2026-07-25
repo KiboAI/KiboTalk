@@ -11,7 +11,7 @@
 只做 DNS，VPS 用 Docker Compose 运行 Caddy、Hono 和 PostgreSQL；Caddy 自动
 申请和续期证书，80 端口只做 HTTPS 跳转。
 
-Web 的 WavLM 与 Silero 都使用 Q8，首选固定 commit 的 Hugging Face 文件并
+Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用 Q8，首选固定 commit 的 Hugging Face 文件并
 进入浏览器缓存；加载失败后自动从 VPS 的同源模型镜像重试。桌面版在构建时从
 相同 revision 拉取并打进 DMG。VPS 不托管安装包。DMG 由构建任务产出并经人工
 确认后发布到 GitHub Release。

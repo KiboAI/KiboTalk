@@ -22,17 +22,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Download Q8 models
+      - name: Download on-device models
         run: pnpm --filter @kibotalk/desktop download-models
-      - name: Q8 speaker regression
+      - name: Speaker and VAD runtime smoke test
         run: |
-          say -v Samantha -o /tmp/kibo-a1.aiff "Today I would like to practice a natural conversation about travel and work."
-          say -v Samantha -o /tmp/kibo-a2.aiff "Could you tell me where the nearest train station is and how long it takes to walk there?"
-          say -v Daniel -o /tmp/kibo-b1.aiff "I am happy to help you find the station and choose the fastest route through the city."
-          afconvert /tmp/kibo-a1.aiff /tmp/kibo-a1.wav -f WAVE -d LEI16@16000 -c 1
-          afconvert /tmp/kibo-a2.aiff /tmp/kibo-a2.wav -f WAVE -d LEI16@16000 -c 1
-          afconvert /tmp/kibo-b1.aiff /tmp/kibo-b1.wav -f WAVE -d LEI16@16000 -c 1
-          pnpm --filter @kibotalk/desktop verify:q8 -- /tmp/kibo-a1.wav /tmp/kibo-a2.wav /tmp/kibo-b1.wav
+          FIXTURE_BASE="https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/fbe92bd97d48f3ec17779d8d8f2964e1c6bc7634/sv_speaker"
+          curl --fail --location --silent --show-error "${FIXTURE_BASE}-1_1.wav" --output /tmp/kibo-a1.wav
+          curl --fail --location --silent --show-error "${FIXTURE_BASE}-1_2.wav" --output /tmp/kibo-a2.wav
+          curl --fail --location --silent --show-error "${FIXTURE_BASE}-2_1.wav" --output /tmp/kibo-b1.wav
+          pnpm --filter @kibotalk/desktop verify:speaker -- \
+            /tmp/kibo-a1.wav /tmp/kibo-a2.wav /tmp/kibo-b1.wav
       - name: Build ad-hoc signed arm64 DMG
         run: pnpm --filter @kibotalk/desktop package:mac
       - name: Verify package
@@ -46,7 +45,8 @@ jobs:
           file "$APP_PATH/Contents/MacOS/KiboTalk" | grep arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PATH/Contents/Info.plist")" = "13.0.0"
           test "$(/usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsArbitraryLoads' "$APP_PATH/Contents/Info.plist")" = "false"
-          test -f "$APP_PATH/Contents/Resources/models/Xenova/wavlm-base-plus-sv/onnx/model_quantized.onnx"
+          test -f "$APP_PATH/Contents/Resources/models/THIRD_PARTY_NOTICES.md"
+          test -f "$APP_PATH/Contents/Resources/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx"
           test -f "$APP_PATH/Contents/Resources/models/BricksDisplay/silero-vad-6.2/onnx/model_quantized.onnx"
           if find "$APP_PATH/Contents/Resources/models" -type f \( -name "model.onnx" -o -name "*fp32*" \) -print -quit | grep -q .; then
             echo "Unquantized model found in app bundle" >&2

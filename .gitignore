@@ -8,6 +8,8 @@ coverage
 .env.local
 .spec-issue-body.md
 .vieval
+.benchmarks
+.pnpm-store
 apps/desktop/out
 apps/desktop/resources/models
 apps/desktop/resources/bundle-models

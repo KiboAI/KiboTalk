@@ -64,7 +64,7 @@ export function DebugPanel({ running }: DebugPanelProps) {
             <AsrPadFields />
             <ThresholdSlider
               label="说话人阈值"
-              hint="与声纹相似度高于此值判为我（默认 0.8）"
+              hint="与声纹相似度高于此值判为我（默认 0.49）"
               value={speakerThreshold}
               onChange={(v) => patch({ speakerThreshold: v })}
             />

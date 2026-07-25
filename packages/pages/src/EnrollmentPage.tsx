@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { EmbeddingSpeakerVerifier, IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
+import {
+  EmbeddingSpeakerVerifier,
+  EnrollmentAudioError,
+} from '@kibotalk/speaker'
 import type { AppLanguage } from '@kibotalk/conversation'
 import {
   AudioSource,
+  createCurrentSpeakerEmbeddingStorage,
   createWorkerEmbedAudio,
   PASSPHRASE_BY_LANG,
   defaultAppConfig,
@@ -83,7 +87,7 @@ export function EnrollmentPage({
   function verifier() {
     return (verifierRef.current ??= new EmbeddingSpeakerVerifier({
       embedAudio: createWorkerEmbedAudio(),
-      storage: new IndexedDbEmbeddingStorage(),
+      storage: createCurrentSpeakerEmbeddingStorage(),
       threshold: defaultAppConfig.speakerThreshold,
     }))
   }
@@ -144,8 +148,12 @@ export function EnrollmentPage({
       })(), passphrase)
       setEnrolledDone()
       toast.success(t('voiceprintSavedLocal'))
-    } catch {
-      fail(t('voiceprintFailed'))
+    } catch (cause) {
+      const message =
+        cause instanceof EnrollmentAudioError
+          ? t(cause.code === 'too-short' ? 'voiceprintTooShort' : 'voiceprintTooQuiet')
+          : t('voiceprintFailed')
+      fail(message)
     } finally {
       setWorking(false)
     }

@@ -34,19 +34,27 @@ export type FedSegment = {
   endedAt: number
 }
 
-export type AggregatedSegment = {
+export type AggregatedSegment<TSegment extends FedSegment = FedSegment> = {
   pcm: Float32Array
   speaker: 'user' | 'other'
   startedAt: number
   endedAt: number
   /** Constituent VAD segments, in order (for UI nesting / playback). */
-  segments: FedSegment[]
+  segments: TSegment[]
 }
 
-export type SegmentAggregator = {
-  feed(segment: FedSegment): void
+export type SegmentAggregator<TSegment extends FedSegment = FedSegment> = {
+  feed(segment: TSegment): void
   flush(): void
-  onFlush(handler: (seg: AggregatedSegment) => void): () => void
+  /**
+   * Temporarily stop the pause timer while a following speech segment is
+   * active. The pending turn stays buffered until `resume()` or an explicit
+   * flush.
+   */
+  hold(): void
+  /** Resume pause scheduling after `hold()`. */
+  resume(): void
+  onFlush(handler: (seg: AggregatedSegment<TSegment>) => void): () => void
   updateConfig(patch: Partial<AggregatorConfig>): void
   dispose(): void
 }
@@ -63,14 +71,17 @@ function concatPcm(parts: FedSegment[]): Float32Array {
   return out
 }
 
-export function createSegmentAggregator(config: AggregatorConfig): SegmentAggregator {
+export function createSegmentAggregator<TSegment extends FedSegment = FedSegment>(
+  config: AggregatorConfig,
+): SegmentAggregator<TSegment> {
   let cfg = config
-  const handlers = new Set<(seg: AggregatedSegment) => void>()
-  let current: FedSegment[] | null = null
+  const handlers = new Set<(seg: AggregatedSegment<TSegment>) => void>()
+  let current: TSegment[] | null = null
   let currentSpeaker: 'user' | 'other' | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
+  let held = false
 
-  function emit(seg: AggregatedSegment): void {
+  function emit(seg: AggregatedSegment<TSegment>): void {
     for (const h of handlers) h(seg)
   }
 
@@ -85,7 +96,7 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
       return
     }
     const parts = current
-    const seg: AggregatedSegment = {
+    const seg: AggregatedSegment<TSegment> = {
       pcm: concatPcm(parts),
       speaker: currentSpeaker!,
       startedAt: parts[0].startedAt,
@@ -111,6 +122,8 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
 
   function armTimer(): void {
     if (timer) clearTimeout(timer)
+    timer = null
+    if (held || !current || current.length === 0) return
     timer = setTimeout(() => {
       timer = null
       flush()
@@ -136,6 +149,17 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
       armTimer()
     },
     flush,
+    hold() {
+      held = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+    resume() {
+      held = false
+      armTimer()
+    },
     onFlush(handler) {
       handlers.add(handler)
       return () => handlers.delete(handler)
@@ -151,6 +175,7 @@ export function createSegmentAggregator(config: AggregatorConfig): SegmentAggreg
       handlers.clear()
       current = null
       currentSpeaker = null
+      held = false
     },
   }
 }

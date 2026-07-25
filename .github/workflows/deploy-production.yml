@@ -40,7 +40,7 @@ jobs:
             kibotalk-caddy:2.10 \
             kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
-      - name: Stage Q8 model mirror
+      - name: Stage on-device model mirror
         run: |
           pnpm --filter @kibotalk/desktop download-models
           tar -C apps/desktop/resources/bundle-models -czf /tmp/kibotalk-models.tar.gz .
@@ -58,7 +58,7 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming /opt/kibotalk/models"
+          ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
           scp /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
           scp /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
           scp infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
@@ -72,7 +72,15 @@ jobs:
           ssh "${SERVER_USER}@${SERVER_HOST}" "
             set -eu
             gzip -dc /opt/kibotalk/incoming/kibotalk-images.tar.gz | docker load
-            tar -xzf /opt/kibotalk/incoming/kibotalk-models.tar.gz -C /opt/kibotalk/models
+            rm -rf /opt/kibotalk/models.next
+            mkdir -p /opt/kibotalk/models.next
+            tar -xzf /opt/kibotalk/incoming/kibotalk-models.tar.gz -C /opt/kibotalk/models.next
+            rm -rf /opt/kibotalk/models.previous
+            if [ -d /opt/kibotalk/models ]; then
+              mv /opt/kibotalk/models /opt/kibotalk/models.previous
+            fi
+            mv /opt/kibotalk/models.next /opt/kibotalk/models
+            rm -rf /opt/kibotalk/models.previous
             cd /opt/kibotalk
             if grep -q '^KIBOTALK_API_IMAGE=' .env; then
               sed -i 's|^KIBOTALK_API_IMAGE=.*|KIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}|' .env
@@ -85,6 +93,12 @@ jobs:
         run: |
           for _attempt in $(seq 1 24); do
             if curl --fail --silent --show-error https://advx.kibotalk.app/health \
+              && curl --fail --silent --show-error \
+                https://advx.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json \
+                >/dev/null \
+              && curl --fail --silent --show-error --range 0-0 \
+                https://advx.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx \
+                >/dev/null \
               && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
               && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/"; then
               exit 0

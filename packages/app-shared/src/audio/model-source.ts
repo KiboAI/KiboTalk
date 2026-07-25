@@ -1,7 +1,10 @@
 import { env } from '@huggingface/transformers'
 
-export const WAVLM_MODEL_ID = 'Xenova/wavlm-base-plus-sv'
-export const WAVLM_MODEL_REVISION = 'e61029603001bd11295c36d878698708bf59190f'
+export const SPEAKER_MODEL_ID =
+  'onnx-community/wespeaker-voxceleb-resnet34-LM'
+export const SPEAKER_MODEL_REVISION =
+  '6a61a1833ff2583aabeba044f5c8221f00b67ceb'
+export const SPEAKER_MODEL_DTYPE = 'q8'
 let fallbackOrigin: string | undefined
 let activeSource: 'bundled' | 'huggingface' | 'vps' = 'huggingface'
 
@@ -21,7 +24,8 @@ export const BUNDLED_MODELS_HOST = 'kibotalk-model://app/'
  * runs in a Web Worker — see `configureModelSource` for the worker side), so
  * each must call this itself. `apps/web` instead calls
  * `useHuggingFaceModels` and caches the revision-pinned Q8 files from the
- * public Hugging Face Hub.
+ * public Hugging Face Hub. Speaker verification uses the revision-pinned Q8
+ * WeSpeaker model selected by the held-out target/non-target benchmark.
  */
 export function useBundledModels(): void {
   fallbackOrigin = undefined

@@ -388,7 +388,7 @@ Velin(repliesPrompt) → xsAI → JSON: 3 candidates | []
 - 累计**语音**时长 ≥ `VAD_MERGE_MAX_MS`
 
 **Batch**：flush 时把组成段 **直接拼接** PCM（**不**按时间轴填静音 gap）→ 一次 `POST /stt` / `ingestSegment`。  
-**Realtime**：每段 speech 上行 `append`；flush 时 `commit` → 等 `completed` → `ingestFinalizedTurn`（不传合并 WAV）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
+**Realtime**：每段 VAD speech fragment 上行 `append` 并 Manual `commit` → 等该 fragment 的 `completed`；定稿文本 + 声纹结果再进入 TurnGate，flush 后才 `ingestFinalizedTurn`（不传合并 WAV）。`completed` 与 commit 严格 FIFO 一一对应；单个 `TRANSCRIPTION_FAILED` 只失败对应 fragment，不得清空其他等待项或杀死连接。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
 
 **配置**：
 
@@ -396,7 +396,7 @@ VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playgrou
 
 - `VAD_PAUSE_MS`（任一方停说多久算「说完」→ 定稿 + 触发 LLM）：默认 1000
 - `VAD_MERGE_MAX_MS`（累计语音多久强制成句）：playground 默认可调
-- 说话人判定 `threshold`：默认见 `packages/speaker`
+- 说话人判定 `threshold`：默认见 `packages/app-shared/src/config.ts`
 
 便利店快节奏可能 700ms 更合适，会议场景可能 1.5s——先 1s 跑起来，playground 阶段按场景调。
 #### SpeakerGate 选型结论
@@ -407,7 +407,8 @@ VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playgrou
 
 | 方案 | 说明 | 体量 / 延迟 |
 |------|------|-------------|
-| Transformers.js + [`Xenova/wavlm-base-plus-sv`](https://huggingface.co/Xenova/wavlm-base-plus-sv) | 开源可跑；参考 [tinyscribe](https://github.com/jakewvincent/tinyscribe) | ~360MB，iPhone 首次下载痛 |
+| **生产默认**：Transformers.js + [`onnx-community/wespeaker-voxceleb-resnet34-LM`](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) Q8 | 256 维 embedding；模型专属阈值 `0.49` + `0.05` 迟滞；固定 revision | 权重约 6.4MB；本地 held-out trial 比 WavLM FP32 快约 6.9 倍 |
+| 历史基线：[`Xenova/wavlm-base-plus-sv`](https://huggingface.co/Xenova/wavlm-base-plus-sv) FP32 | 512 维 embedding；保留为研究对照，不再生产加载 | 权重约 384MB；本地 held-out score overlap 明显 |
 | [`@jaehyun-ko/speaker-verification`](https://github.com/jaehyun-ko/node-speaker-verification)（HF NeXt-TDNN ONNX） | enroll / embedding / cosine | mobile 数 MB；单次约几百 ms |
 | [Picovoice Eagle Web](https://picovoice.ai/docs/quick-start/eagle-web/) | 商用 on-device，帧级打分 | 延迟低；需 access key |
 | 自建 ECAPA / WeSpeaker → ONNX + `onnxruntime-web` | 最灵活 | 可量化控体积 |
@@ -620,8 +621,8 @@ app.post('/llm', streamSSE(async (c) => {
 - `packages/audio` 暴露 `encodeWav(pcm: Float32Array, sampleRate = 16000): ArrayBuffer`；`/stt` 收 WAV 转发 OpenRouter `/audio/transcriptions`（`input_audio.format: "wav"`）
 
 **静态托管（`apps/web` 产物）**：Web 与 API 打进同一生产镜像，由 Caddy 在
-`advx.kibotalk.app` 前置 TLS。Web 的 WavLM 与 Silero 都使用 Q8：首选固定
-commit 的 Hugging Face 文件并进入浏览器缓存，加载失败自动重试 VPS 同源镜像；
+`advx.kibotalk.app` 前置 TLS。Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用
+Q8：首选固定 commit 的 Hugging Face 文件并进入浏览器缓存，加载失败自动重试 VPS 同源镜像；
 桌面模型打进 DMG。DMG 仅通过 GitHub Release 分发，VPS 不托管安装包。
 
 - Hono 用 `serveStatic` 把 `apps/web/dist` 挂到根路径，API 路由挂 `/llm` `/stt`，PWA manifest / service worker 同源加载（iOS Safari 添加到主屏幕最稳）
@@ -812,7 +813,7 @@ macOS 状态栏应用：apps/desktop（Electron，共用 packages）
 | 风险 | 对策 |
 |------|------|
 | 双人同麦 / 短句 / 音色接近导致 speaker 误判 | 本地 verification + 阈值调参；安静 demo；enrollment 念够 5–10 秒；必要时换 NeXt-TDNN mobile / Eagle 等更稳模型；测 user↔other 混淆率。**不**用 LLM 纠 speaker（成本翻倍且自身会错）；**不**做事后纠错；manual 标注仅活在 Playground（注入 mock 标签测下游），不进生产 env |
-| PWA 本地模型体积大 / iOS 慢 | 优先 NeXt-TDNN mobile 或 Eagle；Worker + 缓存；避免默认拉 360MB WavLM；**首次打开后台预下载全部权重**（§1.2，填表并行 + 右上角进度圆，下完才能进），会话中途再下会卡死演示 |
+| PWA 本地模型体积大 / iOS 慢 | 生产 WeSpeaker Q8 speaker 权重约 6.4MB；Worker + 缓存；**首次打开后台预下载全部权重**（§1.2，填表并行 + 右上角进度圆，下完才能进），会话中途再下会卡死演示 |
 | 权限延后申请被拒 / 打断录音 | 首次打开与模型预下载同期申请麦克风等权限；勿拖到「开始会话」或 enrollment 才弹 |
 | PWA iOS 后台杀进程 | 每轮即时写 IndexedDB；重开后以意外暂停恢复同一会话 |
 | 桌面双路重复收音 | mic 与 system 分 lane、不混音；提示佩戴耳机并保留 echo cancellation；MVP 不做文本跨源去重 |
@@ -832,4 +833,4 @@ macOS 状态栏应用：apps/desktop（Electron，共用 packages）
 - [产品想法原文](../brainstorm/2026-07-16-live-reply-coach-language-assist.md)
 - [AIRI 插件 UI 范围](../notes/2026-07-16-airi-plugin-ui.md)
 - 参考仓库：[airi](https://github.com/moeru-ai/airi) · [webai-realtime-voice-chat](https://github.com/proj-airi/webai-example-realtime-voice-chat) · [velin](https://github.com/moeru-ai/velin) · [vieval](https://github.com/vieval-dev/vieval) · [deepchat](https://github.com/thinkinaixyz/deepchat)
-- Speaker 本地：[tinyscribe](https://github.com/jakewvincent/tinyscribe) · [speaker-verification](https://github.com/jaehyun-ko/node-speaker-verification) · [Eagle Web](https://picovoice.ai/docs/quick-start/eagle-web/) · [wavlm-base-plus-sv](https://huggingface.co/Xenova/wavlm-base-plus-sv)
+- Speaker 本地：[WeSpeaker ResNet34-LM](https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM) · [speaker-verification](https://github.com/jaehyun-ko/node-speaker-verification) · [Eagle Web](https://picovoice.ai/docs/quick-start/eagle-web/) · [wavlm-base-plus-sv](https://huggingface.co/Xenova/wavlm-base-plus-sv)

@@ -3,22 +3,29 @@ import type { PipelineEvent } from '@kibotalk/pipeline'
 import { Pipeline } from '@kibotalk/pipeline'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 import { InMemoryConversationStorage } from '@kibotalk/conversation'
-import { EmbeddingSpeakerVerifier, IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
+import {
+  EmbeddingSpeakerVerifier,
+  stabilizeSpeaker,
+} from '@kibotalk/speaker'
 import type { Embedding } from '@kibotalk/speaker'
 import { createVAD } from '@kibotalk/audio/vad'
 import type { VAD } from '@kibotalk/audio/vad'
 import { createSegmentAggregator } from '@kibotalk/audio/aggregator'
-import type { SegmentAggregator, AggregatedSegment } from '@kibotalk/audio/aggregator'
+import type { SegmentAggregator } from '@kibotalk/audio/aggregator'
 import { Button, Separator, toast } from '@kibotalk/ui'
 import {
   AudioSource,
   createSileroInfer,
   SILERO_VARIANTS,
   createWorkerEmbedAudio,
+  createCurrentSpeakerEmbeddingStorage,
   ProxySttClient,
   ProxyLlmClient,
   connectRealtimeSttWithRetry,
+  finalizedTurnFromRealtimeSegments,
+  isTranscriptionFailed,
   type RealtimeSttClient,
+  type TranscribedAudioSegment,
   providerMode,
   type SttProvider,
 } from '@kibotalk/app-shared'
@@ -92,6 +99,7 @@ export default function LiveSession({
 
   const speakerRef = useRef(speaker)
   speakerRef.current = speaker
+  const stableSpeakerRef = useRef(speaker)
   const llmRef = useRef<ProxyLlmClient | null>(null)
   const audioRef = useRef<AudioSource | null>(null)
   const pipelineRef = useRef<Pipeline | null>(null)
@@ -102,9 +110,12 @@ export default function LiveSession({
   const vadRef = useRef<VAD | null>(null)
   const sttRef = useRef<ProxySttClient | null>(null)
   const aggregatorRef = useRef<SegmentAggregator | null>(null)
+  const realtimeAggregatorRef =
+    useRef<SegmentAggregator<TranscribedAudioSegment> | null>(null)
   const realtimeRef = useRef<RealtimeSttClient | null>(null)
   const realtimeModeRef = useRef(false)
   const realtimeBusyRef = useRef(Promise.resolve())
+  const pipelineBusyRef = useRef(Promise.resolve())
   const providersRef = useRef<SttProvider[]>(providers)
   providersRef.current = providers
   const draftMetaRef = useRef<{ speaker: 'user' | 'other'; startedAt: number } | null>(null)
@@ -112,8 +123,6 @@ export default function LiveSession({
   const inSpeechRef = useRef(false)
   /** True after append until commit completes — blocks next speech stream from mixing. */
   const uncommittedRef = useRef(false)
-  /** Last realtime turn id — verify may patch speaker after provisional commit. */
-  const lastRealtimeTurnIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     vadRef.current?.updateConfig({
@@ -132,6 +141,10 @@ export default function LiveSession({
   }, [prePadMs, postPadMs])
   useEffect(() => {
     aggregatorRef.current?.updateConfig({
+      pauseMs,
+      maxMs: mergeMaxMs,
+    })
+    realtimeAggregatorRef.current?.updateConfig({
       pauseMs,
       maxMs: mergeMaxMs,
     })
@@ -192,21 +205,27 @@ export default function LiveSession({
     })
     try {
       if (!autoRef.current || !embeddingRef.current || !verifierRef.current) {
+        stableSpeakerRef.current = speakerRef.current
         span.setAttribute(IOAttributes.SpeakerResult, speakerRef.current)
         span.end()
         return speakerRef.current
       }
       const r = await verifierRef.current.verify(buffer, embeddingRef.current)
       setConfidence(r.confidence)
+      stableSpeakerRef.current = stabilizeSpeaker(
+        r.similarity,
+        stableSpeakerRef.current,
+        useConfig.getState().speakerThreshold,
+      )
       span.setAttribute(IOAttributes.SpeakerConfidence, r.confidence)
-      span.setAttribute(IOAttributes.SpeakerResult, r.speaker)
+      span.setAttribute(IOAttributes.SpeakerResult, stableSpeakerRef.current)
       span.end()
-      return r.speaker as 'user' | 'other'
+      return stableSpeakerRef.current
     } catch (err) {
       reportError(`说话人判定失败：${String(err)}`)
-      span.setAttribute(IOAttributes.SpeakerResult, 'other')
+      span.setAttribute(IOAttributes.SpeakerResult, stableSpeakerRef.current)
       span.end()
-      return 'other'
+      return stableSpeakerRef.current
     }
   }
 
@@ -231,50 +250,8 @@ export default function LiveSession({
     }
   }
 
-  async function handleRealtimeFlush(merged: AggregatedSegment, pipeline: Pipeline) {
-    const rt = realtimeRef.current
-    if (!rt) {
-      if (!degradeToBatch('连接已断开')) {
-        await pipeline.ingestFinalizedTurn({
-          speaker: merged.speaker,
-          text: '',
-          startedAt: merged.startedAt,
-          endedAt: merged.endedAt,
-          sttFailed: true,
-        })
-      }
-      return
-    }
-    try {
-      rt.commit()
-      const text = await waitRealtimeCompletedWithSpan(rt)
-      uncommittedRef.current = false
-      setDraft(null)
-      draftMetaRef.current = null
-      await pipeline.ingestFinalizedTurn({
-        speaker: merged.speaker,
-        text,
-        startedAt: merged.startedAt,
-        endedAt: merged.endedAt,
-      })
-    } catch (e) {
-      const msg = (e as Error).message
-      uncommittedRef.current = false
-      if (!degradeToBatch(msg)) {
-        setDraft(null)
-        draftMetaRef.current = null
-        await pipeline.ingestFinalizedTurn({
-          speaker: merged.speaker,
-          text: '',
-          startedAt: merged.startedAt,
-          endedAt: merged.endedAt,
-          sttFailed: true,
-        })
-      }
-    }
-  }
-
   async function start() {
+    stableSpeakerRef.current = speakerRef.current
     setError('')
     setStatusNote('')
     setLoading('正在检查声纹录入…')
@@ -289,7 +266,7 @@ export default function LiveSession({
       if (!verifierRef.current) {
         verifierRef.current = new EmbeddingSpeakerVerifier({
           embedAudio: createWorkerEmbedAudio(),
-          storage: new IndexedDbEmbeddingStorage(),
+          storage: createCurrentSpeakerEmbeddingStorage(),
           threshold: speakerThreshold,
         })
       }
@@ -378,21 +355,37 @@ export default function LiveSession({
         maxMs: cfg.mergeMaxMs,
       })
       aggregator.onFlush((merged) => {
-        if (realtimeModeRef.current) {
-          const next = realtimeBusyRef.current
-            .then(() => handleRealtimeFlush(merged, pipeline))
-            .catch(() => {})
-          realtimeBusyRef.current = next
-        } else {
-          void pipeline.ingestSegment({
-            pcm: merged.pcm,
-            speaker: merged.speaker,
-            startedAt: merged.startedAt,
-            endedAt: merged.endedAt,
-          })
-        }
+        pipelineBusyRef.current = pipelineBusyRef.current
+          .then(() =>
+            pipeline.ingestSegment({
+              pcm: merged.pcm,
+              speaker: merged.speaker,
+              startedAt: merged.startedAt,
+              endedAt: merged.endedAt,
+            }),
+          )
+          .catch(() => {})
       })
       aggregatorRef.current = aggregator
+
+      if (realtimeModeRef.current) {
+        const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
+          sampleRate: audio.sampleRate,
+          pauseMs: cfg.pauseMs,
+          maxMs: cfg.mergeMaxMs,
+        })
+        realtimeAggregator.onFlush((merged) => {
+          const turn = finalizedTurnFromRealtimeSegments(
+            merged,
+            cfg.conversationLang,
+          )
+          if (!turn) return
+          pipelineBusyRef.current = pipelineBusyRef.current
+            .then(() => pipeline.ingestFinalizedTurn(turn))
+            .catch(() => {})
+        })
+        realtimeAggregatorRef.current = realtimeAggregator
+      }
 
       pipeline.on((e: PipelineEvent) => {
         switch (e.type) {
@@ -401,9 +394,6 @@ export default function LiveSession({
             break
           case 'turnAppended':
             setTurns((prev) => [...prev, e.turn as TurnView])
-            if (realtimeModeRef.current) {
-              lastRealtimeTurnIdRef.current = e.turn.id
-            }
             break
           case 'candidatesDone':
             if (!useConfig.getState().islandReplyEnabled) break
@@ -438,26 +428,7 @@ export default function LiveSession({
         }
         const startedAt = Date.now()
         if (realtimeModeRef.current) {
-          // Safety: if prior segment never committed, seal buffer before new audio.
-          if (uncommittedRef.current && realtimeRef.current) {
-            const meta = draftMetaRef.current
-            const rt = realtimeRef.current
-            rt.commit()
-            uncommittedRef.current = false
-            void (async () => {
-              try {
-                const text = await waitRealtimeCompletedWithSpan(rt)
-                await pipeline.ingestFinalizedTurn({
-                  speaker: meta?.speaker ?? speakerRef.current,
-                  text,
-                  startedAt: meta?.startedAt ?? startedAt,
-                  endedAt: startedAt,
-                })
-              } catch {
-                /* handleRealtime path / degrade elsewhere */
-              }
-            })()
-          }
+          realtimeAggregatorRef.current?.hold()
           const who = draftMetaRef.current?.speaker ?? speakerRef.current
           draftMetaRef.current = { speaker: who, startedAt }
           setDraft({ speaker: who, text: '', startedAt, endedAt: startedAt })
@@ -467,6 +438,7 @@ export default function LiveSession({
       vad.on('speech-end', () => {
         setVadStatus('silence')
         inSpeechRef.current = false
+        realtimeAggregatorRef.current?.resume()
       })
       vad.on('speech-ready', (e) => {
         if (!useConfig.getState().islandSttEnabled) return
@@ -477,63 +449,67 @@ export default function LiveSession({
 
         if (realtimeModeRef.current) {
           const rt = realtimeRef.current
-          const provisional =
-            draftMetaRef.current?.speaker ?? speakerRef.current
+          if (!rt || !uncommittedRef.current) return
 
-          // Seal Manual buffer synchronously — must not await verify first.
-          if (rt && uncommittedRef.current) {
-            rt.commit()
-            uncommittedRef.current = false
-            const buffer = e.buffer
-            void (async () => {
-              try {
-                const verifyPromise = verifyWithSpan(buffer.buffer as ArrayBuffer)
-
-                // Spec: speaker gate runs in parallel with STT finalization.
-                const [text, who] = await Promise.all([
-                  waitRealtimeCompletedWithSpan(rt),
-                  verifyPromise,
-                ])
+          rt.commit()
+          uncommittedRef.current = false
+          const buffer = e.buffer
+          const provisional = draftMetaRef.current?.speaker ?? speakerRef.current
+          const transcription = waitRealtimeCompletedWithSpan(rt).then(
+            (text) => ({ ok: true as const, text }),
+            (error: unknown) => ({ ok: false as const, error }),
+          )
+          const verifiedSpeaker = verifyWithSpan(buffer.buffer as ArrayBuffer)
+          realtimeBusyRef.current = realtimeBusyRef.current
+            .then(async () => {
+              const [outcome, who] = await Promise.all([
+                transcription,
+                verifiedSpeaker,
+              ])
+              if (outcome.ok) {
                 draftMetaRef.current = { speaker: who, startedAt }
-                setDraft(null)
-                await pipeline.ingestFinalizedTurn({
+                setDraft((current) =>
+                  current?.startedAt === startedAt ? null : current,
+                )
+                realtimeAggregatorRef.current?.feed({
+                  buffer,
                   speaker: who,
-                  text,
+                  text: outcome.text,
                   startedAt,
                   endedAt,
                 })
-              } catch (err) {
-                const msg = (err as Error).message
-                if (!degradeToBatch(msg)) {
-                  setDraft(null)
-                  await pipeline.ingestFinalizedTurn({
-                    speaker: provisional,
-                    text: '',
-                    startedAt,
-                    endedAt,
-                    sttFailed: true,
-                  })
-                }
+                return
               }
-            })()
-          } else if (autoRef.current && embeddingRef.current && verifierRef.current) {
-            // Already committed (e.g. speech-start safety flush); still label async.
-            void verifyWithSpan(e.buffer.buffer as ArrayBuffer)
-              .then((who) => {
-                draftMetaRef.current = { speaker: who, startedAt }
-                const turnId = lastRealtimeTurnIdRef.current
-                if (turnId) {
-                  setTurns((prev) =>
-                    prev.map((t) =>
-                      t.id === turnId && t.speaker !== who
-                        ? { ...t, speaker: who }
-                        : t,
-                    ),
-                  )
-                }
+              if (isTranscriptionFailed(outcome.error)) {
+                realtimeAggregatorRef.current?.feed({
+                  buffer,
+                  speaker: provisional,
+                  text: '',
+                  sttFailed: true,
+                  startedAt,
+                  endedAt,
+                })
+                return
+              }
+              if (degradeToBatch(String(outcome.error))) {
+                await pipeline.ingestSegment({
+                  pcm: buffer,
+                  speaker: who,
+                  startedAt,
+                  endedAt,
+                })
+                return
+              }
+              realtimeAggregatorRef.current?.feed({
+                buffer,
+                speaker: who,
+                text: '',
+                sttFailed: true,
+                startedAt,
+                endedAt,
               })
-              .catch(() => {})
-          }
+            })
+            .catch(() => {})
           return
         }
 
@@ -599,6 +575,9 @@ export default function LiveSession({
   }
 
   function stop() {
+    realtimeAggregatorRef.current?.flush()
+    realtimeAggregatorRef.current?.dispose()
+    realtimeAggregatorRef.current = null
     aggregatorRef.current?.flush()
     aggregatorRef.current?.dispose()
     aggregatorRef.current = null
@@ -607,6 +586,7 @@ export default function LiveSession({
     realtimeRef.current = null
     realtimeModeRef.current = false
     inSpeechRef.current = false
+    uncommittedRef.current = false
     audioRef.current?.stop()
     audioRef.current = null
     pipelineRef.current = null

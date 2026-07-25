@@ -14,12 +14,12 @@ async function* stream(chunks: ArrayBuffer[]): AsyncIterable<ArrayBuffer> {
   for (const c of chunks) yield c
 }
 
-function pcm(value: number, n = 16): ArrayBuffer {
+function pcm(value: number, n = 16000 * 3): ArrayBuffer {
   return new Float32Array(n).fill(value).buffer
 }
 
 describe('EmbeddingSpeakerVerifier', () => {
-  it('enroll averages chunks and persists the embedding', async () => {
+  it('enroll combines capture chunks and persists the embedding', async () => {
     const storage = new InMemoryEmbeddingStorage()
     const verifier = new EmbeddingSpeakerVerifier({ embedAudio, storage, threshold: 0.8 })
     const emb = await verifier.enroll(stream([pcm(0.5), pcm(0.5)]), '固定文案')
@@ -53,13 +53,21 @@ describe('EmbeddingSpeakerVerifier', () => {
 
   it('enroll throws on an empty stream', async () => {
     const storage = new InMemoryEmbeddingStorage()
-    const verifier = new EmbeddingSpeakerVerifier({ embedAudio, storage })
+    const verifier = new EmbeddingSpeakerVerifier({
+      embedAudio,
+      storage,
+      threshold: 0.8,
+    })
     await expect(verifier.enroll(stream([]), 'p')).rejects.toThrow(/no audio/)
   })
 
   it('saveEmbedding / loadEmbedding round-trip through storage', async () => {
     const storage = new InMemoryEmbeddingStorage()
-    const verifier = new EmbeddingSpeakerVerifier({ embedAudio, storage })
+    const verifier = new EmbeddingSpeakerVerifier({
+      embedAudio,
+      storage,
+      threshold: 0.8,
+    })
     const emb = { vector: new Float32Array([1, 2, 3]), createdAt: 123, passphrase: 'p' }
     await verifier.saveEmbedding(emb)
     const loaded = await verifier.loadEmbedding()

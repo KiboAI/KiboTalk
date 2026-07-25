@@ -1,18 +1,20 @@
 /// <reference lib="webworker" />
 import { AutoProcessor, AutoModel } from '@huggingface/transformers'
+import { speakerEmbeddingFromModelOutput } from '@kibotalk/speaker'
 import { createProgressAggregator } from './model-progress'
 import {
   useBundledModels,
   useHuggingFaceModels,
   loadModelWithFallback,
-  WAVLM_MODEL_ID,
-  WAVLM_MODEL_REVISION,
+  SPEAKER_MODEL_DTYPE,
+  SPEAKER_MODEL_ID,
+  SPEAKER_MODEL_REVISION,
 } from './model-source'
 
 /**
- * Speaker-embedding Web Worker. Loads `Xenova/wavlm-base-plus-sv` (ONNX, via
- * Transformers.js) on first request and returns a speaker embedding for each
- * 16kHz mono PCM chunk posted to it. Runs off the main thread so embedding
+ * Speaker-embedding Web Worker. Loads the production WeSpeaker model (ONNX,
+ * via Transformers.js) on first request and returns a speaker embedding for
+ * each 16kHz mono PCM chunk posted to it. Runs off the main thread so embedding
  * inference never blocks the UI or the VAD/audio pipeline.
  *
  * Three message kinds share this one channel: `configure` (desktop only —
@@ -38,13 +40,13 @@ async function ensureLoaded(onProgress?: (fraction: number) => void): Promise<vo
   if (!loading) {
     const track = onProgress ? createProgressAggregator(onProgress) : undefined
     loading = loadModelWithFallback(async () => {
-      processor = await AutoProcessor.from_pretrained(WAVLM_MODEL_ID, {
-        revision: WAVLM_MODEL_REVISION,
+      processor = await AutoProcessor.from_pretrained(SPEAKER_MODEL_ID, {
+        revision: SPEAKER_MODEL_REVISION,
         progress_callback: track,
       })
-      model = await AutoModel.from_pretrained(WAVLM_MODEL_ID, {
-        dtype: 'q8',
-        revision: WAVLM_MODEL_REVISION,
+      model = await AutoModel.from_pretrained(SPEAKER_MODEL_ID, {
+        dtype: SPEAKER_MODEL_DTYPE,
+        revision: SPEAKER_MODEL_REVISION,
         progress_callback: track,
       })
     })
@@ -75,8 +77,9 @@ ctx.onmessage = async (event: MessageEvent<IncomingMessage>) => {
   try {
     await ensureLoaded()
     const inputs = await processor!(pcm)
-    const { embeddings } = (await model!(inputs)) as { embeddings: { data: Float32Array } }
-    ctx.postMessage({ kind: 'embed', id, embedding: embeddings.data })
+    const result = await model!(inputs)
+    const embedding = speakerEmbeddingFromModelOutput(result)
+    ctx.postMessage({ kind: 'embed', id, embedding })
   } catch (err) {
     ctx.postMessage({ kind: 'embed', id, error: err instanceof Error ? err.message : String(err) })
   }

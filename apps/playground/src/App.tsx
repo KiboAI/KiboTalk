@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Moon, Sun, Languages, StickyNote, Fingerprint, AudioLines, Cable, Server, UserRound } from 'lucide-react'
-import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
-import { useAccount } from '@kibotalk/app-shared'
+import {
+  createCurrentSpeakerEmbeddingStorage,
+  useAccount,
+} from '@kibotalk/app-shared'
 import { AccountPage } from '@kibotalk/pages'
 import {
   Button,
@@ -249,7 +251,7 @@ export default function App() {
 
   async function refreshEmbedding(preferTab?: PlaygroundTab) {
     try {
-      const emb = await new IndexedDbEmbeddingStorage().load()
+      const emb = await createCurrentSpeakerEmbeddingStorage().load()
       const enrolled = !!emb
       setHasEmbedding(enrolled)
       if (!tabReady || preferTab) {

@@ -6,8 +6,9 @@ import type {
   SessionAudioSource,
   UiLanguage,
 } from '@kibotalk/conversation'
-import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import {
+  clearSpeakerEmbeddingData,
+  createCurrentSpeakerEmbeddingStorage,
   defaultProductPrefs,
   languageLabel,
   levelLabel,
@@ -130,7 +131,9 @@ export function SettingsPage({
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([])
 
   useEffect(() => {
-    void new IndexedDbEmbeddingStorage().load().then((embedding) => setVoiceprintReady(!!embedding))
+    void createCurrentSpeakerEmbeddingStorage()
+      .load()
+      .then((embedding) => setVoiceprintReady(!!embedding))
   }, [])
 
   useEffect(() => {
@@ -170,7 +173,7 @@ export function SettingsPage({
   async function confirmDestructiveAction() {
     switch (confirmAction) {
       case 'deleteVoiceprint':
-        await new IndexedDbEmbeddingStorage().clear()
+        await clearSpeakerEmbeddingData()
         setVoiceprintReady(false)
         break
       case 'clearHistory':
@@ -179,7 +182,7 @@ export function SettingsPage({
       case 'reset':
         await storage.clearHistory()
         await storage.clearActiveSession()
-        await new IndexedDbEmbeddingStorage().clear()
+        await clearSpeakerEmbeddingData()
         onPrefsChange({
           ...defaultProductPrefs,
           uiLang: systemUiLanguage(),

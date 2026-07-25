@@ -14,9 +14,9 @@ Batch 仍保留：本地 mlx-qwen3-asr、OpenRouter、DashScope file/batch 等�
 
 ## 为何 Manual + 本地 turn gate（不用 server VAD）
 
-产品要的是 **enrolled 声纹 verification**（`user` / `other`），不是云端 diarization。`qwen3-asr-flash-realtime` **不支持** speaker diarization；若把 turn 边界交给 server VAD，会与本地 Silero + wavlm 双时钟打架，还要对齐时间轴。
+产品要的是 **enrolled 声纹 verification**（`user` / `other`），不是云端 diarization。`qwen3-asr-flash-realtime` **不支持** speaker diarization；若把 turn 边界交给 server VAD，会与本地 Silero + WeSpeaker 双时钟打架，还要对齐时间轴。
 
-因此：本地 VAD + 声纹 + 单一 `pauseMs` 独掌 turn；realtime 上游设 `turn_detection: null`（Manual），客户端在 turn 结束时 `commit`。只上行 Silero 判为 speech 的 PCM；换人先结束上一轮再喂下一段。
+因此：本地 VAD + 声纹 + 单一 `pauseMs` 独掌 turn；realtime 上游设 `turn_detection: null`（Manual）。每个 VAD speech fragment 做一次 `commit` 取得定稿文本，但它还不是正式 turn；定稿文本与声纹结果进入本地 TurnGate，只有 `pauseMs` / 换人 / `maxMs` flush 后才 `ingestFinalizedTurn`。只上行 Silero 判为 speech 的 PCM。
 
 ## 为何 WebSocket 经 apps/api 中继（不浏览器直连）
 
@@ -43,7 +43,7 @@ Realtime 断线：短退避重连同一 provider；仍失败且已配置任意 b
 | Env | 复用 `STT_DASHSCOPE_API_KEY`；`STT_DASHSCOPE_WS_URL`；`STT_DASHSCOPE_REALTIME_MODEL`（默认 `qwen3-asr-flash-realtime`） |
 | 薄协议 | 客户端：`session.start` / `append` / `commit` / `finish`；服务端：`ready` / `partial` / `completed` / `error` |
 | 映射 | `packages/stt` 的 DashScope realtime 辅助函数；仅 `apps/api` 调用 |
-| TurnGate | `packages/audio` `createSegmentAggregator`：单 `pauseMs`、直拼 PCM、无 gap 填零 |
+| TurnGate | `packages/audio` `createSegmentAggregator`：batch 直拼 PCM；realtime 合并 fragment 定稿文本；均使用单 `pauseMs`、无 gap 填零 |
 | Pipeline | batch 仍 `ingestSegment`；realtime 定稿走 `ingestFinalizedTurn` |
 | Playground | LiveSession 按 provider `mode` 选 POST 或 WS；草稿 UI；R4 降级 |
 

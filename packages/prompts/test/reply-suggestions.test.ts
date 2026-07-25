@@ -80,6 +80,20 @@ describe('reply suggestions prompt (production schema)', async () => {
     expect(user).toMatch(/be liberal/i)
   })
 
+  it('requires [] when the triggering turn was not transcribed', async () => {
+    const msgs = await buildReplySuggestionsMessages({
+      ...baseArgs,
+      context: [
+        turn('user', 'さっきの話です'),
+        { ...turn('other', ''), sttFailed: true },
+      ],
+    })
+    expect(msgs[1]!.content).toContain(
+      'triggering turn is marked (untranscribed)',
+    )
+    expect(msgs[1]!.content).toContain('return \\[] immediately')
+  })
+
   it('handles an empty context gracefully', async () => {
     const msgs = await buildReplySuggestionsMessages({
       context: [],

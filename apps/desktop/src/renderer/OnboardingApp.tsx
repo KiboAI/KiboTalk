@@ -4,8 +4,9 @@ import {
   IndexedDbConversationStorage,
   type ConversationStorage,
 } from '@kibotalk/conversation'
-import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import {
+  clearSpeakerEmbeddingData,
+  createCurrentSpeakerEmbeddingStorage,
   I18nProvider,
   loadLanguagePrefs,
   persistLanguagePrefs,
@@ -140,7 +141,7 @@ function DesktopWindowContent({
   useEffect(() => {
     if (gate !== 'setup' || !prefs.languagesConfirmed) return
     let cancelled = false
-    void new IndexedDbEmbeddingStorage()
+    void createCurrentSpeakerEmbeddingStorage()
       .load()
       .then((embedding) => {
         if (cancelled) return
@@ -230,7 +231,7 @@ function DesktopWindowContent({
           onDeleteLocalData={async () => {
             await localStorage.clearHistory()
             await localStorage.clearActiveSession()
-            await new IndexedDbEmbeddingStorage().clear()
+            await clearSpeakerEmbeddingData()
             await window.kibotalk.onboarding.reset()
           }}
         />,

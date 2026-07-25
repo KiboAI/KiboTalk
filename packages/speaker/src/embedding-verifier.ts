@@ -2,19 +2,20 @@ import type { Embedding, SpeakerVerifier, VerifyResult } from './types'
 import type { Speaker } from '@kibotalk/conversation'
 import type { EmbeddingStorage } from './storage'
 import { cosineSimilarity } from './cosine-sim'
+import { prepareEnrollmentAudio, trimSpeakerAudio } from './audio-quality'
 
 /**
  * A function that turns a PCM chunk (16kHz mono Float32Array) into a speaker
  * embedding vector. Injected so this package stays free of the model runtime
- * (the playground wires wavlm via @huggingface/transformers in a Web Worker).
+ * (the product wires WeSpeaker via @huggingface/transformers in a Web Worker).
  */
 export type EmbedAudio = (pcm: Float32Array) => Promise<Float32Array>
 
 export type EmbeddingVerifierOptions = {
   embedAudio: EmbedAudio
   storage: EmbeddingStorage
-  /** Cosine-similarity at/above which a chunk is labeled `user`. ~0.8 for wavlm. */
-  threshold?: number
+  /** Model-calibrated cosine-similarity at/above which a chunk is `user`. */
+  threshold: number
   /** Injectable id generator for deterministic tests. */
   generateId?: () => string
 }
@@ -25,10 +26,9 @@ const defaultGenerateId = (): string =>
 /**
  * Real speaker verification built on an injected embedding function.
  *
- * `enroll` averages embeddings across the supplied audio chunks (one passphrase
- * reading, possibly split into chunks) into a single user embedding, persisted
- * via the injected storage. `verify` compares a chunk to the stored embedding
- * by cosine similarity and labels it `user` (≥ threshold) or `other`.
+ * `enroll` concatenates capture chunks, removes outer silence, validates the
+ * spoken duration, and persists one user embedding. `verify` applies the same
+ * outer-silence trim before cosine comparison.
  *
  * The model runs out-of-process (Web Worker in the playground); this class only
  * orchestrates embedding + comparison + persistence, so it is unit-testable in
@@ -43,17 +43,23 @@ export class EmbeddingSpeakerVerifier implements SpeakerVerifier {
   constructor(opts: EmbeddingVerifierOptions) {
     this.embedAudio = opts.embedAudio
     this.storage = opts.storage
-    this.threshold = opts.threshold ?? 0.8
+    this.threshold = opts.threshold
     this.generateId = opts.generateId ?? defaultGenerateId
   }
 
   async enroll(audioStream: AsyncIterable<ArrayBuffer>, passphrase: string): Promise<Embedding> {
-    const vectors: Float32Array[] = []
+    const chunks: Float32Array[] = []
     for await (const chunk of audioStream) {
-      vectors.push(await this.embedAudio(new Float32Array(chunk)))
+      chunks.push(new Float32Array(chunk))
     }
-    if (vectors.length === 0) throw new Error('enrollment received no audio')
-    const embedding = averageVectors(vectors)
+    if (chunks.length === 0) throw new Error('enrollment received no audio')
+    const pcm = new Float32Array(chunks.reduce((total, chunk) => total + chunk.length, 0))
+    let offset = 0
+    for (const chunk of chunks) {
+      pcm.set(chunk, offset)
+      offset += chunk.length
+    }
+    const embedding = await this.embedAudio(prepareEnrollmentAudio(pcm))
     const result: Embedding = {
       vector: embedding,
       createdAt: Date.now(),
@@ -72,7 +78,9 @@ export class EmbeddingSpeakerVerifier implements SpeakerVerifier {
   }
 
   async verify(audioChunk: ArrayBuffer, embedding: Embedding): Promise<VerifyResult> {
-    const chunkEmb = await this.embedAudio(new Float32Array(audioChunk))
+    const pcm = new Float32Array(audioChunk)
+    const trimmed = trimSpeakerAudio(pcm)
+    const chunkEmb = await this.embedAudio(trimmed.length > 0 ? trimmed : pcm)
     const similarity = cosineSimilarity(chunkEmb, embedding.vector)
     const speaker: Speaker = similarity >= this.threshold ? 'user' : 'other'
     const confidence = similarity >= this.threshold ? similarity : 1 - similarity
@@ -83,14 +91,4 @@ export class EmbeddingSpeakerVerifier implements SpeakerVerifier {
   setThreshold(threshold: number): void {
     this.threshold = threshold
   }
-}
-
-function averageVectors(vectors: Float32Array[]): Float32Array {
-  const len = vectors[0].length
-  const out = new Float32Array(len)
-  for (const v of vectors) {
-    for (let i = 0; i < len; i++) out[i] += v[i]
-  }
-  for (let i = 0; i < len; i++) out[i] /= vectors.length
-  return out
 }

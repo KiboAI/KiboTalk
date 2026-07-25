@@ -112,6 +112,10 @@ export function ReplySuggestionsUserPrompt({
       <h2>When to return 3 vs []</h2>
       <ul>
         <li>
+          If the triggering turn is marked (untranscribed), return [] immediately.
+          Do not infer a reply from older turns.
+        </li>
+        <li>
           If last speaker is Other: almost always return EXACTLY 3. Use [] only for
           noise, tiny meaningless fragments, or when the learner is clearly not
           expected to speak yet.

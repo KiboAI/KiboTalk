@@ -6,12 +6,18 @@ export { createWorkerEmbedAudio, configureModelSource } from './audio/speaker-em
 export {
   useBundledModels,
   useHuggingFaceModels,
-  WAVLM_MODEL_ID,
-  WAVLM_MODEL_REVISION,
+  SPEAKER_MODEL_DTYPE,
+  SPEAKER_MODEL_ID,
+  SPEAKER_MODEL_REVISION,
 } from './audio/model-source'
 
 export { startModelPreload, useModelPreloadStatus } from './model-preload'
 export type { ModelLoadState, ModelPreloadStatus } from './model-preload'
+export {
+  clearSpeakerEmbeddingData,
+  createCurrentSpeakerEmbeddingStorage,
+  CURRENT_SPEAKER_EMBEDDING_DATABASE,
+} from './speaker-embedding-storage'
 export { shouldShowSessionError } from './session/session-presentation'
 
 export { parseSseStream } from './sse'
@@ -57,8 +63,15 @@ export {
   fetchSttProviders,
 } from './stt-providers'
 export type { SttProvider } from './stt-providers'
-export { connectRealtimeStt, connectRealtimeSttWithRetry } from './realtime-stt-client'
+export {
+  connectRealtimeStt,
+  connectRealtimeSttWithRetry,
+  isTranscriptionFailed,
+  RealtimeSttError,
+} from './realtime-stt-client'
 export type { RealtimeSttClient, RealtimeSttHandlers } from './realtime-stt-client'
+export { finalizedTurnFromRealtimeSegments } from './session/realtime-turn'
+export type { TranscribedAudioSegment } from './session/realtime-turn'
 export { ProxySttClient, ProxyLlmClient } from './proxy-clients'
 export type { SessionLanguageSnapshot } from './proxy-clients'
 

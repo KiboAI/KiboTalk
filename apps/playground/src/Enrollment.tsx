@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { EmbeddingSpeakerVerifier, IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
+import { EmbeddingSpeakerVerifier } from '@kibotalk/speaker'
 import type { Speaker } from '@kibotalk/conversation'
 import {
   Button,
@@ -17,7 +17,13 @@ import {
   Square,
   Trash2,
 } from 'lucide-react'
-import { AudioSource, createWorkerEmbedAudio, PASSPHRASE_BY_LANG } from '@kibotalk/app-shared'
+import {
+  AudioSource,
+  clearSpeakerEmbeddingData,
+  createCurrentSpeakerEmbeddingStorage,
+  createWorkerEmbedAudio,
+  PASSPHRASE_BY_LANG,
+} from '@kibotalk/app-shared'
 import { useConfig } from './config-store'
 import { ThresholdSlider } from './components/ConfigFields'
 import { StageShell } from './components/StageShell'
@@ -58,7 +64,7 @@ export default function Enrollment({
   function verifier() {
     return (verifierRef.current ??= new EmbeddingSpeakerVerifier({
       embedAudio: createWorkerEmbedAudio(),
-      storage: new IndexedDbEmbeddingStorage(),
+      storage: createCurrentSpeakerEmbeddingStorage(),
       threshold: useConfig.getState().speakerThreshold,
     }))
   }
@@ -288,7 +294,7 @@ export default function Enrollment({
       </div>
       <ThresholdSlider
         label="说话人阈值"
-        hint="与声纹相似度高于此值判为我（默认 0.8）"
+        hint="与声纹相似度高于此值判为我（默认 0.49）"
         value={speakerThreshold}
         disabled={busy}
         onChange={(v) => useConfig.getState().patch({ speakerThreshold: v })}
@@ -316,7 +322,7 @@ export default function Enrollment({
             size="sm"
             disabled={busy}
             onClick={() =>
-              void new IndexedDbEmbeddingStorage().clear().then(() => {
+              void clearSpeakerEmbeddingData().then(() => {
                 setEnrolled(false)
                 setVerifyView(null)
                 setStep('intro')

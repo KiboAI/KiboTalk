@@ -38,7 +38,7 @@ export const defaultAppConfig: AppConfig = {
   vadVariantId: SILERO_VARIANTS[0].id,
   asrPadMs: { pre: 80, post: 80 },
   aggregator: { pauseMs: 500, maxMs: 30000 },
-  speakerThreshold: 0.8,
+  speakerThreshold: 0.49,
 }
 
 export const defaultLanguagePrefs: {
@@ -79,9 +79,9 @@ export function systemUiLanguage(language = globalThis.navigator?.language ?? 'e
 }
 
 export const PASSPHRASE_BY_LANG: Record<AppLanguage, string> = {
-  ja: 'こんにちは。今日もよろしくお願いします。',
-  en: 'Hello. Nice to meet you. Please take care of me today.',
-  zh: '你好，今天也请多多关照。',
+  ja: 'こんにちは。今日もよろしくお願いします。最近は外国語の会話を練習しています。ゆっくり、はっきり、自分らしく話します。',
+  en: 'Hello, it is nice to meet you. I am practicing conversations in another language. I will speak clearly, naturally, and at a comfortable pace.',
+  zh: '你好，今天也请多多关照。我最近正在练习外语对话，会用自然、清楚、舒服的语速认真说话。',
 }
 
 export const APP_LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [

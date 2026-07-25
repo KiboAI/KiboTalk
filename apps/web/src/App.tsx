@@ -4,8 +4,9 @@ import {
   IndexedDbConversationStorage,
   type ConversationStorage,
 } from '@kibotalk/conversation'
-import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import {
+  clearSpeakerEmbeddingData,
+  createCurrentSpeakerEmbeddingStorage,
   createSessionSnapshot,
   I18nProvider,
   loadLanguagePrefs,
@@ -214,7 +215,7 @@ function AppContent({
   useEffect(() => {
     if (!prefs.languagesConfirmed) return
     let cancelled = false
-    void new IndexedDbEmbeddingStorage()
+    void createCurrentSpeakerEmbeddingStorage()
       .load()
       .then((embedding) => {
         if (cancelled) return
@@ -237,8 +238,8 @@ function AppContent({
   const modelsBadge = (
     <ModelPreloadBadge
       progress={models.progress}
-      done={models.wavlm !== 'loading' && models.vad !== 'loading'}
-      error={models.wavlm === 'error' || models.vad === 'error'}
+      done={models.speaker !== 'loading' && models.vad !== 'loading'}
+      error={models.speaker === 'error' || models.vad === 'error'}
       label={t('preparing')}
       errorLabel={t('preparationFailed')}
     />
@@ -287,7 +288,7 @@ function AppContent({
           enrolled={enrolled}
           onEnrolled={() => setEnrolled(true)}
           onEnterSession={() => setStage('product')}
-          recordReady={models.wavlm === 'ready'}
+          recordReady={models.speaker === 'ready'}
         />
       </>
     )
@@ -303,8 +304,8 @@ function AppContent({
     )
   }
 
-  const modelsReady = models.vad === 'ready' && models.wavlm === 'ready'
-  const modelsFailed = models.vad === 'error' || models.wavlm === 'error'
+  const modelsReady = models.vad === 'ready' && models.speaker === 'ready'
+  const modelsFailed = models.vad === 'error' || models.speaker === 'error'
   if (!modelsReady) {
     return (
       <>
@@ -362,7 +363,7 @@ function AppContent({
         onDeleteLocalData={async () => {
           await localStorage.clearHistory()
           await localStorage.clearActiveSession()
-          await new IndexedDbEmbeddingStorage().clear()
+          await clearSpeakerEmbeddingData()
         }}
       />
       <SyncPendingNotice pending={Boolean(cloud.error)} onRetry={cloud.retry} />

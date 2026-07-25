@@ -4,14 +4,15 @@ import { fileURLToPath } from 'node:url'
 import { AutoModel, AutoProcessor, env } from '@huggingface/transformers'
 import {
   defaultAppConfig,
+  SPEAKER_MODEL_DTYPE,
+  SPEAKER_MODEL_ID,
+  SPEAKER_MODEL_REVISION,
   SILERO_VARIANTS,
-  WAVLM_MODEL_ID,
-  WAVLM_MODEL_REVISION,
 } from '@kibotalk/app-shared'
 
 /**
  * Downloads the on-device models desktop bundles into the installer —
- * WavLM speaker embedding and the Silero VAD variant `defaultAppConfig`
+ * WeSpeaker embedding and the Silero VAD variant `defaultAppConfig`
  * hardcodes — so `pnpm package:mac` can ship them via `extraResources`
  * instead of fetching them at runtime (see `src/main/model-protocol.ts` +
  * `packages/app-shared/src/audio/model-source.ts`).
@@ -38,13 +39,13 @@ env.cacheDir = `${modelsDir}/`
 async function main() {
   await mkdir(modelsDir, { recursive: true })
 
-  console.log(`Downloading speaker-embedding model (${WAVLM_MODEL_ID})…`)
-  await AutoProcessor.from_pretrained(WAVLM_MODEL_ID, {
-    revision: WAVLM_MODEL_REVISION,
+  console.log(`Downloading speaker-embedding model (${SPEAKER_MODEL_ID})…`)
+  await AutoProcessor.from_pretrained(SPEAKER_MODEL_ID, {
+    revision: SPEAKER_MODEL_REVISION,
   })
-  await AutoModel.from_pretrained(WAVLM_MODEL_ID, {
-    dtype: 'q8',
-    revision: WAVLM_MODEL_REVISION,
+  await AutoModel.from_pretrained(SPEAKER_MODEL_ID, {
+    dtype: SPEAKER_MODEL_DTYPE,
+    revision: SPEAKER_MODEL_REVISION,
   })
 
   const vadVariant = SILERO_VARIANTS.find((variant) => variant.id === defaultAppConfig.vadVariantId) ?? SILERO_VARIANTS[0]
@@ -58,16 +59,16 @@ async function main() {
   await rm(bundleModelsDir, { recursive: true, force: true })
   const bundleFiles = [
     {
-      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/config.json`,
-      destination: `${WAVLM_MODEL_ID}/config.json`,
+      source: `${SPEAKER_MODEL_ID}/${SPEAKER_MODEL_REVISION}/config.json`,
+      destination: `${SPEAKER_MODEL_ID}/config.json`,
     },
     {
-      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/preprocessor_config.json`,
-      destination: `${WAVLM_MODEL_ID}/preprocessor_config.json`,
+      source: `${SPEAKER_MODEL_ID}/${SPEAKER_MODEL_REVISION}/preprocessor_config.json`,
+      destination: `${SPEAKER_MODEL_ID}/preprocessor_config.json`,
     },
     {
-      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/onnx/model_quantized.onnx`,
-      destination: `${WAVLM_MODEL_ID}/onnx/model_quantized.onnx`,
+      source: `${SPEAKER_MODEL_ID}/${SPEAKER_MODEL_REVISION}/onnx/model_quantized.onnx`,
+      destination: `${SPEAKER_MODEL_ID}/onnx/model_quantized.onnx`,
     },
     {
       source: `${vadVariant.modelId}/${vadVariant.revision}/onnx/model_quantized.onnx`,
@@ -80,8 +81,12 @@ async function main() {
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
   }
+  await copyFile(
+    join(scriptDir, '../../../THIRD_PARTY_NOTICES.md'),
+    join(bundleModelsDir, 'THIRD_PARTY_NOTICES.md'),
+  )
 
-  console.log(`Done — Q8 bundle staged at ${bundleModelsDir}`)
+  console.log(`Done — Q8 speaker + Q8 VAD bundle staged at ${bundleModelsDir}`)
 }
 
 main().catch((err) => {

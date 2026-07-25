@@ -1,6 +1,6 @@
 {
   "name": "@kibotalk/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "KiboTalk live reply assistant for Apple Silicon Macs",
   "author": "KiboTalk",
   "private": true,
@@ -12,7 +12,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "download-models": "tsx scripts/download-models.ts",
-    "verify:q8": "tsx scripts/verify-q8-speaker.ts",
+    "verify:speaker": "tsx scripts/verify-speaker.ts",
     "package:mac": "pnpm download-models && pnpm build && electron-builder --config electron-builder.config.ts --mac --arm64"
   },
   "dependencies": {

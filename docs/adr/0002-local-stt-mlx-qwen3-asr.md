@@ -22,7 +22,7 @@ STT 增加一条本地低延迟路径：经 `apps/api` 的 `/stt` 代理转发�
 - **单一入口**：浏览器永远只打 `/stt`，云端/本地差异由服务端 env 决定，前端代码路径统一
 - **key 仍不出服务端**：本地 `STT_OPENAI_*`（base URL / key / model）写在服务端 `.env`，浏览器只传 `?provider=openai` 选 provider，不接触 key
 - 与 spec §2.9「/stt 接受可选 provider 字段做 per-request 覆盖」一致
-- 代价：`apps/api` 与 `mlx-qwen3-asr` 必须同机部署（代理用 `localhost:8765` 访问本地服务），故本地 STT 仅在本地 dev（两者同机）场景生效；部署到 Railway 时用云端 provider
+- 代价：`apps/api` 与 `mlx-qwen3-asr` 必须同机（代理用 `localhost:8765` 访问本地服务），故该路径仅用于本地 dev；比赛生产使用 ADR 0005 规定的 DashScope realtime provider
 
 ## 接线
 

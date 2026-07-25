@@ -5,6 +5,12 @@
 - **关联**：[产品想法](../brainstorm/2026-07-16-live-reply-coach-language-assist.md)
 - **作者**：路路（与神奈子需求对齐后整理）
 
+> **比赛生产补充（2026-07-25）**：本文件中早期的 Railway、Supabase、
+> “MVP 无账号”和生产 batch fallback 描述已被
+> [ADR 0005](../adr/0005-competition-production-platform.md) 覆盖。正式入口为
+> `https://advx.kibotalk.app`，账号、强制加密同步、额度和发布要求以 ADR 0005
+> 及本文新增 F12–F15 为准。
+
 ## 摘要
 
 **一句话**：真人外语开口教练——说话人识别区分用户与对方；**任一轮**（对方或用户）说完后都可请求教练，由 LLM 决定要不要给出回复提示；用户实际说了什么也进入同一条对话流。
@@ -36,7 +42,8 @@
         · 须显式确认一次（满足「第一次就要选择」）
         · 右上角小圆圈显示下载进度
         · 权重未下完 → 不能进入下一步 / 开始会话
-    → 声纹录制（权重已就绪；口令随对话语言 ja/en/zh）
+    → 声纹录制（权重已就绪；口令随对话语言 ja/en/zh；embedding 仅在本机）
+    → 邮箱 OTP 登录并完成强制文本同步
     → 开始会话（快照 uiLang / conversationLang / meaningLang / level / 音源与设备；进行中锁定）
     → 持续听音频 → VAD 切段 → 说话人判定
         → other 说完：STT（language=conversationLang）→ 写入对话 → 请求 LLM（通常给 3 条候选）
@@ -77,6 +84,10 @@
 | F09 | 历史与结束回顾 | 本地长期保留会话；停止后后台生成冻结 `uiLang` 的短标题与小结，失败可重试 | 列表 / 详情可回看转写和候选；不保存原始音频 |
 | F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL；宽屏 A+B 可折叠双栏，窄屏内容区对话层 | 无页面横向溢出；两栏等高并独立滚动 |
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
+| F12 | 账号与设备 | 开放邮箱 OTP 注册；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
+| F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 多设备可见；离线可读历史但不能新建云会话；支持单会话和账户删除 |
+| F14 | 额度与兑换 | 免费 10 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
+| F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `advx.kibotalk.app` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
 
 #### P1 — 演示加分
 
@@ -232,9 +243,9 @@ type ReplyCandidate = {
 | 语音 Pipeline | `packages/pipeline` | [webai-example-realtime-voice-chat](https://github.com/proj-airi/webai-example-realtime-voice-chat)（VAD + STT，无 TTS） |
 | 提示词 | **Velin** `@velin-dev/core-react`（TSX） | [moeru-ai/velin](https://github.com/moeru-ai/velin) |
 | LLM | **xsai** | AIRI 生态 |
-| STT | 走代理（OpenRouter：`openai/gpt-4o-transcribe` 默认，`groq/whisper-large-v3-turbo` fallback）；本地可选（mlx-qwen3-asr） | 见 §2.9 |
+| STT | 统一走代理；生产仅 DashScope `qwen3-asr-flash-realtime`，开发保留 batch / mlx-qwen3-asr | 见 §2.9、ADR 0005 |
 | 服务端 | **Hono** 薄代理（转发 LLM + STT，藏 key，streaming） | — |
-| 部署 | **Railway** 常驻进程（无超时，git push 部署） | — |
+| 部署 | **日本 VPS**：Docker Compose + Caddy + Hono + PostgreSQL | ADR 0005 |
 | Prompt 评估 | **vieval**（根目录 config + `evals/`） | [vieval-dev/vieval](https://github.com/vieval-dev/vieval) |
 | 移动 | **PWA**（`apps/web` 构建） | — |
 | 桌面 Web | 同一 `packages/*`，`apps/web` 响应式 | 对齐 AIRI「浏览器入口」角色，非其命名 |
@@ -264,7 +275,7 @@ live-reply-coach/
 ├── apps/
 │   ├── playground/             # 功能验证入口：极简前端，测 pipeline 各模块（见 §2.7）
 │   ├── web/                    # 薄入口：Vite dev、生产构建、PWA manifest
-│   ├── api/                    # Hono 薄代理：/llm /stt 转发，藏 key，streaming；部署 Railway
+│   ├── api/                    # Hono 业务网关：auth / sync / quota / admin + STT / LLM
 │   └── desktop/                # P1：Electron 薄入口（主进程音频、窗口）
 ├── packages/
 │   ├── ui/                     # shadcn 组件 + design tokens
@@ -364,7 +375,7 @@ Velin(repliesPrompt) → xsAI → JSON: 3 candidates | []
 3. **多轮无用户**：可连续多个 other turn——每次 other 停顿达标都触发 LLM；若返回 3 条则刷新候选，若 `[]` 则保留原展示
 4. **完整对话进下一轮**：被打断后新一轮 LLM 的 context = **所有已完成的 ConversationTurn**。半截候选与 realtime partial **不进 context**（§1.4「以 STT 为准」）
 5. **抢说 / 连说**：对方或用户停说后的阈值倒计时中若另一方（或同方）又开口 → **取消待触发或在途的 LLM**，先完成新 turn 的 STT/入库，再按规则 1 **重新请求教练**（user 入库后同样触发，不再「只入库不出 LLM」）
-6. **STT 失败**：batch 自动重试 1 次（1s 退避）→ 仍失败 → `appendTurn({ text: '', sttFailed: true })`，UI 标红（**不可补字**）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**。Realtime：短退避重连；仍失败且已配置 batch provider 则可降级为 batch（见 §2.9 / ADR 0004）
+6. **STT 失败**：batch（仅开发）自动重试 1 次（1s 退避）→ 仍失败 → `appendTurn({ text: '', sttFailed: true })`，UI 标红（**不可补字**）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**。生产 realtime 短退避重连，仍失败则停止转写并明示错误，不降级到 batch（ADR 0005）
 7. **LLM 失败**：自动重试 1 次（1s 退避）→ 仍失败 → 候选区可提示「出候选失败，重试」，但**不清空**上一轮已提交候选；turn 已入库不动 → 循环继续听下一轮，**不杀会话**
 8. **不做**：熔断、多轮指数退避、离线缓存重放、客户端预过滤闸门、双模型、中途 partial 触发 LLM——MVP 过度
 
@@ -425,8 +436,7 @@ VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playgrou
 **方案**：enroll 一次，embedding 缓存 IndexedDB；提供手动重录按钮。每设备各 enroll 一次，**不**进服务端。
 
 - embedding 是浮点向量（几百 KB），放 **IndexedDB**（非 localStorage——后者只适合小字符串且 5MB 上限、同步阻塞）
-- MVP 无账号 = 无跨设备同步；换设备 = 换麦克风，声纹本来就该重录
-- 将来加账号时可选同步到 Supabase（按 userId 存），但 `packages/speaker` 接口不变，只换底层存储
+- 账号只同步文本会话与偏好；换设备仍须各自录入声纹，embedding 永不上传
 
 **`packages/speaker` 接口**：
 
@@ -449,7 +459,9 @@ playground **声纹页**同时覆盖 P0-c（`enroll` + `saveEmbedding`）与 P0-
 
 #### 会话持久化
 
-**MVP 采用方案 C**：完整 `ConversationSession` 持久化到 IndexedDB，提供一个 active-session 指针及本地历史列表 / 详情。每个正式 turn、候选和生命周期变化即时写入；不保存原始音频。历史无限期保留，直到用户清除。
+**比赛生产采用 local-first + 强制云同步**：完整 `ConversationSession` 先持久化到 IndexedDB，并自动同步到 PostgreSQL 加密存储。提供 active-session 指针及历史列表 / 详情；每个正式 turn、候选和生命周期变化即时写入；不保存原始音频。历史无限期保留，直到用户删除。
+
+本地 IndexedDB 按账户 ID 隔离，切换账户时取消旧账户未完成的同步请求，服务端也会核对同步请求冻结的账户 ID。会话与偏好在上传成功前保留持久 dirty 标记并指数退避重试；首次登录必须先完成云端拉取，不能用设备默认偏好覆盖已有账户偏好。成功认证后只缓存不含 token 的最小账户快照；断网启动可据此进入对应账户的**只读历史**。离线时不能新建或删除会话、重试复盘或调用 AI，恢复初始云同步后才解除门禁。
 
 **`packages/conversation` 接口**：
 
@@ -473,7 +485,12 @@ clearHistory(): Promise<void>
 - running / paused 在刷新、崩溃或设备中断后恢复为 `pauseReason: 'unexpected'`，可继续或停止。
 - 时长不计暂停区间。
 
-停止时先写一个按冻结 `uiLang` 本地化的日期时间 + 对话语言标题；后台调用 `/session-review` 生成同语言短场景标题和小结。失败记录为 `failed`，历史页可重试；应用下次启动会继续 pending 任务。MVP 不提供重命名，也不做账号或跨设备同步。
+Realtime 连续语音也必须在 30 秒切成正式 turn（不能只依赖 batch
+`SegmentAggregator.maxMs`）；服务端按 PCM 样本数再做同样上限。余额耗尽时，
+服务端只给该 session 一次最终建议和一次复盘 allowance，其余零余额 LLM 请求
+直接拒绝；上游失败不消费 allowance。
+
+停止时先写一个按冻结 `uiLang` 本地化的日期时间 + 对话语言标题；后台调用 `/session-review` 生成同语言短场景标题和小结。失败记录为 `failed`，历史页可重试；应用下次启动会继续 pending 任务。比赛生产不提供重命名，但会把会话、候选和复盘加密同步到所有登录设备。
 
 ### 2.5 提示词（Velin TSX）
 
@@ -547,7 +564,8 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 
 ### 2.8 服务端与部署
 
-**形态**：薄代理。不做业务编排，不存会话状态，只转发 LLM 与 STT 请求、藏 API key、透传 streaming 响应。
+**形态**：客户端编排 + Hono 业务网关。VAD、声纹与 turn pipeline 留在客户端；
+服务端代理 STT/LLM，并负责 auth、加密同步、额度、活跃会话租约、遥测和管理后台。
 
 **框架**：Hono。轻量、平台无关（Node / Workers / Bun 都能跑），方便将来换 hosting。
 
@@ -555,10 +573,13 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 
 | 路由 | 协议 | 作用 | 备注 |
 |------|------|------|------|
-| `POST /llm` | **SSE 流式** | 接收对话上下文 + prompt，转发 LLM provider，流式回 3 条候选（传原始 token） | key 在服务端环境变量 |
-| `POST /session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 后台任务；客户端持久化状态并负责重试 |
-| `POST /stt` | 普通 POST | 接收 VAD 切好的音频片段，转发 **batch** STT provider，回 JSON 转写 | 与 speaker 判定并行 |
-| `WS /stt-realtime` | **WebSocket** | 薄 JSON 协议上行 speech PCM / commit；代理注入 key，映射到上游 realtime WSS；下行 partial / completed | 见 ADR 0004；仅 realtime provider |
+| `POST /api/llm` | **SSE 流式** | 接收对话上下文，转发 DeepSeek，流式回 3 条候选或 `[]` | 必须登录；key 只在服务端 env |
+| `POST /api/session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 必须登录；客户端负责重试 |
+| `WS /api/stt-realtime` | **WebSocket** | 单次票据鉴权；speech PCM / commit；DashScope 中继；计时扣额度 | 生产唯一 STT；不保存音频 |
+| `/api/auth/*` | REST | 邮箱 OTP、当前账户、设备撤销、WS 单次票据 | Resend + 安全 cookie / bearer |
+| `/api/sync/*` | REST | 加密会话、删除 tombstone 与偏好同步 | AES-256-GCM；不含声纹 / 音频 |
+| `/api/admin/*` | REST | 用户、账本、赠送、兑换码、运行面板 | 管理邮箱白名单 |
+| `POST /api/stt` | 普通 POST | 开发 / playground batch STT | 生产返回 404 |
 
 **流式协议选型**：
 
@@ -590,7 +611,7 @@ app.post('/llm', streamSSE(async (c) => {
 **不做**：
 
 - 不做 pipeline 编排（VAD / speaker / conversation store 全在浏览器）
-- 不做账号或服务端会话持久化；本地 IndexedDB 会话由客户端负责
+- 不保存原始音频或声纹 embedding；文本密文与最小查询元数据才入库
 - 不做 SSR / 模板渲染
 
 **STT 上行音频格式**：WAV，16kHz 单声道 PCM。
@@ -600,7 +621,10 @@ app.post('/llm', streamSSE(async (c) => {
 - 16kHz mono 是语音采样标准，体积可控（3s ≈ 96KB），所有 STT provider 都认
 - `packages/audio` 暴露 `encodeWav(pcm: Float32Array, sampleRate = 16000): ArrayBuffer`；`/stt` 收 WAV 转发 OpenRouter `/audio/transcriptions`（`input_audio.format: "wav"`）
 
-**静态托管（`apps/web` 产物）**：MVP 由 `apps/api` 同进程托管，一个 Railway 服务、一个域、同源无 CORS。
+**静态托管（`apps/web` 产物）**：Web 与 API 打进同一生产镜像，由 Caddy 在
+`advx.kibotalk.app` 前置 TLS。Web 的 WavLM 与 Silero 都使用 Q8：首选固定
+commit 的 Hugging Face 文件并进入浏览器缓存，加载失败自动重试 VPS 同源镜像；
+桌面模型打进 DMG。DMG 仅通过 GitHub Release 分发，VPS 不托管安装包。
 
 - Hono 用 `serveStatic` 把 `apps/web/dist` 挂到根路径，API 路由挂 `/llm` `/stt`，PWA manifest / service worker 同源加载（iOS Safari 添加到主屏幕最稳）
 - 开发期各自 dev server（Vite 5173 + Hono 8787），Vite proxy 把 `/llm` `/stt` 转发到 Hono，避免开发期 CORS
@@ -612,17 +636,19 @@ app.use('/stt', ...)
 app.use('/*', serveStatic({ root: '../web/dist' }))
 ```
 
-**部署**：Railway 常驻进程。选 Railway 而非 Vercel / Cloudflare Workers / VPS 的理由：
+**部署**：日本 VPS 上的 Docker Compose：
 
-- streaming LLM 响应需要长连接，serverless 的执行时长 / 超时是隐患；常驻进程无此问题
-- 单人 MVP 优先开发速度，git push 即部署 + 自动 TLS + 内置日志，省去 VPS 的 ops 折旧
-- Hono 平台无关，将来要迁走 Railway 成本很低，不构成锁定
+- Caddy：自动 HTTPS、反向代理和 Q8 模型故障回退镜像；
+- Hono：单文件 production bundle，启动时执行幂等 schema migration；
+- PostgreSQL 17：账号、设备、额度账本、密文同步和 30 天遥测；
+- GitHub runner 构建 amd64 镜像后经 SSH 上传，VPS 不访问 GitHub；
+- Cloudflare 记录为 DNS only；不使用代理软件。
 
 **与客户端的分工**：
 
 ```text
-浏览器（Renderer + Web Worker）        Railway（常驻 Hono）
-─────────────────────────              ──────────────────
+浏览器（Renderer + Web Worker）        VPS（Caddy + Hono + PostgreSQL）
+─────────────────────────              ──────────────────────────────
 VAD → SpeakerGate → TurnGate
   batch:     合并 PCM ──POST /stt────────→  转发 batch STT
   realtime:  append/commit ──WS /stt-realtime──→  中继上游 realtime
@@ -632,18 +658,22 @@ VAD → SpeakerGate → TurnGate
         任一 speaker: ──POST /llm───→  转发 LLM provider
                                   ←── streaming JSON（3 候选或 []）
 ```
-**将来加账号时**：`ConversationTurn` 加可选 `userId`；auth 用 hosted Supabase 或 Railway Postgres add-on；代理层加一道 JWT 校验中间件。MVP 阶段不预留这些，只保证数据结构里 `userId` 是可选字段即可。
+账号、设备、同步、额度和后台已纳入比赛生产基线，完整约束见 F12–F15 与 ADR 0005。
 
 ### 2.9 配置与环境变量
 
-**原则**：MVP 阶段所有 provider 配置（key / base URL / model name）走 env，不落 DB。理由见 ADR 0001——单人单运营者，改配置频率低，Railway 改 env 重新部署 < 30s，DB + 加密 + 管理 UI 是过度设计。
+**原则**：provider key / base URL / model name 仍只走服务端 env，不落 DB；
+账号、额度与密文同步数据进入 PostgreSQL。客户端永远拿不到 provider key。
 
 **命名方案：前缀 + active 选择器**。加 provider 不改现有变量名，可同时配多组，一个变量切换当前使用的。
 
-**MVP 默认：LLM 与 STT 共用 OpenRouter**——一个 key、一份账单。OpenRouter 同时聚合了 LLM（DeepSeek / Anthropic / …）和 STT（`openai/gpt-4o-transcribe`、`groq/whisper-large-v3-turbo`），所以 MVP 阶段一组 OpenRouter env 即可覆盖两条链路。STT 默认 `openai/gpt-4o-transcribe`（多语种准确率领先；会话传入 `conversationLang` 作 language hint），cost-fallback 切 `groq/whisper-large-v3-turbo`（便宜约 10×）。
+**生产固定**：LLM 直连 DeepSeek `deepseek-v4-flash`（thinking disabled）；
+STT 以 `STT_ACTIVE=dashscope-realtime` 直连 DashScope
+`qwen3-asr-flash-realtime`。下方 OpenRouter / batch 配置仅用于本地开发和
+playground，不是生产 fallback。
 
 ```bash
-# LLM 与 STT 共用 OpenRouter（MVP 默认）
+# 本地开发可选：LLM 与 STT 共用 OpenRouter
 LLM_ACTIVE=openrouter
 LLM_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 LLM_OPENROUTER_API_KEY=sk-or-...
@@ -672,11 +702,11 @@ STT_OPENROUTER_MODEL=openai/gpt-4o-transcribe   # fallback: groq/whisper-large-v
 
 **分层（key 永不进 DB）**：
 
-| 项 | MVP | 将来加账号 |
-|----|-----|-----------|
-| API key | env | 仍 env（master key，运营者持有） |
-| base URL | env | env |
-| model name | env | env 默认 + DB 存用户偏好（可选） |
+| 项 | 比赛生产 |
+|----|---------|
+| API key | env（运营者持有） |
+| base URL | env |
+| model name | env；用户不可修改生产模型 |
 
 用户不自带 key（已定"走我们中转"），所以 DB 只存"用哪个 provider/model"的选择，不存 key 本身。
 
@@ -688,7 +718,7 @@ STT_OPENROUTER_MODEL=openai/gpt-4o-transcribe   # fallback: groq/whisper-large-v
 - **batch** `dashscope`：`POST …/compatible-mode/v1/chat/completions` + `input_audio`，默认 `qwen3-asr-flash`
 - **realtime** `dashscope-realtime`：`WS /stt-realtime` → 上游 WSS Manual 模式（本地 TurnGate + commit）。Env：`STT_DASHSCOPE_API_KEY`（与 batch 共用）、`STT_DASHSCOPE_WS_URL`、`STT_DASHSCOPE_REALTIME_MODEL`（默认 `qwen3-asr-flash-realtime`）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
 
-**Realtime 失败降级（R4）**：短退避重连同一 realtime provider；仍失败且列表中存在已配置的 batch provider → 切换到该 batch 并提示用户；否则停止转写并显示错误。
+**Realtime 失败（生产）**：短退避重连同一 realtime provider；仍失败则停止转写并显示错误。开发 / playground 可继续验证 batch，但生产不降级。
 
 ```bash
 # 本地 Qwen3-ASR（仅 Apple Silicon，与 apps/api 同机）

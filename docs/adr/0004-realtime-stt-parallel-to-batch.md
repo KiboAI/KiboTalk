@@ -1,5 +1,9 @@
 # Realtime STT 与 batch 并行（经代理 WebSocket）
 
+> **2026-07-25 生产约束**：开发 / playground 仍保留两条路径；比赛生产只开放
+> `qwen3-asr-flash-realtime`，不做 batch 降级。见
+> [ADR 0005](./0005-competition-production-platform.md)。
+
 STT 增加一条 **realtime** 路径，与现有 batch（`POST /stt`）并行，不是替换。首家上游：阿里云 DashScope `qwen3-asr-flash-realtime`（WSS）。浏览器只连同源 `WS /stt-realtime`；`apps/api` 中继并注入 key，把薄客户端 JSON 映射为上游事件。
 
 ## 为何要 realtime（且不迁走 batch）

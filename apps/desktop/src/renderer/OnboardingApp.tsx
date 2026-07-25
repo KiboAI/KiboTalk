@@ -1,30 +1,37 @@
-import { useEffect, useState } from 'react'
-import { IndexedDbConversationStorage } from '@kibotalk/conversation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  accountConversationDatabaseName,
+  IndexedDbConversationStorage,
+  type ConversationStorage,
+} from '@kibotalk/conversation'
 import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import {
   I18nProvider,
   loadLanguagePrefs,
   persistLanguagePrefs,
   reviewConversationSession,
+  syncPreferences,
+  useAccount,
+  useCloudConversationStorage,
   useI18n,
   type LanguagePrefs,
+  type AccountSession,
 } from '@kibotalk/app-shared'
 import {
+  AccountPage,
   EnrollmentPage,
   HistoryPage,
   OnboardingPage,
   SettingsPage,
 } from '@kibotalk/pages'
-import { WizardScreen } from '@kibotalk/ui'
+import { Button, WizardScreen } from '@kibotalk/ui'
 import type {
   MediaAccessStatus,
   ProductWindowView,
 } from '../shared/ipc'
 
 type Gate = 'booting' | 'setup' | 'product'
-type SetupStage = 'checking' | 'enrollment'
-
-const storage = new IndexedDbConversationStorage()
+type SetupStage = 'checking' | 'enrollment' | 'account'
 
 function DesktopWindowContent({
   prefs,
@@ -43,12 +50,36 @@ function DesktopWindowContent({
   const [microphonePermission, setMicrophonePermission] =
     useState<MediaAccessStatus>('unknown')
   const [screenPermission, setScreenPermission] = useState<MediaAccessStatus>('unknown')
+  const accountState = useAccount()
+  const localStorage = useMemo(
+    () => new IndexedDbConversationStorage(
+      accountState.account
+        ? accountConversationDatabaseName(accountState.account.user.id)
+        : undefined,
+    ),
+    [accountState.account?.user.id],
+  )
+  const cloud = useCloudConversationStorage({
+    local: localStorage,
+    userId: accountState.account?.user.id ?? null,
+    onPreferences: (remotePreferences) => {
+      if (
+        remotePreferences
+        && typeof remotePreferences === 'object'
+        && 'conversationLang' in remotePreferences
+        && 'levelByLang' in remotePreferences
+      ) {
+        onPrefsChange(remotePreferences as LanguagePrefs)
+      }
+    },
+  })
+  const storage: ConversationStorage = cloud.storage ?? localStorage
 
-  async function refreshSessionState() {
+  const refreshSessionState = useCallback(async () => {
     const session = await storage.getActiveSession()
     setSessionActive(!!session && session.status !== 'stopped')
     setActiveSessionId(session?.id)
-  }
+  }, [storage])
 
   async function refreshPermissions() {
     const [microphone, screen] = await Promise.all([
@@ -58,6 +89,24 @@ function DesktopWindowContent({
     setMicrophonePermission(microphone)
     setScreenPermission(screen)
   }
+
+  useEffect(() => {
+    if (!accountState.account) return
+    void syncPreferences(prefs, cloud.storage).catch(() => {})
+  }, [accountState.account?.user.id, cloud.storage, localStorage, prefs])
+
+  useEffect(() => {
+    if (
+      gate === 'setup'
+      && setupStage === 'account'
+      && accountState.account
+      && cloud.storage
+    ) {
+      void window.kibotalk.onboarding.complete()
+      setGate('product')
+      setView('settings')
+    }
+  }, [accountState.account, cloud.storage, gate, setupStage])
 
   useEffect(() => {
     let cancelled = false
@@ -79,7 +128,7 @@ function DesktopWindowContent({
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [refreshSessionState])
 
   useEffect(() => {
     if (gate !== 'setup' || !prefs.languagesConfirmed) return
@@ -115,7 +164,7 @@ function DesktopWindowContent({
       window.clearInterval(timer)
       window.removeEventListener('focus', refreshOnFocus)
     }
-  }, [gate])
+  }, [gate, refreshSessionState])
 
   useEffect(() => {
     if (gate === 'product') {
@@ -151,6 +200,66 @@ function DesktopWindowContent({
   }
 
   if (gate === 'product') {
+    if (accountState.loading) {
+      return (
+        <WizardScreen embedded className="text-center">
+          <p className="text-sm text-muted-foreground">正在检查账户…</p>
+        </WizardScreen>
+      )
+    }
+    if (!accountState.account || view === 'account') {
+      return (
+        <AccountPage
+          account={accountState.account}
+          loading={accountState.loading}
+          showAdminLink={false}
+          onAuthenticated={accountState.setAccount}
+          onAccountChange={accountState.setAccount}
+          onBack={
+            accountState.account
+              ? () => setView('settings')
+              : undefined
+          }
+          onDeleteLocalData={async () => {
+            await localStorage.clearHistory()
+            await localStorage.clearActiveSession()
+            await new IndexedDbEmbeddingStorage().clear()
+            await window.kibotalk.onboarding.reset()
+          }}
+        />
+      )
+    }
+    if (view === 'history' && cloud.error) {
+      return (
+        <HistoryPage
+          storage={localStorage}
+          activeSessionId={activeSessionId}
+          readOnly
+          onBack={() => void window.kibotalk.onboarding.close()}
+        />
+      )
+    }
+    if (!cloud.storage) {
+      return (
+        <WizardScreen embedded className="text-center">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {cloud.error ? '无法连接云同步，暂不能开始新会话。' : '正在同步会话历史…'}
+            </p>
+            {cloud.error ? (
+              <div className="flex justify-center gap-2">
+                <Button variant="soft" onClick={cloud.retry}>
+                  重试连接
+                </Button>
+                <Button variant="soft" onClick={() => setView('history')}>
+                  查看本地历史
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </WizardScreen>
+      )
+    }
     if (view === 'history') {
       return (
         <HistoryPage
@@ -236,6 +345,18 @@ function DesktopWindowContent({
     )
   }
 
+  if (setupStage === 'account') {
+    return (
+      <AccountPage
+        account={accountState.account}
+        loading={accountState.loading}
+        embedded
+        onAuthenticated={(account: AccountSession) => accountState.setAccount(account)}
+        onAccountChange={accountState.setAccount}
+      />
+    )
+  }
+
   return (
     <EnrollmentPage
       embedded
@@ -243,8 +364,12 @@ function DesktopWindowContent({
       enrolled={enrolled}
       onEnrolled={() => setEnrolled(true)}
       onEnterSession={() => {
-        void window.kibotalk.onboarding.complete()
-        setGate('product')
+        if (accountState.account && cloud.storage) {
+          void window.kibotalk.onboarding.complete()
+          setGate('product')
+        } else {
+          setSetupStage('account')
+        }
       }}
     />
   )

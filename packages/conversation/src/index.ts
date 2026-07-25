@@ -1,4 +1,7 @@
-export type { ConversationStorage } from './storage'
+export type {
+  ConversationStorage,
+  ConversationSyncMetadataStorage,
+} from './storage'
 export type {
   AppLanguage,
   ConversationPauseReason,
@@ -19,4 +22,7 @@ export type {
   UiLanguage,
 } from './types'
 export { InMemoryConversationStorage } from './in-memory-storage'
-export { IndexedDbConversationStorage } from './idb-storage'
+export {
+  accountConversationDatabaseName,
+  IndexedDbConversationStorage,
+} from './idb-storage'

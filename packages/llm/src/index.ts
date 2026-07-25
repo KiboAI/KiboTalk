@@ -25,9 +25,23 @@ export type LlmClientOptions = {
   thinking: LlmThinkingMode
 }
 
+export type LlmUsage = {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 export interface LlmClient {
-  streamChat(args: { messages: ChatMessage[]; signal?: AbortSignal }): AsyncIterable<string>
-  generateChat(args: { messages: ChatMessage[]; signal?: AbortSignal }): Promise<string>
+  streamChat(args: {
+    messages: ChatMessage[]
+    signal?: AbortSignal
+    onUsage?: (usage: LlmUsage) => void
+  }): AsyncIterable<string>
+  generateChat(args: {
+    messages: ChatMessage[]
+    signal?: AbortSignal
+    onUsage?: (usage: LlmUsage) => void
+  }): Promise<string>
 }
 
 export type LlmAdapterFactory = (opts: LlmClientOptions) => LlmClient
@@ -40,8 +54,8 @@ export type LlmAdapterFactory = (opts: LlmClientOptions) => LlmClient
  */
 function createXsaiClient({ baseUrl, apiKey, model, thinking }: LlmClientOptions): LlmClient {
   return {
-    async generateChat({ messages, signal }) {
-      const { text } = await generateText({
+    async generateChat({ messages, signal, onUsage }) {
+      const { text, usage } = await generateText({
         apiKey,
         baseURL: baseUrl,
         model,
@@ -49,10 +63,15 @@ function createXsaiClient({ baseUrl, apiKey, model, thinking }: LlmClientOptions
         abortSignal: signal,
         thinking: { type: thinking },
       })
+      onUsage?.({
+        inputTokens: usage.prompt_tokens,
+        outputTokens: usage.completion_tokens,
+        totalTokens: usage.total_tokens,
+      })
       return text ?? ''
     },
-    async *streamChat({ messages, signal }) {
-      const { textStream } = streamText({
+    async *streamChat({ messages, signal, onUsage }) {
+      const result = streamText({
         apiKey,
         baseURL: baseUrl,
         model,
@@ -60,7 +79,9 @@ function createXsaiClient({ baseUrl, apiKey, model, thinking }: LlmClientOptions
         abortSignal: signal,
         // DeepSeek OpenAI-compatible extension; ignored by providers that don't use it.
         thinking: { type: thinking },
+        streamOptions: { includeUsage: true },
       })
+      const { textStream } = result
       const reader = textStream.getReader()
       try {
         while (true) {
@@ -70,6 +91,14 @@ function createXsaiClient({ baseUrl, apiKey, model, thinking }: LlmClientOptions
         }
       } finally {
         reader.releaseLock()
+      }
+      const usage = await result.totalUsage
+      if (usage) {
+        onUsage?.({
+          inputTokens: usage.prompt_tokens,
+          outputTokens: usage.completion_tokens,
+          totalTokens: usage.total_tokens,
+        })
       }
     },
   }

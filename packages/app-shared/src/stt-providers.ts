@@ -1,3 +1,5 @@
+import { authorizedFetch } from './api-runtime'
+
 export type SttProvider = {
   id: string
   label: string
@@ -14,7 +16,7 @@ export function sttUrl(
   if (provider) params.set('provider', provider)
   if (language) params.set('language', language)
   const qs = params.toString()
-  return qs ? `/stt?${qs}` : '/stt'
+  return qs ? `/api/stt?${qs}` : '/api/stt'
 }
 
 export function defaultSttProvider(providers: SttProvider[]): string | null {
@@ -31,7 +33,7 @@ export function providerMode(
 
 /** Fetch the STT providers the `/stt` proxy has configured server-side. */
 export async function fetchSttProviders(): Promise<SttProvider[]> {
-  const res = await fetch('/stt/providers')
+  const res = await authorizedFetch('/api/stt/providers')
   if (!res.ok) return []
   const data = (await res.json().catch(() => ({}))) as { providers?: SttProvider[] }
   return data.providers ?? []

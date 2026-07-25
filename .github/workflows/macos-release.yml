@@ -1,0 +1,81 @@
+name: macOS Apple Silicon release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Compile app icon
+        run: |
+          mkdir -p apps/desktop/build/icon-assets
+          xcrun actool \
+            --compile apps/desktop/build/icon-assets \
+            --platform macosx \
+            --minimum-deployment-target 13.0 \
+            --app-icon Kibo_icon \
+            --standalone-icon-behavior all \
+            --output-partial-info-plist apps/desktop/build/icon-assets/icon-info.plist \
+            Kibo_icon.icon
+      - name: Download Q8 models
+        run: pnpm --filter @kibotalk/desktop download-models
+      - name: Q8 speaker regression
+        run: |
+          say -v Samantha -o /tmp/kibo-a1.aiff "Today I would like to practice a natural conversation about travel and work."
+          say -v Samantha -o /tmp/kibo-a2.aiff "Could you tell me where the nearest train station is and how long it takes to walk there?"
+          say -v Daniel -o /tmp/kibo-b1.aiff "I am happy to help you find the station and choose the fastest route through the city."
+          afconvert /tmp/kibo-a1.aiff /tmp/kibo-a1.wav -f WAVE -d LEI16@16000 -c 1
+          afconvert /tmp/kibo-a2.aiff /tmp/kibo-a2.wav -f WAVE -d LEI16@16000 -c 1
+          afconvert /tmp/kibo-b1.aiff /tmp/kibo-b1.wav -f WAVE -d LEI16@16000 -c 1
+          pnpm --filter @kibotalk/desktop verify:q8 -- /tmp/kibo-a1.wav /tmp/kibo-a2.wav /tmp/kibo-b1.wav
+      - name: Build ad-hoc signed arm64 DMG
+        run: pnpm --filter @kibotalk/desktop package:mac
+      - name: Verify package
+        run: |
+          APP_PATH="$(find apps/desktop/dist -type d -name 'KiboTalk.app' | head -1)"
+          DMG_PATH="$(find apps/desktop/dist -type f -name '*.dmg' | head -1)"
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -F "Signature=adhoc"
+          file "$APP_PATH/Contents/MacOS/KiboTalk" | grep arm64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PATH/Contents/Info.plist")" = "13.0.0"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsArbitraryLoads' "$APP_PATH/Contents/Info.plist")" = "false"
+          test -f "$APP_PATH/Contents/Resources/models/Xenova/wavlm-base-plus-sv/onnx/model_quantized.onnx"
+          test -f "$APP_PATH/Contents/Resources/models/BricksDisplay/silero-vad-6.2/onnx/model_quantized.onnx"
+          if find "$APP_PATH/Contents/Resources/models" -type f \( -name "model.onnx" -o -name "*fp32*" \) -print -quit | grep -q .; then
+            echo "Unquantized model found in app bundle" >&2
+            exit 1
+          fi
+          hdiutil verify "$DMG_PATH"
+          shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KiboTalk-macos-arm64
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.sha256
+          if-no-files-found: error
+      - name: Upload GitHub Release backup
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" apps/desktop/dist/*.dmg apps/desktop/dist/*.sha256 --clobber

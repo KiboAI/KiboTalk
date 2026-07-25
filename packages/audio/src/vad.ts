@@ -34,6 +34,8 @@ export type VadConfig = {
   speechPadMs: number
   /** Segments shorter than this are dropped. */
   minSpeechDurationMs: number
+  /** Continuous speech is split at this duration so one billable turn stays bounded. */
+  maxSpeechDurationMs: number
   /** Size of the chunks fed in (samples per `processAudio` call). */
   newBufferSize: number
 }
@@ -46,6 +48,7 @@ export const defaultVadConfig: VadConfig = {
   minSilenceDurationMs: 200,
   speechPadMs: 80,
   minSpeechDurationMs: 200,
+  maxSpeechDurationMs: 30000,
   newBufferSize: 512,
 }
 
@@ -116,6 +119,40 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
     return out
   }
 
+  function finishSpeechSegment(continueSpeech: boolean): void {
+    const buffer = concat(recording)
+    const completedSpeechSamples = speechSamples
+    const speechMs = (completedSpeechSamples / config.sampleRate) * 1000
+    const startPerf = speechStartPerf
+    recording = []
+    silenceSamples = 0
+    speechSamples = 0
+    speechStartPerf = null
+    inSpeech = continueSpeech
+    emit('speech-end', undefined)
+    if (speechMs >= config.minSpeechDurationMs) {
+      const durationSec = buffer.length / config.sampleRate
+      if (startPerf != null) {
+        const span = startSpan(IOSpanNames.VoiceActivity, {
+          startTime: performance.timeOrigin + startPerf,
+          attrs: {
+            [IOAttributes.Subsystem]: IOSubsystems.VAD,
+            [IOAttributes.VadDuration]: durationSec,
+            [IOAttributes.VadSpeechSamples]: completedSpeechSamples,
+          },
+        })
+        span.end()
+      }
+      emit('speech-ready', { buffer, duration: durationSec })
+    } else {
+      emit('status', { type: 'skip', message: `segment too short (${speechMs.toFixed(0)}ms)` })
+    }
+    if (continueSpeech) {
+      speechStartPerf = performance.now()
+      emit('speech-start', undefined)
+    }
+  }
+
   async function handleChunk(chunk: Float32Array): Promise<void> {
     // Roll the prev-buffer window (used as left padding on speech start).
     prevBuffers.push(chunk)
@@ -128,10 +165,10 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
       if (prob > config.speechThreshold) {
         inSpeech = true
         silenceSamples = 0
-        speechSamples = 0
+        speechSamples = chunk.length
         speechStartPerf = performance.now()
         // Left-pad with the audio immediately preceding the detected speech.
-        recording = [...prevBuffers]
+        recording = prevBuffers.length > 0 ? [...prevBuffers] : [chunk]
         emit('speech-start', undefined)
       }
       return
@@ -143,34 +180,18 @@ export function createVAD(infer: VadInfer, userConfig: Partial<VadConfig> = {}):
       silenceSamples += chunk.length
       const minSilenceSamples = config.minSilenceDurationMs * (config.sampleRate / 1000)
       if (silenceSamples >= minSilenceSamples) {
-        inSpeech = false
-        silenceSamples = 0
-        const buffer = concat(recording)
-        recording = []
-        const speechMs = (speechSamples / config.sampleRate) * 1000
-        const startPerf = speechStartPerf
-        speechStartPerf = null
-        emit('speech-end', undefined)
-        if (speechMs >= config.minSpeechDurationMs) {
-          const durationSec = buffer.length / config.sampleRate
-          if (startPerf != null) {
-            const span = startSpan(IOSpanNames.VoiceActivity, {
-              startTime: performance.timeOrigin + startPerf,
-              attrs: {
-                [IOAttributes.Subsystem]: IOSubsystems.VAD,
-                [IOAttributes.VadDuration]: durationSec,
-                [IOAttributes.VadSpeechSamples]: speechSamples,
-              },
-            })
-            span.end()
-          }
-          emit('speech-ready', { buffer, duration: durationSec })
-        } else {
-          emit('status', { type: 'skip', message: `segment too short (${speechMs.toFixed(0)}ms)` })
-        }
+        finishSpeechSegment(false)
       }
     } else {
       silenceSamples = 0
+      const maxSpeechSamples = config.maxSpeechDurationMs * (config.sampleRate / 1000)
+      if (speechSamples + chunk.length > maxSpeechSamples) {
+        recording.pop()
+        finishSpeechSegment(true)
+        recording.push(chunk)
+        speechSamples = chunk.length
+        return
+      }
       speechSamples += chunk.length
     }
   }

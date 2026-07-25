@@ -13,7 +13,8 @@ export type ThinServerMessage =
   | { type: 'ready' }
   | { type: 'partial'; text: string }
   | { type: 'completed'; text: string }
-  | { type: 'error'; message: string }
+  | { type: 'quota_exhausted'; quota?: unknown }
+  | { type: 'error'; message: string; code?: string }
 
 export type DashscopeRealtimeConfig = {
   wsUrl: string
@@ -167,9 +168,15 @@ export function upstreamToThinServer(raw: string): ThinServerMessage | null {
       return { type: 'completed', text }
     }
     case 'conversation.item.input_audio_transcription.failed':
+      return {
+        type: 'error',
+        code: 'TRANSCRIPTION_FAILED',
+        message: data.error?.message ?? data.text ?? type,
+      }
     case 'error':
       return {
         type: 'error',
+        code: 'UPSTREAM_ERROR',
         message: data.error?.message ?? data.text ?? type,
       }
     case 'session.finished':

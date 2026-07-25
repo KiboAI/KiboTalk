@@ -23,6 +23,18 @@ export interface ConversationStorage {
   clearActiveSession(): Promise<void>
   listSessions(): Promise<ConversationSession[]>
   loadSession(sessionId: string): Promise<ConversationSession | null>
+  upsertSession(session: ConversationSession): Promise<void>
+  deleteSession(sessionId: string): Promise<void>
   updateSessionReview(sessionId: string, update: ConversationReviewUpdate): Promise<void>
   clearHistory(): Promise<void>
+}
+
+/** Optional durable metadata used by the mandatory cloud-sync adapter. */
+export interface ConversationSyncMetadataStorage {
+  markSessionDirty(sessionId: string): Promise<void>
+  clearSessionDirty(sessionId: string): Promise<void>
+  listDirtySessionIds(): Promise<string[]>
+  setPendingPreferences(preferences: unknown): Promise<void>
+  loadPendingPreferences(): Promise<unknown | null>
+  clearPendingPreferences(): Promise<void>
 }

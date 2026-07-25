@@ -1,0 +1,92 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kibotalk-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate release
+        run: |
+          pnpm typecheck
+          pnpm test
+      - name: Build API image
+        run: |
+          docker build --platform linux/amd64 --tag "kibotalk-api:${GITHUB_SHA}" .
+          docker build --platform linux/amd64 --tag kibotalk-caddy:2.10 --file infra/production/Caddy.Dockerfile .
+          docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
+          docker save \
+            "kibotalk-api:${GITHUB_SHA}" \
+            kibotalk-caddy:2.10 \
+            kibotalk-postgres:17 \
+            | gzip -1 > /tmp/kibotalk-images.tar.gz
+      - name: Stage Q8 model mirror
+        run: |
+          pnpm --filter @kibotalk/desktop download-models
+          tar -C apps/desktop/resources/bundle-models -czf /tmp/kibotalk-models.tar.gz .
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+      - name: Upload release payload
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming /opt/kibotalk/models"
+          scp /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
+          scp /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
+          scp infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
+      - name: Activate release
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          # GITHUB_SHA must expand on the runner before this script reaches the server.
+          # shellcheck disable=SC2029
+          ssh "${SERVER_USER}@${SERVER_HOST}" "
+            set -eu
+            gzip -dc /opt/kibotalk/incoming/kibotalk-images.tar.gz | docker load
+            tar -xzf /opt/kibotalk/incoming/kibotalk-models.tar.gz -C /opt/kibotalk/models
+            cd /opt/kibotalk
+            if grep -q '^KIBOTALK_API_IMAGE=' .env; then
+              sed -i 's|^KIBOTALK_API_IMAGE=.*|KIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}|' .env
+            else
+              printf '\nKIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}\n' >> .env
+            fi
+            docker compose --env-file .env -f compose.yaml up -d --pull never
+          "
+      - name: Verify HTTPS
+        run: |
+          for _attempt in $(seq 1 24); do
+            if curl --fail --silent --show-error https://advx.kibotalk.app/health; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1

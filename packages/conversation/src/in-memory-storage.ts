@@ -117,6 +117,15 @@ export class InMemoryConversationStorage implements ConversationStorage {
     return session ? cloneSession(session) : null
   }
 
+  async upsertSession(session: ConversationSession): Promise<void> {
+    this.sessions.set(session.id, cloneSession(session))
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.sessions.delete(sessionId)
+    if (this.activeSessionId === sessionId) this.activeSessionId = null
+  }
+
   async updateSessionReview(sessionId: string, update: ConversationReviewUpdate): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return

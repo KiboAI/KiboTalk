@@ -2,6 +2,8 @@
  * Browser client for thin-protocol realtime STT (WS /stt-realtime).
  * Speaks only the thin JSON protocol — never DashScope upstream events.
  */
+import type { QuotaSummary } from './account'
+import { websocketApiUrl } from './api-runtime'
 
 export type RealtimeSttHandlers = {
   onPartial?: (text: string) => void
@@ -9,6 +11,7 @@ export type RealtimeSttHandlers = {
   onError?: (message: string) => void
   onReady?: () => void
   onClose?: () => void
+  onQuotaExhausted?: (quota?: QuotaSummary) => void
 }
 
 export type RealtimeSttClient = {
@@ -39,22 +42,26 @@ function floatToPcm16Base64(pcm: Float32Array): string {
 /** Max PCM samples per append (~100 ms @ 16 kHz). Upstream WS max frame is 256 KiB. */
 const APPEND_MAX_SAMPLES = 1600
 
-function sttRealtimeUrl(provider: string, language?: string): string {
+async function sttRealtimeUrl(
+  provider: string,
+  language?: string,
+  sessionId?: string,
+): Promise<string> {
   const params = new URLSearchParams({ provider })
   if (language) params.set('language', language)
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/stt-realtime?${params}`
+  if (sessionId) params.set('sessionId', sessionId)
+  return websocketApiUrl('/api/stt-realtime', params)
 }
 
 export function connectRealtimeStt(opts: {
   provider: string
   language?: string
+  sessionId?: string
   handlers?: RealtimeSttHandlers
 }): Promise<RealtimeSttClient> {
-  const { provider, language, handlers = {} } = opts
-  const url = sttRealtimeUrl(provider, language)
+  const { provider, language, sessionId, handlers = {} } = opts
 
-  return new Promise((resolve, reject) => {
+  return sttRealtimeUrl(provider, language, sessionId).then((url) => new Promise((resolve, reject) => {
     const ws = new WebSocket(url)
     let settled = false
     let completedWaiters: Array<{
@@ -77,7 +84,7 @@ export function connectRealtimeStt(opts: {
     }
 
     ws.onmessage = (ev) => {
-      let data: { type?: string; text?: string; message?: string }
+      let data: { type?: string; text?: string; message?: string; quota?: QuotaSummary }
       try {
         data = JSON.parse(String(ev.data)) as typeof data
       } catch {
@@ -106,6 +113,9 @@ export function connectRealtimeStt(opts: {
         case 'error':
           handlers.onError?.(data.message ?? 'realtime error')
           failWaiters(new Error(data.message ?? 'realtime error'))
+          break
+        case 'quota_exhausted':
+          handlers.onQuotaExhausted?.(data.quota)
           break
         default:
           break
@@ -179,13 +189,14 @@ export function connectRealtimeStt(opts: {
         reject(new Error('realtime ready timeout'))
       }
     }, 15000)
-  })
+  }))
 }
 
 /** Try connect with short reconnect budget (R4). */
 export async function connectRealtimeSttWithRetry(opts: {
   provider: string
   language?: string
+  sessionId?: string
   handlers?: RealtimeSttHandlers
   attempts?: number
 }): Promise<RealtimeSttClient> {

@@ -1,8 +1,13 @@
-import { mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AutoModel, AutoProcessor, env } from '@huggingface/transformers'
-import { defaultAppConfig, SILERO_VARIANTS } from '@kibotalk/app-shared'
+import {
+  defaultAppConfig,
+  SILERO_VARIANTS,
+  WAVLM_MODEL_ID,
+  WAVLM_MODEL_REVISION,
+} from '@kibotalk/app-shared'
 
 /**
  * Downloads the on-device models desktop bundles into the installer —
@@ -18,33 +23,65 @@ import { defaultAppConfig, SILERO_VARIANTS } from '@kibotalk/app-shared'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const modelsDir = join(scriptDir, '../resources/models')
+const bundleModelsDir = join(scriptDir, '../resources/bundle-models')
 
-// `env.cacheDir`'s on-disk layout for revision "main" is `<cacheDir>/<modelId>/<filename>`,
-// which is exactly the layout `model-protocol.ts`'s `{model}/<file>` handler expects —
-// no reshaping needed between download and bundling.
+// A pinned revision is cached under
+// `<cacheDir>/<modelId>/<revision>/<filename>`. The bundled/VPS layout omits
+// that revision directory because their Transformers.js path template is
+// `{model}/`; map source to destination explicitly below.
 env.allowLocalModels = false
 env.allowRemoteModels = true
 env.useBrowserCache = false
 env.useFSCache = true
 env.cacheDir = `${modelsDir}/`
 
-const WAVLM_MODEL_ID = 'Xenova/wavlm-base-plus-sv'
-
 async function main() {
   await mkdir(modelsDir, { recursive: true })
 
   console.log(`Downloading speaker-embedding model (${WAVLM_MODEL_ID})…`)
-  await AutoProcessor.from_pretrained(WAVLM_MODEL_ID)
-  await AutoModel.from_pretrained(WAVLM_MODEL_ID)
+  await AutoProcessor.from_pretrained(WAVLM_MODEL_ID, {
+    revision: WAVLM_MODEL_REVISION,
+  })
+  await AutoModel.from_pretrained(WAVLM_MODEL_ID, {
+    dtype: 'q8',
+    revision: WAVLM_MODEL_REVISION,
+  })
 
   const vadVariant = SILERO_VARIANTS.find((variant) => variant.id === defaultAppConfig.vadVariantId) ?? SILERO_VARIANTS[0]
   console.log(`Downloading VAD model (${vadVariant.modelId})…`)
   await AutoModel.from_pretrained(vadVariant.modelId, {
     config: { model_type: 'custom' },
-    dtype: 'fp32',
+    dtype: 'q8',
+    revision: vadVariant.revision,
   } as Record<string, unknown>)
 
-  console.log(`Done — models saved to ${modelsDir}`)
+  await rm(bundleModelsDir, { recursive: true, force: true })
+  const bundleFiles = [
+    {
+      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/config.json`,
+      destination: `${WAVLM_MODEL_ID}/config.json`,
+    },
+    {
+      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/preprocessor_config.json`,
+      destination: `${WAVLM_MODEL_ID}/preprocessor_config.json`,
+    },
+    {
+      source: `${WAVLM_MODEL_ID}/${WAVLM_MODEL_REVISION}/onnx/model_quantized.onnx`,
+      destination: `${WAVLM_MODEL_ID}/onnx/model_quantized.onnx`,
+    },
+    {
+      source: `${vadVariant.modelId}/${vadVariant.revision}/onnx/model_quantized.onnx`,
+      destination: `${vadVariant.modelId}/onnx/model_quantized.onnx`,
+    },
+  ]
+  for (const file of bundleFiles) {
+    const source = join(modelsDir, file.source)
+    const destination = join(bundleModelsDir, file.destination)
+    await mkdir(dirname(destination), { recursive: true })
+    await copyFile(source, destination)
+  }
+
+  console.log(`Done — Q8 bundle staged at ${bundleModelsDir}`)
 }
 
 main().catch((err) => {

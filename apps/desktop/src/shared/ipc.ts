@@ -7,7 +7,7 @@
 
 /** Mirrors Electron's `systemPreferences.getMediaAccessStatus` return type without importing `electron` into renderer-reachable code. */
 export type MediaAccessStatus = 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'
-export type ProductWindowView = 'settings' | 'history' | 'voiceprint'
+export type ProductWindowView = 'settings' | 'history' | 'voiceprint' | 'account'
 export type IslandContentSide = 'above' | 'below'
 export type DesktopSessionLifecycle = 'restoring' | 'stopped' | 'starting' | 'running' | 'paused'
 export type DesktopSessionCommand =
@@ -52,6 +52,13 @@ export const IPC_CHANNEL = {
   appSetLaunchAtLogin: 'app:set-launch-at-login',
   appRequestQuit: 'app:request-quit',
   appQuitReady: 'app:quit-ready',
+  appGetVersion: 'app:get-version',
+  authGetAccessToken: 'auth:get-access-token',
+  authSetAccessToken: 'auth:set-access-token',
+  authClearAccessToken: 'auth:clear-access-token',
+  authGetAccountCache: 'auth:get-account-cache',
+  authSetAccountCache: 'auth:set-account-cache',
+  authClearAccountCache: 'auth:clear-account-cache',
 } as const
 
 export type OnboardingStatus = { completed: boolean; view: ProductWindowView }
@@ -96,9 +103,18 @@ export type KiboTalkDesktopApi = {
     onCommand: (callback: (command: DesktopSessionCommand) => void) => () => void
   }
   app: {
+    getVersion: () => Promise<string>
     setLaunchAtLogin: (enabled: boolean) => Promise<void>
     requestQuit: () => Promise<void>
     quitReady: () => Promise<void>
+  }
+  auth: {
+    getAccessToken: () => Promise<string | null>
+    setAccessToken: (token: string) => Promise<void>
+    clearAccessToken: () => Promise<void>
+    getAccountCache: () => Promise<string | null>
+    setAccountCache: (value: string) => Promise<void>
+    clearAccountCache: () => Promise<void>
   }
 }
 

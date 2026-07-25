@@ -97,6 +97,7 @@ export function useConversationSession(params: ConversationSessionParams) {
   )
   const [activeSession, setActiveSession] = useState<ConversationSession | null>(null)
   const [recoveredUnexpectedPause, setRecoveredUnexpectedPause] = useState(false)
+  const [quotaExhausted, setQuotaExhausted] = useState(false)
 
   const speakerRef = useRef(speaker)
   speakerRef.current = speaker
@@ -118,7 +119,9 @@ export function useConversationSession(params: ConversationSessionParams) {
   const aggregatorRef = useRef<SegmentAggregator | null>(null)
   const systemAggregatorRef = useRef<SegmentAggregator | null>(null)
   const realtimeRef = useRef<RealtimeSttClient | null>(null)
+  const systemRealtimeRef = useRef<RealtimeSttClient | null>(null)
   const realtimeModeRef = useRef(false)
+  const systemRealtimeModeRef = useRef(false)
   const realtimeBusyRef = useRef(Promise.resolve())
   const pipelineBusyRef = useRef(Promise.resolve())
   const startInFlightRef = useRef(false)
@@ -129,8 +132,10 @@ export function useConversationSession(params: ConversationSessionParams) {
   pauseRef.current = pause
   /** Realtime: stream mic while Silero says in-speech (not wait for speech-ready). */
   const inSpeechRef = useRef(false)
+  const systemInSpeechRef = useRef(false)
   /** True after append until commit completes — blocks next speech stream from mixing. */
   const uncommittedRef = useRef(false)
+  const systemUncommittedRef = useRef(false)
   /** Last realtime turn id — verify may patch speaker after provisional commit. */
   const lastRealtimeTurnIdRef = useRef<string | null>(null)
 
@@ -297,7 +302,9 @@ export function useConversationSession(params: ConversationSessionParams) {
     if (!resuming) setTurns([])
     setDraft(null)
     if (!resuming) setCandidateRounds([])
+    if (!resuming) setQuotaExhausted(false)
     try {
+      let conversationSessionId = `ephemeral-${Date.now()}`
       if (!verifierRef.current) {
         verifierRef.current = new EmbeddingSpeakerVerifier({
           embedAudio: createWorkerEmbedAudio(),
@@ -317,6 +324,7 @@ export function useConversationSession(params: ConversationSessionParams) {
         if (resuming) {
           const resumed = await storageRef.current.resumeActiveSession()
           if (!resumed) throw new Error('NO_SESSION_TO_RESUME')
+          conversationSessionId = resumed.id
           setActiveSession(resumed)
           setRecoveredUnexpectedPause(false)
         } else {
@@ -329,6 +337,7 @@ export function useConversationSession(params: ConversationSessionParams) {
             snapshot,
             title: paramsRef.current.sessionTitle ?? '',
           })
+          conversationSessionId = created.id
           setActiveSession(created)
         }
       }
@@ -337,7 +346,6 @@ export function useConversationSession(params: ConversationSessionParams) {
       const selectedProvider = p.selectedProvider
       const audioSourceMode = p.sessionSnapshot?.audioSource ?? 'microphone'
       const isRealtime =
-        audioSourceMode === 'microphone' &&
         providerMode(p.providers, selectedProvider) === 'realtime'
 
       setLoading('正在请求麦克风 + 加载 VAD 模型…')
@@ -362,6 +370,7 @@ export function useConversationSession(params: ConversationSessionParams) {
         exitThreshold: p.exitThreshold,
         minSilenceDurationMs: p.minSilenceDurationMs,
         minSpeechDurationMs: p.minSpeechDurationMs,
+        maxSpeechDurationMs: p.mergeMaxMs,
         speechPadMs: 0,
         sampleRate: audio.sampleRate,
       })
@@ -375,13 +384,12 @@ export function useConversationSession(params: ConversationSessionParams) {
       )
       stt.configurePadding(p.prePadMs, p.postPadMs)
       stt.setProviderOverride(null)
-      if (audioSourceMode !== 'microphone' && providerMode(p.providers, selectedProvider) === 'realtime') {
-        const batchProvider = p.providers.find((provider) => provider.mode !== 'realtime')
-        if (!batchProvider) throw new Error('系统音频需要可用的批量转写服务')
-        stt.setProviderOverride(batchProvider.id)
-      }
       sttRef.current = stt
-      const llm = new ProxyLlmClient(p.languageSnapshot, () => paramsRef.current.replyEnabled)
+      const llm = new ProxyLlmClient(
+        p.languageSnapshot,
+        () => paramsRef.current.replyEnabled,
+        conversationSessionId,
+      )
       llmRef.current = llm
       const storage = storageRef.current
       const pipeline = new Pipeline({ stt, llm, conversation: storage })
@@ -400,6 +408,7 @@ export function useConversationSession(params: ConversationSessionParams) {
           const rt = await connectRealtimeSttWithRetry({
             provider: selectedProvider,
             language: p.languageSnapshot.conversationLang,
+            sessionId: conversationSessionId,
             handlers: {
               onPartial: (text) => {
                 const meta = draftMetaRef.current
@@ -408,6 +417,15 @@ export function useConversationSession(params: ConversationSessionParams) {
               },
               onError: (message) => {
                 reportError(`实时转写：${message}`)
+              },
+              onQuotaExhausted: () => {
+                setQuotaExhausted(true)
+                setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
+                globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
+                void (async () => {
+                  await pipeline.idle().catch(() => {})
+                  await stop()
+                })()
               },
             },
           })
@@ -461,10 +479,43 @@ export function useConversationSession(params: ConversationSessionParams) {
           exitThreshold: p.exitThreshold,
           minSilenceDurationMs: p.minSilenceDurationMs,
           minSpeechDurationMs: p.minSpeechDurationMs,
+          maxSpeechDurationMs: p.mergeMaxMs,
           speechPadMs: 0,
           sampleRate: systemAudio.sampleRate,
         })
         systemVadRef.current = systemVad
+        if (isRealtime && selectedProvider) {
+          systemRealtimeRef.current = await connectRealtimeSttWithRetry({
+            provider: selectedProvider,
+            language: p.languageSnapshot.conversationLang,
+            sessionId: conversationSessionId,
+            handlers: {
+              onPartial: (text) => {
+                setDraft((current) =>
+                  current?.speaker === 'user'
+                    ? current
+                    : {
+                        speaker: 'other',
+                        text,
+                        startedAt: current?.startedAt ?? Date.now(),
+                        endedAt: Date.now(),
+                      },
+                )
+              },
+              onError: (message) => reportError(`系统音频实时转写：${message}`),
+              onQuotaExhausted: () => {
+                setQuotaExhausted(true)
+                setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
+                globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
+                void (async () => {
+                  await pipeline.idle().catch(() => {})
+                  await stop()
+                })()
+              },
+            },
+          })
+          systemRealtimeModeRef.current = true
+        }
         const systemAggregator = createSegmentAggregator({
           sampleRate: systemAudio.sampleRate,
           pauseMs: p.pauseMs,
@@ -483,8 +534,40 @@ export function useConversationSession(params: ConversationSessionParams) {
             .catch(() => {})
         })
         systemAggregatorRef.current = systemAggregator
+        systemVad.on('speech-start', () => {
+          systemInSpeechRef.current = true
+          setDraft({
+            speaker: 'other',
+            text: '',
+            startedAt: Date.now(),
+            endedAt: Date.now(),
+          })
+        })
+        systemVad.on('speech-end', () => {
+          systemInSpeechRef.current = false
+        })
         systemVad.on('speech-ready', (event) => {
           const endedAt = Date.now()
+          if (systemRealtimeModeRef.current) {
+            const realtime = systemRealtimeRef.current
+            if (!realtime || !systemUncommittedRef.current) return
+            systemUncommittedRef.current = false
+            realtime.commit()
+            const startedAt = endedAt - event.duration * 1000
+            void realtime
+              .waitCompleted()
+              .then(async (text) => {
+                setDraft(null)
+                await pipeline.ingestFinalizedTurn({
+                  speaker: 'other',
+                  text,
+                  startedAt,
+                  endedAt,
+                })
+              })
+              .catch((cause) => reportError(`系统音频实时转写：${String(cause)}`))
+            return
+          }
           systemAggregator.feed({
             buffer: event.buffer,
             speaker: 'other',
@@ -494,6 +577,14 @@ export function useConversationSession(params: ConversationSessionParams) {
         })
         await systemAudio.start(async (chunk) => {
           await systemVad.processAudio(chunk)
+          if (
+            systemRealtimeModeRef.current
+            && systemInSpeechRef.current
+            && systemRealtimeRef.current
+          ) {
+            systemUncommittedRef.current = true
+            systemRealtimeRef.current.append(chunk)
+          }
         })
       }
 
@@ -683,6 +774,12 @@ export function useConversationSession(params: ConversationSessionParams) {
     systemAudioRef.current?.stop()
     systemAudioRef.current = null
     systemVadRef.current = null
+    systemRealtimeRef.current?.finish()
+    systemRealtimeRef.current?.close()
+    systemRealtimeRef.current = null
+    systemRealtimeModeRef.current = false
+    systemInSpeechRef.current = false
+    systemUncommittedRef.current = false
     void paramsRef.current.stopSystemAudioStream?.()
     aggregatorRef.current?.flush()
     aggregatorRef.current?.dispose()
@@ -801,6 +898,7 @@ export function useConversationSession(params: ConversationSessionParams) {
     lifecycle,
     activeSession,
     recoveredUnexpectedPause,
+    quotaExhausted,
     start,
     pause,
     resume,

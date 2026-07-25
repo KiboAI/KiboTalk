@@ -1,0 +1,61 @@
+name: kibotalk
+
+services:
+  postgres:
+    image: kibotalk-postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kibotalk
+      POSTGRES_USER: kibotalk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kibotalk -d kibotalk"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  api:
+    image: ${KIBOTALK_API_IMAGE:-kibotalk-api:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 8787
+      APP_ENV: production
+      DATABASE_URL: postgres://kibotalk:${POSTGRES_PASSWORD}@postgres:5432/kibotalk
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8787"
+    networks:
+      - internal
+
+  caddy:
+    image: kibotalk-caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./models:/srv/models:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

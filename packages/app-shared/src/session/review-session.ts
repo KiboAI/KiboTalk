@@ -1,4 +1,5 @@
 import type { ConversationSession, ConversationStorage } from '@kibotalk/conversation'
+import { authorizedFetch } from '../api-runtime'
 
 type SessionReviewResponse = {
   title: string
@@ -12,13 +13,14 @@ export async function reviewConversationSession(
 ): Promise<void> {
   await storage.updateSessionReview(session.id, { reviewStatus: 'pending' })
   try {
-    const response = await fetch('/session-review', {
+    const response = await authorizedFetch('/api/session-review', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         turns: session.turns,
         conversationLang: session.snapshot.conversationLang,
         uiLang: session.snapshot.uiLang,
+        sessionId: session.id,
       }),
     })
     const body = (await response.json().catch(() => ({}))) as Partial<SessionReviewResponse> & {

@@ -82,6 +82,22 @@ describe('createVAD', () => {
     expect(events.some((e) => e.startsWith('ready:'))).toBe(false)
   })
 
+  it('splits continuous speech at maxSpeechDurationMs', async () => {
+    const vad = createVAD(inferFromMarks(Array(8).fill(true)), {
+      ...CFG,
+      minSpeechDurationMs: 0,
+      maxSpeechDurationMs: 96,
+      speechPadMs: 0,
+    })
+    const events: string[] = []
+    vad.on('speech-start', () => events.push('start'))
+    vad.on('speech-end', () => events.push('end'))
+    vad.on('speech-ready', ({ buffer }) => events.push(`ready:${buffer.length}`))
+    for (let index = 0; index < 8; index++) await vad.processAudio(chunk(512))
+
+    expect(events.slice(0, 4)).toEqual(['start', 'end', 'ready:1536', 'start'])
+  })
+
   it('updateConfig changes thresholds live', async () => {
     const vad = createVAD(async () => 0.4, CFG)
     const events: string[] = []
@@ -99,6 +115,7 @@ describe('createVAD', () => {
     expect(defaultVadConfig.sampleRate).toBe(16000)
     expect(defaultVadConfig.minSilenceDurationMs).toBe(200)
     expect(defaultVadConfig.minSpeechDurationMs).toBe(200)
+    expect(defaultVadConfig.maxSpeechDurationMs).toBe(30000)
   })
 
   it('serializes inference so chunks process in order', async () => {

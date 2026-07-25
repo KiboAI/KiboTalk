@@ -11,7 +11,11 @@ import type { EmbedAudio } from '@kibotalk/speaker'
  * spinning up (and re-downloading into) their own.
  */
 
-type OutgoingMessage = { kind: 'embed'; id: number; pcm: Float32Array } | { kind: 'preload' } | { kind: 'configure' }
+type ModelSourceConfig = { bundled: boolean; fallbackOrigin?: string }
+type OutgoingMessage =
+  | { kind: 'embed'; id: number; pcm: Float32Array }
+  | { kind: 'preload' }
+  | ({ kind: 'configure' } & ModelSourceConfig)
 type IncomingMessage =
   | { kind: 'embed'; id: number; embedding?: Float32Array; error?: string }
   | { kind: 'preload-progress'; fraction: number }
@@ -26,13 +30,15 @@ let preloadPromise: Promise<void> | null = null
 let preloadSettlers: { resolve: () => void; reject: (e: Error) => void } | null = null
 
 /** Set by desktop's `configureModelSource` before the worker is first created — see there. */
-let useBundled = false
+let modelSource: ModelSourceConfig | null = null
 
 function getWorker(): Worker {
   if (worker) return worker
 
   worker = new Worker(new URL('./speaker-worker.ts', import.meta.url), { type: 'module' })
-  if (useBundled) worker.postMessage({ kind: 'configure' } satisfies OutgoingMessage)
+  if (modelSource) {
+    worker.postMessage({ kind: 'configure', ...modelSource } satisfies OutgoingMessage)
+  }
   worker.onmessage = (e: MessageEvent<IncomingMessage>) => {
     const data = e.data
     switch (data.kind) {
@@ -86,9 +92,11 @@ export function createWorkerEmbedAudio(): EmbedAudio {
  * before the first `createWorkerEmbedAudio`/`preloadSpeakerModel` use — a
  * no-op for `apps/web`, which never calls this.
  */
-export function configureModelSource(options: { bundled: boolean }): void {
-  useBundled = options.bundled
-  if (worker && useBundled) worker.postMessage({ kind: 'configure' } satisfies OutgoingMessage)
+export function configureModelSource(options: ModelSourceConfig): void {
+  modelSource = options
+  if (worker) {
+    worker.postMessage({ kind: 'configure', ...options } satisfies OutgoingMessage)
+  }
 }
 
 /** Warms the shared worker's model cache ahead of real use — see `packages/app-shared/src/model-preload.ts`. */

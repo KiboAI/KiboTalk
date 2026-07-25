@@ -27,12 +27,14 @@ import {
   Settings,
   Sparkles,
   Square,
+  UserRound,
 } from 'lucide-react'
 
 export type SessionPageProps = {
   controller: ProductSessionController
   onGoSettings?: () => void
   onGoHistory?: () => void
+  onGoAccount?: () => void
 }
 
 function formatDuration(milliseconds: number): string {
@@ -94,7 +96,7 @@ function statusLabel(controller: ProductSessionController, translate: ReturnType
  * and suggestion columns on desktop; one suggestion stage with a transcript
  * overlay on narrow screens.
  */
-export function SessionPage({ controller, onGoSettings, onGoHistory }: SessionPageProps) {
+export function SessionPage({ controller, onGoSettings, onGoHistory, onGoAccount }: SessionPageProps) {
   const { t, language } = useI18n()
   const [transcriptOpen, setTranscriptOpen] = useState(() =>
     window.matchMedia('(min-width: 640px)').matches,
@@ -192,6 +194,12 @@ export function SessionPage({ controller, onGoSettings, onGoHistory }: SessionPa
                 <DropdownMenuItem onSelect={onGoSettings}>
                   <Settings className="size-4" />
                   {t('settings')}
+                </DropdownMenuItem>
+              ) : null}
+              {onGoAccount ? (
+                <DropdownMenuItem onSelect={onGoAccount}>
+                  <UserRound className="size-4" />
+                  账户与额度
                 </DropdownMenuItem>
               ) : null}
             </DropdownMenuContent>

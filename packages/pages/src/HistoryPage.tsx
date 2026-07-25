@@ -3,17 +3,25 @@ import type { ConversationSession, ConversationStorage } from '@kibotalk/convers
 import { languageLabel, useI18n } from '@kibotalk/app-shared'
 import {
   Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   ScrollArea,
   SessionListItem,
   StickyNoteCard,
 } from '@kibotalk/ui'
-import { ArrowLeft, Loader2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 
 export type HistoryPageProps = {
   storage: ConversationStorage
   activeSessionId?: string
   onBack: () => void
   onRetryReview?: (sessionId: string) => Promise<void>
+  readOnly?: boolean
 }
 
 function sessionSubtitle(session: ConversationSession, locale: string, currentLabel: string): string {
@@ -60,11 +68,13 @@ export function HistoryPage({
   activeSessionId,
   onBack,
   onRetryReview,
+  readOnly = false,
 }: HistoryPageProps) {
   const { t, language } = useI18n()
   const [sessions, setSessions] = useState<ConversationSession[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     const next = await storage.listSessions()
@@ -76,7 +86,7 @@ export function HistoryPage({
     void refresh()
   }, [refresh])
 
-  const reviewPending = sessions.some(
+  const reviewPending = !readOnly && sessions.some(
     (session) => session.status === 'stopped' && session.reviewStatus === 'pending',
   )
   useEffect(() => {
@@ -138,13 +148,23 @@ export function HistoryPage({
                 >
                   <ArrowLeft className="size-4" />
                 </Button>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h2 className="truncate text-base font-bold">{selected.title}</h2>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {languageLabel(selected.snapshot.conversationLang, language)} ·{' '}
                     {sessionSubtitle(selected, locale, t('currentSession'))}
                   </p>
                 </div>
+                {!readOnly && selected.status === 'stopped' && selected.id !== activeSessionId ? (
+                  <Button
+                    variant="soft"
+                    size="icon"
+                    aria-label="删除本次会话"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                ) : null}
               </div>
               <ScrollArea className="min-h-0 flex-1">
                 <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(20rem,1.15fr)] lg:p-6">
@@ -222,6 +242,33 @@ export function HistoryPage({
           )}
         </main>
       </div>
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除本次会话？</DialogTitle>
+            <DialogDescription>
+              这会从所有已登录设备和云端永久删除本次文本记录、建议与复盘。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="soft">{t('cancel')}</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!selected) return
+                await storage.deleteSession(selected.id)
+                setDeleteOpen(false)
+                setSelectedId(null)
+                await refresh()
+              }}
+            >
+              {t('confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

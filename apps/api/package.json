@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --dts",
-    "start": "node dist/index.js",
+    "build": "tsup",
+    "start": "node dist/index.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -19,6 +19,7 @@
     "@kibotalk/stt": "workspace:*",
     "dotenv": "^16.4.0",
     "hono": "^4.6.0",
+    "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "ws": "^8.21.1"

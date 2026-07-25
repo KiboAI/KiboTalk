@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { IndexedDbConversationStorage } from '@kibotalk/conversation'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  accountConversationDatabaseName,
+  IndexedDbConversationStorage,
+  type ConversationStorage,
+} from '@kibotalk/conversation'
 import { IndexedDbEmbeddingStorage } from '@kibotalk/speaker'
 import {
   createSessionSnapshot,
@@ -10,31 +14,42 @@ import {
   reviewConversationSession,
   resumePendingSessionReviews,
   startModelPreload,
+  syncPreferences,
+  useAccount,
+  useCloudConversationStorage,
   useI18n,
   useModelPreloadStatus,
   useProductSession,
   type LanguagePrefs,
+  type AccountSession,
 } from '@kibotalk/app-shared'
 import {
+  AccountPage,
   EnrollmentPage,
   HistoryPage,
   OnboardingPage,
   SessionPage,
   SettingsPage,
 } from '@kibotalk/pages'
-import { ModelPreloadBadge } from '@kibotalk/ui'
+import { Button, ModelPreloadBadge } from '@kibotalk/ui'
 
 type SetupStage = 'checking' | 'enrollment' | 'product'
-type ProductView = 'session' | 'settings' | 'history' | 'voiceprint'
+type ProductView = 'session' | 'settings' | 'history' | 'voiceprint' | 'account'
 
 function WebProductShell({
   prefs,
   storage,
   onPrefsChange,
+  account,
+  onAccountChange,
+  onDeleteLocalData,
 }: {
   prefs: LanguagePrefs
-  storage: IndexedDbConversationStorage
+  storage: ConversationStorage
   onPrefsChange: (prefs: LanguagePrefs) => void
+  account: AccountSession
+  onAccountChange: (account: AccountSession | null) => void
+  onDeleteLocalData: () => Promise<void>
 }) {
   const { language } = useI18n()
   const [view, setView] = useState<ProductView>('session')
@@ -128,11 +143,25 @@ function WebProductShell({
     )
   }
 
+  if (view === 'account') {
+    return (
+      <AccountPage
+        account={account}
+        showAdminLink
+        onAuthenticated={onAccountChange}
+        onAccountChange={onAccountChange}
+        onBack={() => setView('session')}
+        onDeleteLocalData={onDeleteLocalData}
+      />
+    )
+  }
+
   return (
     <SessionPage
       controller={controller}
       onGoSettings={() => setView('settings')}
       onGoHistory={() => setView('history')}
+      onGoAccount={() => setView('account')}
     />
   )
 }
@@ -146,13 +175,40 @@ function AppContent({
 }) {
   const [stage, setStage] = useState<SetupStage>('checking')
   const [enrolled, setEnrolled] = useState(false)
-  const storageRef = useRef(new IndexedDbConversationStorage())
+  const [historyOnly, setHistoryOnly] = useState(false)
   const models = useModelPreloadStatus()
   const { t } = useI18n()
+  const accountState = useAccount()
+  const localStorage = useMemo(
+    () => new IndexedDbConversationStorage(
+      accountState.account
+        ? accountConversationDatabaseName(accountState.account.user.id)
+        : undefined,
+    ),
+    [accountState.account?.user.id],
+  )
+  const cloud = useCloudConversationStorage({
+    local: localStorage,
+    userId: accountState.account?.user.id ?? null,
+    onPreferences: (remotePreferences) => {
+      if (
+        remotePreferences
+        && typeof remotePreferences === 'object'
+        && 'conversationLang' in remotePreferences
+        && 'levelByLang' in remotePreferences
+      ) {
+        onPrefsChange(remotePreferences as LanguagePrefs)
+      }
+    },
+  })
 
   useEffect(() => {
     startModelPreload()
   }, [])
+
+  useEffect(() => {
+    setHistoryOnly(false)
+  }, [accountState.account?.user.id])
 
   useEffect(() => {
     if (!prefs.languagesConfirmed) return
@@ -171,6 +227,11 @@ function AppContent({
       cancelled = true
     }
   }, [prefs.languagesConfirmed])
+
+  useEffect(() => {
+    if (!accountState.account) return
+    void syncPreferences(prefs, cloud.storage).catch(() => {})
+  }, [accountState.account?.user.id, cloud.storage, localStorage, prefs])
 
   const modelsBadge = (
     <ModelPreloadBadge
@@ -236,6 +297,16 @@ function AppContent({
     )
   }
 
+  if (historyOnly && accountState.account) {
+    return (
+      <HistoryPage
+        storage={cloud.storage ?? localStorage}
+        readOnly={!cloud.storage}
+        onBack={() => setHistoryOnly(false)}
+      />
+    )
+  }
+
   const modelsReady = models.vad === 'ready' && models.wavlm === 'ready'
   const modelsFailed = models.vad === 'error' || models.wavlm === 'error'
   if (!modelsReady) {
@@ -243,9 +314,53 @@ function AppContent({
       <>
         {modelsBadge}
         <div className="flex min-h-dvh items-center justify-center">
-          <p className="text-sm text-muted-foreground">
-            {modelsFailed ? t('preparationFailed') : t('preparing')}
-          </p>
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              {modelsFailed ? t('preparationFailed') : t('preparing')}
+            </p>
+            {modelsFailed && accountState.account ? (
+              <Button variant="soft" onClick={() => setHistoryOnly(true)}>
+                查看本地历史
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (!accountState.account) {
+    return (
+      <>
+        {modelsBadge}
+        <AccountPage
+          account={null}
+          loading={accountState.loading}
+          onAuthenticated={accountState.setAccount}
+          onAccountChange={accountState.setAccount}
+        />
+      </>
+    )
+  }
+
+  if (cloud.syncing || !cloud.storage) {
+    return (
+      <>
+        {modelsBadge}
+        <div className="flex min-h-dvh items-center justify-center">
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              {cloud.error ? '无法连接云同步，暂不能开始新会话。' : '正在同步会话历史…'}
+            </p>
+            {cloud.error ? (
+              <div className="flex justify-center gap-2">
+                <Button variant="soft" onClick={cloud.retry}>重试连接</Button>
+                <Button variant="soft" onClick={() => setHistoryOnly(true)}>
+                  查看本地历史
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </>
     )
@@ -256,8 +371,15 @@ function AppContent({
       {modelsBadge}
       <WebProductShell
         prefs={prefs}
-        storage={storageRef.current}
+        storage={cloud.storage}
         onPrefsChange={onPrefsChange}
+        account={accountState.account}
+        onAccountChange={accountState.setAccount}
+        onDeleteLocalData={async () => {
+          await localStorage.clearHistory()
+          await localStorage.clearActiveSession()
+          await new IndexedDbEmbeddingStorage().clear()
+        }}
       />
     </>
   )

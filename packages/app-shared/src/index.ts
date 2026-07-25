@@ -3,13 +3,50 @@ export type { AudioSourceOptions } from './audio/audio-source'
 export { createSileroInfer, SILERO_VARIANTS } from './audio/silero-vad'
 export type { SileroVariant } from './audio/silero-vad'
 export { createWorkerEmbedAudio, configureModelSource } from './audio/speaker-embed'
-export { useBundledModels } from './audio/model-source'
+export {
+  useBundledModels,
+  useHuggingFaceModels,
+  WAVLM_MODEL_ID,
+  WAVLM_MODEL_REVISION,
+} from './audio/model-source'
 
 export { startModelPreload, useModelPreloadStatus } from './model-preload'
 export type { ModelLoadState, ModelPreloadStatus } from './model-preload'
 
 export { parseSseStream } from './sse'
 export type { SseMessage } from './sse'
+export {
+  apiUrl,
+  authorizedFetch,
+  clearAccountCache,
+  clearAccessToken,
+  isDesktopRuntime,
+  readAccountCache,
+  runtimeClientVersion,
+  runtimeDeviceName,
+  runtimePlatform,
+  saveAccountCache,
+  saveAccessToken,
+  websocketApiUrl,
+} from './api-runtime'
+export {
+  deleteCloudAccount,
+  fetchAccountDevices,
+  fetchCurrentAccount,
+  logoutAccount,
+  redeemCode,
+  requestLoginCode,
+  revokeAccountDevice,
+  useAccount,
+  verifyLoginCode,
+} from './account'
+export type { AccountDevice, AccountSession, QuotaSummary } from './account'
+export {
+  CloudConversationStorage,
+  syncPreferences,
+  useCloudConversationStorage,
+  type CloudConversationStorageState,
+} from './cloud-conversation-storage'
 export { extractCandidates, extractCompleteObjects } from './partial-json'
 export {
   sttUrl,

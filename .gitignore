@@ -10,3 +10,4 @@ coverage
 .vieval
 apps/desktop/out
 apps/desktop/resources/models
+apps/desktop/resources/bundle-models

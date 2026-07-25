@@ -1,7 +1,13 @@
 /// <reference lib="webworker" />
 import { AutoProcessor, AutoModel } from '@huggingface/transformers'
 import { createProgressAggregator } from './model-progress'
-import { useBundledModels } from './model-source'
+import {
+  useBundledModels,
+  useHuggingFaceModels,
+  loadModelWithFallback,
+  WAVLM_MODEL_ID,
+  WAVLM_MODEL_REVISION,
+} from './model-source'
 
 /**
  * Speaker-embedding Web Worker. Loads `Xenova/wavlm-base-plus-sv` (ONNX, via
@@ -21,7 +27,7 @@ const ctx: WorkerScope = self as unknown as WorkerScope
 type IncomingMessage =
   | { kind: 'embed'; id: number; pcm: Float32Array }
   | { kind: 'preload' }
-  | { kind: 'configure' }
+  | { kind: 'configure'; bundled: boolean; fallbackOrigin?: string }
 
 let processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>> | null = null
 let model: Awaited<ReturnType<typeof AutoModel.from_pretrained>> | null = null
@@ -31,10 +37,17 @@ async function ensureLoaded(onProgress?: (fraction: number) => void): Promise<vo
   if (model && processor) return
   if (!loading) {
     const track = onProgress ? createProgressAggregator(onProgress) : undefined
-    loading = (async () => {
-      processor = await AutoProcessor.from_pretrained('Xenova/wavlm-base-plus-sv', { progress_callback: track })
-      model = await AutoModel.from_pretrained('Xenova/wavlm-base-plus-sv', { progress_callback: track })
-    })()
+    loading = loadModelWithFallback(async () => {
+      processor = await AutoProcessor.from_pretrained(WAVLM_MODEL_ID, {
+        revision: WAVLM_MODEL_REVISION,
+        progress_callback: track,
+      })
+      model = await AutoModel.from_pretrained(WAVLM_MODEL_ID, {
+        dtype: 'q8',
+        revision: WAVLM_MODEL_REVISION,
+        progress_callback: track,
+      })
+    })
   }
   return loading
 }
@@ -43,7 +56,8 @@ ctx.onmessage = async (event: MessageEvent<IncomingMessage>) => {
   const data = event.data
 
   if (data.kind === 'configure') {
-    useBundledModels()
+    if (data.bundled) useBundledModels()
+    else useHuggingFaceModels(data.fallbackOrigin)
     return
   }
 

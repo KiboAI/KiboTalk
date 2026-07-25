@@ -76,6 +76,18 @@ describe('dashscope realtime thin protocol', () => {
     expect(
       upstreamToThinServer(JSON.stringify({ type: 'input_audio_buffer.committed' })),
     ).toBeNull()
+    expect(
+      upstreamToThinServer(
+        JSON.stringify({
+          type: 'conversation.item.input_audio_transcription.failed',
+          error: { message: 'audio was not recognized' },
+        }),
+      ),
+    ).toEqual({
+      type: 'error',
+      code: 'TRANSCRIPTION_FAILED',
+      message: 'audio was not recognized',
+    })
   })
 
   it('parses thin client messages', () => {

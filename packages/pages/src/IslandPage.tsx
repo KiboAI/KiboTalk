@@ -33,6 +33,7 @@ import {
   Settings,
   Sparkles,
   Square,
+  UserRound,
 } from 'lucide-react'
 
 export type IslandPageProps = {
@@ -40,6 +41,7 @@ export type IslandPageProps = {
   contentSide: 'above' | 'below'
   onGoSettings?: () => void
   onGoHistory?: () => void
+  onGoAccount?: () => void
   onHide?: () => void
   onQuit?: () => void
 }
@@ -82,6 +84,7 @@ export function IslandPage({
   contentSide,
   onGoSettings,
   onGoHistory,
+  onGoAccount,
   onHide,
   onQuit,
 }: IslandPageProps) {
@@ -184,6 +187,12 @@ export function IslandPage({
             <DropdownMenuItem onSelect={onGoSettings}>
               <Settings className="size-4" />
               {t('settings')}
+            </DropdownMenuItem>
+          ) : null}
+          {onGoAccount ? (
+            <DropdownMenuItem onSelect={onGoAccount}>
+              <UserRound className="size-4" />
+              账户与额度
             </DropdownMenuItem>
           ) : null}
           {onHide ? (

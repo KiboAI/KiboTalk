@@ -1,0 +1,14 @@
+.git
+.github
+.cursor-screenshots
+.turbo
+.vieval
+node_modules
+**/dist
+**/out
+apps/desktop/resources
+Kibo_icon.icon
+*.log
+.env
+.env.*
+

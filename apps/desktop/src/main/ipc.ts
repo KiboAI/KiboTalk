@@ -15,6 +15,14 @@ import {
 } from './permissions'
 import { startSystemAudioCapture, stopSystemAudioCapture } from './system-audio'
 import {
+  clearAccessToken,
+  clearAccountCache,
+  readAccessToken,
+  readAccountCache,
+  writeAccessToken,
+  writeAccountCache,
+} from './auth-token'
+import {
   closeOnboardingWindow,
   getRequestedProductView,
   openOnboardingWindow,
@@ -85,4 +93,17 @@ export function registerIpcHandlers(params: {
   })
   ipcMain.handle(IPC_CHANNEL.appRequestQuit, () => params.requestQuit())
   ipcMain.handle(IPC_CHANNEL.appQuitReady, () => params.quitReady())
+  ipcMain.handle(IPC_CHANNEL.appGetVersion, () => app.getVersion())
+  ipcMain.handle(IPC_CHANNEL.authGetAccessToken, () => readAccessToken())
+  ipcMain.handle(IPC_CHANNEL.authSetAccessToken, (_event, token: string) => {
+    if (!token || token.length > 4096) throw new Error('Invalid access token')
+    writeAccessToken(token)
+  })
+  ipcMain.handle(IPC_CHANNEL.authClearAccessToken, () => clearAccessToken())
+  ipcMain.handle(IPC_CHANNEL.authGetAccountCache, () => readAccountCache())
+  ipcMain.handle(IPC_CHANNEL.authSetAccountCache, (_event, value: string) => {
+    if (!value || value.length > 16_384) throw new Error('Invalid account cache')
+    writeAccountCache(value)
+  })
+  ipcMain.handle(IPC_CHANNEL.authClearAccountCache, () => clearAccountCache())
 }

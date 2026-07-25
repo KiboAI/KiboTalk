@@ -1,6 +1,8 @@
 {
   "name": "@kibotalk/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "KiboTalk live reply coach for Apple Silicon Macs",
+  "author": "KiboTalk",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -10,7 +12,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "download-models": "tsx scripts/download-models.ts",
-    "package:mac": "pnpm download-models && pnpm build && electron-builder --config electron-builder.config.ts --mac"
+    "verify:q8": "tsx scripts/verify-q8-speaker.ts",
+    "package:mac": "pnpm download-models && pnpm build && electron-builder --config electron-builder.config.ts --mac --arm64"
   },
   "dependencies": {
     "@kibotalk/app-shared": "workspace:*",

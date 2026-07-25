@@ -6,6 +6,7 @@ import { registerModelProtocolHandler, registerModelProtocolScheme } from './mod
 import { createTrayController } from './tray'
 import { createIslandWindow } from './windows/island'
 import { openOnboardingWindow } from './windows/onboarding'
+import { checkForManualUpdate } from './update-check'
 
 let islandWindow: BrowserWindow | null = null
 let trayController: ReturnType<typeof createTrayController> | null = null
@@ -46,6 +47,7 @@ app.whenReady().then(async () => {
   } else {
     app.dock?.hide()
   }
+  setTimeout(() => void checkForManualUpdate(), 10_000)
 
   app.on('activate', () => {
     if (!islandWindow || islandWindow.isDestroyed()) {

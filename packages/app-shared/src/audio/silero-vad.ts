@@ -1,5 +1,6 @@
 import { AutoModel, Tensor } from '@huggingface/transformers'
 import type { VadInfer } from '@kibotalk/audio/vad'
+import { loadModelWithFallback } from './model-source'
 import { createProgressAggregator } from './model-progress'
 
 /**
@@ -15,12 +16,25 @@ export type SileroVariant = {
   id: string
   label: string
   modelId: string
+  revision: string
   useContext: boolean
 }
 
 export const SILERO_VARIANTS: SileroVariant[] = [
-  { id: 'v6.2', label: 'Silero VAD v6.2（新，需 context）', modelId: 'BricksDisplay/silero-vad-6.2', useContext: true },
-  { id: 'v5', label: 'Silero VAD v5（旧，512 原始）', modelId: 'onnx-community/silero-vad', useContext: false },
+  {
+    id: 'v6.2',
+    label: 'Silero VAD v6.2（新，需 context）',
+    modelId: 'BricksDisplay/silero-vad-6.2',
+    revision: 'd5f05343ab09671d549093fb9c1871f118577903',
+    useContext: true,
+  },
+  {
+    id: 'v5',
+    label: 'Silero VAD v5（旧，512 原始）',
+    modelId: 'onnx-community/silero-vad',
+    revision: 'e71cae966052b992a7eca6b17738916ce0eca4ec',
+    useContext: false,
+  },
 ]
 
 // Transformers.js `PreTrainedModel extends Callable`: the instance is itself a
@@ -40,21 +54,27 @@ type SileroForward = (args: {
  * unlike the speaker-embedding model — see `preloadSpeakerModel`).
  */
 export function preloadSileroModel(variant: SileroVariant, onProgress?: (fraction: number) => void): Promise<void> {
-  return AutoModel.from_pretrained(variant.modelId, {
-    config: { model_type: 'custom' },
-    dtype: 'fp32',
-    progress_callback: onProgress ? createProgressAggregator(onProgress) : undefined,
-  } as Record<string, unknown>).then(() => undefined)
+  return loadModelWithFallback(() =>
+    AutoModel.from_pretrained(variant.modelId, {
+      config: { model_type: 'custom' },
+      dtype: 'q8',
+      revision: variant.revision,
+      progress_callback: onProgress ? createProgressAggregator(onProgress) : undefined,
+    } as Record<string, unknown>),
+  ).then(() => undefined)
 }
 
 export async function createSileroInfer(
   variant: SileroVariant,
   sampleRate = 16000,
 ): Promise<VadInfer> {
-  const model = (await AutoModel.from_pretrained(variant.modelId, {
-    config: { model_type: 'custom' },
-    dtype: 'fp32',
-  } as Record<string, unknown>)) as unknown as SileroForward
+  const model = (await loadModelWithFallback(() =>
+    AutoModel.from_pretrained(variant.modelId, {
+      config: { model_type: 'custom' },
+      dtype: 'q8',
+      revision: variant.revision,
+    } as Record<string, unknown>),
+  )) as unknown as SileroForward
 
   let state = new Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128])
   const sr = new Tensor('int64', [BigInt(sampleRate)], [])

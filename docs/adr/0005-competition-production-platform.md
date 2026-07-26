@@ -6,7 +6,8 @@
 
 ## 决策
 
-比赛 Beta 正式入口固定为 `https://advx.kibotalk.app`。大陆 IDC 会对未备案
+比赛 Beta 最初入口为 `https://advx.kibotalk.app`，正式 Web 入口随后迁至
+`https://app.kibotalk.app`，旧入口的普通页面访问跳转到落地页。大陆 IDC 会对未备案
 域名的 HTTP Host / HTTPS SNI 做接入重置，因此源站改为日本 VPS。Cloudflare
 只做 DNS，VPS 用 Docker Compose 运行 Caddy、Hono 和 PostgreSQL；Caddy 自动
 申请和续期证书，80 端口只做 HTTPS 跳转。
@@ -15,6 +16,11 @@ Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用 Q8，首选固定 commit 的 
 进入浏览器缓存；加载失败后自动从 VPS 的同源模型镜像重试。桌面版在构建时从
 相同 revision 拉取并打进 DMG。VPS 不托管安装包。DMG 由构建任务产出并经人工
 确认后发布到 GitHub Release。
+
+子域名切换期间，`advx` 保留独立的一次性浏览器本地清理入口，以及旧版桌面客户端
+需要的 API / 模型路径；清理逻辑不进入产品核心。账号、额度、偏好和会话历史继续
+使用同一套 PostgreSQL 加密同步数据，不做跨 origin 搬移。旧入口仅清除浏览器模型
+缓存、Service Worker 和声纹，再前往落地页；用户在新入口重新登录并重录声纹。
 
 客户端编排边界不变：VAD、声纹判定和 turn gate 仍在客户端。Hono 不再只是
 无状态 provider 代理，还负责以下服务端状态：

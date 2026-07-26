@@ -44,7 +44,7 @@ declare const __PLAYGROUND_API_ORIGIN__: string
 
 function backendLabel(origin: string): string {
   if (origin === 'http://localhost:8787') return '本地'
-  if (origin === 'https://advx.kibotalk.app') return '生产'
+  if (origin === 'https://app.kibotalk.app') return '生产'
   return '自定义'
 }
 

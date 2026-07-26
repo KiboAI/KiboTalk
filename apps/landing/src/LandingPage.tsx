@@ -2,14 +2,12 @@ import {
   ArrowDownToLine,
   ArrowUpRight,
   Check,
-  CircleDollarSign,
   ExternalLink,
   Languages,
   MapPin,
   Pause,
   Sparkles,
   Square,
-  WalletCards,
 } from 'lucide-react'
 import {
   Badge,
@@ -29,7 +27,7 @@ import {
 } from '@kibotalk/ui'
 import { copy, locales, type Locale } from './copy'
 
-const webAppUrl = 'https://advx.kibotalk.app'
+const webAppUrl = 'https://app.kibotalk.app'
 const macReleaseUrl = 'https://github.com/KiboAI/KiboTalk/releases/latest'
 const lingguangUrl =
   'https://www.lingguang.com/share/FLASH_APP-47cf7a20-7033-463d-a975-eacb0b0e6c1764'
@@ -97,9 +95,6 @@ function Header({ locale }: { locale: Locale }) {
           </a>
           <a className="header-link" href="#story">
             {content.nav.story}
-          </a>
-          <a className="header-link" href="#payment">
-            {content.nav.payment}
           </a>
           <a className="header-link" href="#mission">
             {content.nav.mission}
@@ -344,57 +339,6 @@ function StorySection({ locale }: { locale: Locale }) {
   )
 }
 
-function PaymentSection({ locale }: { locale: Locale }) {
-  const { payment } = copy[locale]
-
-  return (
-    <section id="payment" className="payment-section">
-      <div className="page-shell payment-layout">
-        <div className="payment-copy">
-          <p className="section-kicker">{payment.eyebrow}</p>
-          <h2 className="section-title">{payment.title}</h2>
-          <p className="section-body">{payment.body}</p>
-          <div className="payment-context">
-            <Badge variant="outline">{payment.testnetLabel}</Badge>
-            <span>{payment.hackathonNote}</span>
-          </div>
-        </div>
-
-        <Card className="payment-card">
-          <CardContent>
-            <div className="payment-rail">
-              <span className="payment-icon">
-                <WalletCards aria-hidden />
-              </span>
-              <span className="payment-rail-copy">
-                <strong>Injective</strong>
-                <span>{payment.injectiveDetail}</span>
-              </span>
-              <Badge variant="secondary">{payment.soon}</Badge>
-            </div>
-
-            <div className="payment-rail">
-              <span className="payment-icon">
-                <CircleDollarSign aria-hidden />
-              </span>
-              <span className="payment-rail-copy">
-                <strong>USDC</strong>
-                <span>{payment.usdcDetail}</span>
-              </span>
-              <Badge variant="secondary">{payment.soon}</Badge>
-            </div>
-
-            <Button type="button" disabled className="w-full">
-              {payment.button}
-            </Button>
-            <p className="payment-disclaimer">{payment.disclaimer}</p>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  )
-}
-
 function MissionSection({ locale }: { locale: Locale }) {
   const { mission, actions } = copy[locale]
 
@@ -474,7 +418,6 @@ export function LandingPage({ locale }: { locale: Locale }) {
         <SceneMap locale={locale} />
         <ProductSection locale={locale} />
         <StorySection locale={locale} />
-        <PaymentSection locale={locale} />
         <MissionSection locale={locale} />
       </main>
       <Footer locale={locale} />

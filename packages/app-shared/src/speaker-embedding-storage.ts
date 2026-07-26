@@ -3,7 +3,7 @@ import {
   SPEAKER_MODEL_DTYPE,
   SPEAKER_MODEL_ID,
   SPEAKER_MODEL_REVISION,
-} from './audio/model-source'
+} from './audio/speaker-model-contract'
 
 const LEGACY_SPEAKER_EMBEDDING_DATABASES = ['kibotalk-speaker']
 

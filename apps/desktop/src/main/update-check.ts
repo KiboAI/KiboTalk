@@ -1,6 +1,6 @@
 import { app, net, Notification, shell } from 'electron'
 
-const VERSION_URL = 'https://advx.kibotalk.app/app-version'
+const VERSION_URL = 'https://app.kibotalk.app/app-version'
 
 type VersionManifest = {
   version: string
@@ -45,4 +45,3 @@ export async function checkForManualUpdate(): Promise<void> {
     // Offline and transient server failures do not interrupt the local app.
   }
 }
-

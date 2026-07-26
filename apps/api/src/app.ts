@@ -67,7 +67,11 @@ function parseLearnerLevel(value: unknown, fallback: LearnerLevel): LearnerLevel
 
 function allowedOrigin(origin: string): string | null {
   if (!origin) return null
-  if (origin === 'https://advx.kibotalk.app' || origin === 'null') return origin
+  if (
+    origin === 'https://app.kibotalk.app'
+    || origin === 'https://advx.kibotalk.app'
+    || origin === 'null'
+  ) return origin
   if (/^https?:\/\/localhost(?::\d+)?$/.test(origin)) return origin
   if (/^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin)) return origin
   return null

@@ -92,15 +92,17 @@ jobs:
       - name: Verify HTTPS
         run: |
           for _attempt in $(seq 1 24); do
-            if curl --fail --silent --show-error https://advx.kibotalk.app/health \
+            if curl --fail --silent --show-error https://app.kibotalk.app/health \
               && curl --fail --silent --show-error \
-                https://advx.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json \
+                https://app.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json \
                 >/dev/null \
               && curl --fail --silent --show-error --range 0-0 \
-                https://advx.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx \
+                https://app.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx \
                 >/dev/null \
               && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
-              && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/"; then
+              && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/" \
+              && curl --fail --silent --show-error https://advx.kibotalk.app/ \
+                | grep --quiet '正在清理旧版网页数据'; then
               exit 0
             fi
             sleep 5

@@ -3,7 +3,11 @@ import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { databaseConfigured, getDatabase } from './db'
 import { hashToken, keyedHash, randomToken, safeHashEqual } from './crypto'
-import { ensureMonthlyFreeBucket, quotaSummary } from './quota'
+import {
+  ensureMonthlyFreeBucket,
+  FREE_MONTHLY_SECONDS,
+  quotaSummary,
+} from './quota'
 
 export const SESSION_COOKIE = 'kibotalk_session'
 const SESSION_DAYS = 90
@@ -325,10 +329,10 @@ export async function authMe(context: Context): Promise<Response> {
       user: { id: auth.userId, email: auth.email, isAdmin: auth.isAdmin },
       deviceSessionId: auth.deviceSessionId,
       quota: {
-        freeSeconds: 600,
+        freeSeconds: FREE_MONTHLY_SECONDS,
         proSeconds: 0,
         paidSeconds: 0,
-        totalSeconds: 600,
+        totalSeconds: FREE_MONTHLY_SECONDS,
         proUntil: null,
         resetsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       },

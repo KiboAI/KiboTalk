@@ -16,6 +16,7 @@ COPY packages/observability/package.json packages/observability/package.json
 COPY packages/pages/package.json packages/pages/package.json
 COPY packages/pipeline/package.json packages/pipeline/package.json
 COPY packages/prompts/package.json packages/prompts/package.json
+COPY packages/shared/package.json packages/shared/package.json
 COPY packages/speaker/package.json packages/speaker/package.json
 COPY packages/stt/package.json packages/stt/package.json
 COPY packages/ui/package.json packages/ui/package.json
@@ -33,6 +34,7 @@ COPY packages/observability packages/observability
 COPY packages/pages packages/pages
 COPY packages/pipeline packages/pipeline
 COPY packages/prompts packages/prompts
+COPY packages/shared packages/shared
 COPY packages/speaker packages/speaker
 COPY packages/stt packages/stt
 COPY packages/ui packages/ui
@@ -50,6 +52,8 @@ WORKDIR /app/api
 COPY --from=builder /output/api /app/api
 COPY --from=builder /output/web /app/web
 
+USER root
+RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 8787
 CMD ["node", "dist/index.cjs"]

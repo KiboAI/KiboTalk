@@ -14,36 +14,26 @@ import {
   upstreamToThinServer,
 } from '@kibotalk/stt'
 import { WebSocket, WebSocketServer } from 'ws'
-import {
-  claimActiveAiSession,
-  refreshActiveAiSession,
-  releaseActiveAiSession,
-} from './active-session'
-import { grantFinalAiAllowance } from './ai-allowance'
-import { consumeWebsocketTicket, type RequestAuth } from './auth'
+import { refreshActiveAiSession } from './active-session'
+import type { RequestAuth } from './auth'
 import { databaseConfigured } from './db'
-import { deductCompletedTurn, MAX_TURN_OVERDRAW_SECONDS, quotaSummary } from './quota'
+import { MAX_TURN_OVERDRAW_SECONDS } from './quota'
+import { billCompletedRelayTurn } from './relay-billing'
+import type { RelayRequestAuth } from './relay-request-auth'
+import {
+  acquireRelayWebsocket,
+  consumeRelayWebsocketTicket,
+  relayRemainingSeconds,
+  releaseRelayWebsocket,
+  touchRelaySession,
+} from './relay-session-state'
+import { serverRole } from './server-role'
 import { recordTelemetryLater } from './telemetry'
 
 const PATHS = new Set(['/api/stt-realtime', '/stt-realtime'])
 const SAMPLE_RATE = 16000
 const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024 * 1024
-const activeConnectionCounts = new Map<string, number>()
-
-function connectionKey(auth: RequestAuth, conversationSessionId: string): string {
-  return `${auth.userId}:${auth.deviceSessionId}:${conversationSessionId}`
-}
-
-function addActiveConnection(key: string): void {
-  activeConnectionCounts.set(key, (activeConnectionCounts.get(key) ?? 0) + 1)
-}
-
-function removeActiveConnection(key: string): number {
-  const remaining = Math.max(0, (activeConnectionCounts.get(key) ?? 1) - 1)
-  if (remaining === 0) activeConnectionCounts.delete(key)
-  else activeConnectionCounts.set(key, remaining)
-  return remaining
-}
+const role = serverRole()
 
 export function attachSttRealtimeUpgrade(server: Server): WebSocketServer {
   const websocketServer = new WebSocketServer({
@@ -87,63 +77,52 @@ async function handleConnection(
     }
   }
 
-  if (provider !== 'dashscope-realtime') {
-    send({ type: 'error', code: 'UNSUPPORTED_PROVIDER', message: '生产环境仅支持 Qwen3 ASR 实时模型' })
-    clientWebsocket.close()
-    return
-  }
   if (!ticket) {
     send({ type: 'error', code: 'AUTH_REQUIRED', message: '登录已失效，请重新登录' })
     clientWebsocket.close()
     return
   }
-  const ticketAuth = await consumeWebsocketTicket(ticket).catch(() => null)
-  if (!ticketAuth) {
+  const claims = consumeRelayWebsocketTicket(ticket)
+  if (!claims) {
     send({ type: 'error', code: 'INVALID_WS_TICKET', message: '连接票据无效或已过期' })
     clientWebsocket.close()
     return
   }
+  if (
+    claims.conversationSessionId !== conversationSessionId
+    || claims.sttProvider !== provider
+  ) {
+    send({ type: 'error', code: 'RELAY_SESSION_MISMATCH', message: '会话节点或转写能力不匹配' })
+    clientWebsocket.close()
+    return
+  }
   const auth: RequestAuth = {
-    ...ticketAuth,
+    userId: claims.userId,
+    deviceSessionId: claims.deviceSessionId,
+    platform: 'web',
+    clientVersion: 'relay',
     email: '',
     isAdmin: false,
   }
-  if (databaseConfigured()) {
-    const quota = await quotaSummary(auth.userId)
-    if (quota.totalSeconds <= 0) {
-      send({ type: 'quota_exhausted', quota })
-      clientWebsocket.close()
-      return
-    }
-    const claimed = await claimActiveAiSession({
-      userId: auth.userId,
-      deviceSessionId: auth.deviceSessionId,
-      conversationSessionId,
-    })
-    if (!claimed) {
-      send({
-        type: 'error',
-        code: 'ACTIVE_SESSION_CONFLICT',
-        message: '该账号已在另一台设备进行 AI 会话',
-      })
-      clientWebsocket.close()
-      return
-    }
+  const relayAuth: RelayRequestAuth = { claims, requestAuth: auth }
+  if (!acquireRelayWebsocket(claims)) {
+    send(
+      relayRemainingSeconds(claims) <= 0
+        ? { type: 'quota_exhausted' }
+        : {
+            type: 'error',
+            code: 'STT_CONNECTION_LIMIT',
+            message: '该会话已有过多实时转写连接',
+          },
+    )
+    clientWebsocket.close()
+    return
   }
-
-  const activeKey = connectionKey(auth, conversationSessionId)
-  addActiveConnection(activeKey)
   let activeReleased = false
   const releaseLease = () => {
     if (activeReleased) return
     activeReleased = true
-    if (removeActiveConnection(activeKey) === 0 && databaseConfigured()) {
-      void releaseActiveAiSession({
-        userId: auth.userId,
-        deviceSessionId: auth.deviceSessionId,
-        conversationSessionId,
-      }).catch(() => {})
-    }
+    releaseRelayWebsocket(claims)
   }
 
   let config
@@ -260,17 +239,20 @@ async function handleConnection(
       return
     }
     const billing = pendingBilling.shift()
-    if (!billing || !databaseConfigured()) {
+    if (!billing) {
       send(thin)
       return
     }
     void (async () => {
       try {
-        const deduction = await deductCompletedTurn({
-          userId: auth.userId,
-          audioSeconds: billing.samples / SAMPLE_RATE,
+        const deduction = await billCompletedRelayTurn({
+          role,
+          auth: relayAuth,
           requestId: billing.requestId,
-          conversationSessionId,
+          audioSeconds: billing.samples / SAMPLE_RATE,
+          provider: 'dashscope',
+          model: config.model,
+          durationMs: Date.now() - billing.startedAt,
         })
         send(thin)
         recordTelemetryLater(auth, {
@@ -287,8 +269,7 @@ async function handleConnection(
           },
         })
         if (deduction.exhausted) {
-          await grantFinalAiAllowance(auth.userId, conversationSessionId)
-          send({ type: 'quota_exhausted', quota: await quotaSummary(auth.userId) })
+          send({ type: 'quota_exhausted' })
         }
       } catch (cause) {
         // Transcript is still delivered so the client can finish this turn and
@@ -370,7 +351,12 @@ async function handleConnection(
         return
       }
       currentTurnSamples += samples
-      if (databaseConfigured() && Date.now() - lastLeaseRefreshAt > 20_000) {
+      touchRelaySession(claims)
+      if (
+        role === 'primary'
+        && databaseConfigured()
+        && Date.now() - lastLeaseRefreshAt > 20_000
+      ) {
         lastLeaseRefreshAt = Date.now()
         void refreshActiveAiSession({
           userId: auth.userId,

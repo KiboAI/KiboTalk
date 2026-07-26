@@ -26,6 +26,8 @@ services:
     environment:
       PORT: 8787
       APP_ENV: production
+      SERVER_ROLE: primary
+      RELAY_NODE_ID: jp-primary
       DATABASE_URL: postgres://kibotalk:${POSTGRES_PASSWORD}@postgres:5432/kibotalk
     depends_on:
       postgres:

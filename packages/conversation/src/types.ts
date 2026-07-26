@@ -71,6 +71,8 @@ export type ConversationReviewStatus = 'pending' | 'ready' | 'failed'
  */
 export type ConversationSession = {
   id: string
+  /** Data-plane node frozen after the pre-session latency probe and handshake. */
+  relayNodeId: string
   status: ConversationSessionStatus
   startedAt: number
   endedAt?: number
@@ -87,7 +89,7 @@ export type ConversationSession = {
 
 export type ConversationSessionStart = Pick<
   ConversationSession,
-  'id' | 'startedAt' | 'snapshot' | 'title'
+  'id' | 'relayNodeId' | 'startedAt' | 'snapshot' | 'title'
 >
 
 export type ConversationReviewUpdate = {

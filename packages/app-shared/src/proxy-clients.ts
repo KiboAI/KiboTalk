@@ -9,7 +9,7 @@ import { encodeWav, padBuffer } from '@kibotalk/audio'
 import { parseSseStream } from './sse'
 import { extractCandidates } from './partial-json'
 import { sttUrl } from './stt-providers'
-import { authorizedFetch } from './api-runtime'
+import { relayFetch } from './api-runtime'
 
 /** Session snapshot of language prefs (frozen at session start). */
 export type SessionLanguageSnapshot = {
@@ -61,7 +61,7 @@ export class ProxySttClient implements SttClient {
     const provider = this.providerOverride ?? this.getProvider()
     const padded = padBuffer(pcm, this.prePadMs, this.postPadMs, this.sampleRate)
     const wav = encodeWav(padded, this.sampleRate)
-    const res = await authorizedFetch(
+    const res = await relayFetch(
       sttUrl(provider, this.language),
       { method: 'POST', body: wav, signal },
     )
@@ -113,7 +113,7 @@ export class ProxyLlmClient implements LlmClient {
       yield { type: 'done' }
       return
     }
-    const res = await authorizedFetch('/api/llm', {
+    const res = await relayFetch('/api/llm', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

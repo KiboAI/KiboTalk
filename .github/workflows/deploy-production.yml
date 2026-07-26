@@ -18,6 +18,92 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Validate deployment secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          CN_DEPLOY_SSH_KEY: ${{ secrets.CN_DEPLOY_SSH_KEY }}
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
+          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
+          CN_CLOUDFLARE_API_TOKEN: ${{ secrets.CN_CLOUDFLARE_API_TOKEN }}
+        run: |
+          for secret_name in \
+            DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
+            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN \
+            CN_CLOUDFLARE_API_TOKEN; do
+            if [ -z "${!secret_name}" ]; then
+              echo "::error::Missing Actions secret: ${secret_name}"
+              exit 1
+            fi
+          done
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          CN_DEPLOY_SSH_KEY: ${{ secrets.CN_DEPLOY_SSH_KEY }}
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_primary
+          printf '%s\n' "$CN_DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_cn
+          chmod 600 ~/.ssh/id_ed25519_primary ~/.ssh/id_ed25519_cn
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$CN_SERVER_HOST" >> ~/.ssh/known_hosts
+      - name: Configure relay DNS credential
+        env:
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
+          CN_CLOUDFLARE_API_TOKEN: ${{ secrets.CN_CLOUDFLARE_API_TOKEN }}
+        run: |
+          printf '%s\n' "$CN_CLOUDFLARE_API_TOKEN" \
+            | ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
+                set -eu
+                IFS= read -r token
+                test -n "$token"
+                cd /opt/kibotalk-relay
+                if grep -q "^CLOUDFLARE_API_TOKEN=" .env; then
+                  escaped=$(printf "%s" "$token" | sed "s/[|&]/\\\\&/g")
+                  sed -i "s|^CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=${escaped}|" .env
+                else
+                  printf "CLOUDFLARE_API_TOKEN=%s\n" "$token" >> .env
+                fi
+                chmod 600 .env
+              '
+      - name: Validate server environments
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
+            set -eu
+            test -s /opt/kibotalk/.env
+            for name in \
+              RELAY_PRIMARY_ORIGIN RELAY_CN_ORIGIN RELAY_CN_ENABLED \
+              RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
+              STT_ACTIVE STT_BATCH_ACTIVE LLM_ACTIVE; do
+              grep -q "^${name}=." /opt/kibotalk/.env
+            done
+          '
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
+            set -eu
+            test -s /opt/kibotalk-relay/.env
+            for name in \
+              RELAY_PRIMARY_ORIGIN RELAY_ACCEPT_NEW_SESSIONS RELAY_DOMAIN \
+              RELAY_HTTPS_PORT RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
+              ACME_EMAIL CLOUDFLARE_API_TOKEN \
+              STT_ACTIVE STT_BATCH_ACTIVE LLM_ACTIVE; do
+              grep -q "^${name}=." /opt/kibotalk-relay/.env
+            done
+            relay_port=$(sed -n "s/^RELAY_HTTPS_PORT=//p" /opt/kibotalk-relay/.env)
+            case "$relay_port" in
+              8443|9443) ;;
+              *) echo "RELAY_HTTPS_PORT must be 8443 or 9443" >&2; exit 1 ;;
+            esac
+          '
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
@@ -34,34 +120,53 @@ jobs:
         run: |
           docker build --platform linux/amd64 --tag "kibotalk-api:${GITHUB_SHA}" .
           docker build --platform linux/amd64 --tag kibotalk-caddy:2.10 --file infra/production/Caddy.Dockerfile .
+          docker build --platform linux/amd64 --tag kibotalk-relay-caddy:2.10 --file infra/relay/Caddy.Dockerfile .
           docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
+          POSTGRES_PASSWORD=validation \
+            docker compose -f infra/production/compose.yaml \
+              config --quiet --no-env-resolution --no-path-resolution
+          RELAY_HTTPS_PORT=8443 \
+            docker compose -f infra/relay/compose.yaml \
+              config --quiet --no-env-resolution --no-path-resolution
+          docker run --rm \
+            --volume "$PWD/infra/production/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            kibotalk-caddy:2.10 \
+            caddy validate --config /etc/caddy/Caddyfile
+          docker run --rm \
+            --env ACME_EMAIL=validation@kibotalk.app \
+            --env CLOUDFLARE_API_TOKEN=validation \
+            --env RELAY_DOMAIN=relay-validation.kibotalk.app \
+            --env RELAY_HTTPS_PORT=8443 \
+            --volume "$PWD/infra/relay/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            kibotalk-relay-caddy:2.10 \
+            caddy validate --config /etc/caddy/Caddyfile
           docker save \
             "kibotalk-api:${GITHUB_SHA}" \
             kibotalk-caddy:2.10 \
+            kibotalk-relay-caddy:2.10 \
             kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
       - name: Stage on-device model mirror
         run: |
           pnpm --filter @kibotalk/desktop download-models
           tar -C apps/desktop/resources/bundle-models -czf /tmp/kibotalk-models.tar.gz .
-      - name: Configure SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
       - name: Upload release payload
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
-          scp /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
-          scp /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
-          scp infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
+          scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
+          scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
+          scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
+      - name: Upload relay payload
+        env:
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" "mkdir -p /opt/kibotalk-relay/incoming"
+          scp -i ~/.ssh/id_ed25519_cn /tmp/kibotalk-images.tar.gz "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
+          scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml infra/relay/Caddyfile "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
       - name: Activate release
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -69,7 +174,7 @@ jobs:
         run: |
           # GITHUB_SHA must expand on the runner before this script reaches the server.
           # shellcheck disable=SC2029
-          ssh "${SERVER_USER}@${SERVER_HOST}" "
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "
             set -eu
             gzip -dc /opt/kibotalk/incoming/kibotalk-images.tar.gz | docker load
             rm -rf /opt/kibotalk/models.next
@@ -89,7 +194,27 @@ jobs:
             fi
             docker compose --env-file .env -f compose.yaml up -d --pull never
           "
+      - name: Activate relay release
+        env:
+          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
+          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
+        run: |
+          # GITHUB_SHA must expand on the runner before this script reaches the server.
+          # shellcheck disable=SC2029
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" "
+            set -eu
+            gzip -dc /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz | docker load
+            cd /opt/kibotalk-relay
+            if grep -q '^KIBOTALK_API_IMAGE=' .env; then
+              sed -i 's|^KIBOTALK_API_IMAGE=.*|KIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}|' .env
+            else
+              printf '\nKIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}\n' >> .env
+            fi
+            docker compose --env-file .env -f compose.yaml up -d --pull never
+          "
       - name: Verify HTTPS
+        env:
+          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
         run: |
           for _attempt in $(seq 1 24); do
             if curl --fail --silent --show-error https://app.kibotalk.app/health \
@@ -102,7 +227,11 @@ jobs:
               && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
               && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/" \
               && curl --fail --silent --show-error https://advx.kibotalk.app/ \
-                | grep --quiet '正在清理旧版网页数据'; then
+                | grep --quiet '正在清理旧版网页数据' \
+              && curl --fail --silent --show-error "${CN_RELAY_ORIGIN}/health" \
+                | grep --quiet '"ok":true' \
+              && curl --fail --silent --show-error "${CN_RELAY_ORIGIN}/api/latency" \
+                | grep --quiet '"nodeId":"cn-relay"'; then
               exit 0
             fi
             sleep 5

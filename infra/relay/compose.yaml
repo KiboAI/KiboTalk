@@ -1,0 +1,45 @@
+name: kibotalk-relay
+
+services:
+  api:
+    image: ${KIBOTALK_API_IMAGE:-kibotalk-api:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 8787
+      APP_ENV: production
+      SERVER_ROLE: relay
+      RELAY_NODE_ID: cn-relay
+      RELAY_OUTBOX_PATH: /app/data/usage-outbox.json
+    expose:
+      - "8787"
+    volumes:
+      - relay_data:/app/data
+    networks:
+      - internal
+
+  caddy:
+    image: kibotalk-relay-caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - .env
+    ports:
+      - "${RELAY_HTTPS_PORT:-8443}:${RELAY_HTTPS_PORT:-8443}"
+      - "${RELAY_HTTPS_PORT:-8443}:${RELAY_HTTPS_PORT:-8443}/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  relay_data:
+  caddy_data:
+  caddy_config:

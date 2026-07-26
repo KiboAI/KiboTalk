@@ -47,8 +47,19 @@ import {
 } from './sync'
 import { recordTelemetry, recordTelemetryLater } from './telemetry'
 import { redeemVoucher } from './vouchers'
+import { billCompletedRelayTurn } from './relay-billing'
+import { requireRelayRequestAuth } from './relay-request-auth'
+import { registerRelayRoutes } from './relay-routes'
+import {
+  acquireRelayLlmSlot,
+  authorizeRelayLlm,
+  releaseRelayLlm,
+} from './relay-session-state'
+import { providerHealthy } from './provider-health'
+import { serverRole } from './server-role'
 
 export const app = new Hono()
+const role = serverRole()
 
 const APP_LANGUAGES = new Set<AppLanguage>(['ja', 'en', 'zh'])
 const LEARNER_LEVELS = new Set<LearnerLevel>(['beginner', 'intermediate', 'advanced'])
@@ -100,7 +111,38 @@ app.use(
   }),
 )
 
+const RELAY_DATA_PATHS = new Set([
+  '/health',
+  '/api/latency',
+  '/api/relay/handshake',
+  '/api/relay/ws-ticket',
+  '/api/stt',
+  '/api/llm',
+  '/stt',
+  '/llm',
+])
+
+app.use('*', async (context, next) => {
+  if (
+    role === 'relay'
+    && context.req.method !== 'OPTIONS'
+    && !RELAY_DATA_PATHS.has(new URL(context.req.url).pathname)
+  ) return context.json({ error: 'NOT_FOUND' }, 404)
+  await next()
+})
+
+registerRelayRoutes(app, role)
+
 app.get('/health', async (context) => {
+  if (role === 'relay') {
+    return context.json({
+      ok: providerHealthy(),
+      role,
+      nodeId: process.env.RELAY_NODE_ID ?? 'cn-relay',
+      providers: providerHealthy() ? 'ok' : 'error',
+      version: process.env.APP_VERSION ?? 'development',
+    }, providerHealthy() ? 200 : 503)
+  }
   if (!databaseConfigured()) {
     return context.json({
       ok: process.env.APP_ENV !== 'production',
@@ -184,22 +226,19 @@ app.get('/api/stt/providers', async (context) => {
   if (auth instanceof Response) return auth
   const providers = listSttProviders(process.env)
     .filter((provider) => provider.configured)
-    .filter((provider) => process.env.APP_ENV !== 'production' || provider.mode === 'realtime')
   return context.json({ providers })
 })
 
-// Batch STT remains available to the local playground. Production product
-// traffic is realtime-only by product decision.
 app.post('/api/stt', async (context) => {
-  const auth = await requireRequestAuth(context)
-  if (auth instanceof Response) return auth
-  if (process.env.APP_ENV === 'production') {
-    return context.json({ error: 'REALTIME_STT_REQUIRED' }, 404)
-  }
+  const relayAuth = requireRelayRequestAuth(context, 'stt')
+  if (relayAuth instanceof Response) return relayAuth
   const startedAt = Date.now()
   const requestId = randomUUID()
   const wav = await context.req.arrayBuffer()
-  const providerOverride = context.req.query('provider') || undefined
+  const providerOverride =
+    process.env.APP_ENV === 'production'
+      ? process.env.STT_BATCH_ACTIVE
+      : context.req.query('provider') || undefined
   const language = context.req.query('language') || undefined
   let sttClient
   try {
@@ -212,16 +251,42 @@ app.post('/api/stt', async (context) => {
       signal: context.req.raw.signal,
       language,
     })
-    recordTelemetryLater(auth, {
+    const config = sttConfigFromEnv(process.env, providerOverride)
+    if (
+      process.env.APP_ENV === 'production'
+      && config.provider !== relayAuth.claims.sttBatchProvider
+    ) throw new Error('RELAY_CAPABILITY_MISMATCH')
+    const durationMs = Date.now() - startedAt
+    const deduction = await billCompletedRelayTurn({
+      role,
+      auth: relayAuth,
+      requestId,
+      audioSeconds: Math.max(1, (wav.byteLength - 44) / (16_000 * 2)),
+      provider: config.provider,
+      model: config.model,
+      durationMs,
+    })
+    recordTelemetryLater(relayAuth.requestAuth, {
       requestId,
       eventType: 'stt_batch',
-      provider: providerOverride ?? process.env.STT_ACTIVE,
+      provider: config.provider,
+      model: config.model,
       status: 'ok',
-      durationMs: Date.now() - startedAt,
+      durationMs,
+      billedAudioSeconds: deduction.billedSeconds,
+      metadata: {
+        nodeId: relayAuth.claims.nodeId,
+        deductedSeconds: deduction.deductedSeconds,
+        overdrawSeconds: deduction.overdrawSeconds,
+      },
     })
-    return context.json({ text })
+    return context.json({
+      text,
+      quotaExhausted: deduction.exhausted,
+      remainingSeconds: deduction.remainingSeconds,
+    })
   } catch (cause) {
-    recordTelemetryLater(auth, {
+    recordTelemetryLater(relayAuth.requestAuth, {
       requestId,
       eventType: 'stt_batch',
       provider: providerOverride ?? process.env.STT_ACTIVE,
@@ -234,8 +299,9 @@ app.post('/api/stt', async (context) => {
 })
 
 app.post('/api/llm', async (context) => {
-  const auth = await requireRequestAuth(context)
-  if (auth instanceof Response) return auth
+  const relayAuth = requireRelayRequestAuth(context, 'llm')
+  if (relayAuth instanceof Response) return relayAuth
+  const auth = relayAuth.requestAuth
   const body = (await context.req.json().catch(() => null)) as {
     context?: ConversationTurn[]
     level?: string
@@ -246,24 +312,48 @@ app.post('/api/llm', async (context) => {
   const conversationSessionId =
     typeof body?.sessionId === 'string' && body.sessionId.length <= 200
       ? body.sessionId
-      : undefined
+      : relayAuth.claims.conversationSessionId
+  if (conversationSessionId !== relayAuth.claims.conversationSessionId) {
+    return context.json({ error: 'RELAY_SESSION_MISMATCH' }, 409)
+  }
   let aiAuthorization: AiUseAuthorization
-  try {
-    aiAuthorization = await authorizeAiUse({
-      userId: auth.userId,
-      conversationSessionId,
-      kind: 'reply',
-    })
-  } catch {
-    return context.json({ error: 'QUOTA_UNAVAILABLE' }, 503)
+  let relayLlmAuthorization:
+    | ReturnType<typeof authorizeRelayLlm>
+    | undefined
+  if (role === 'relay') {
+    relayLlmAuthorization = authorizeRelayLlm(relayAuth.claims)
+    aiAuthorization = {
+      allowed: relayLlmAuthorization.allowed,
+      allowanceConsumed: relayLlmAuthorization.finalAllowanceConsumed,
+    }
+  } else {
+    if (!acquireRelayLlmSlot(relayAuth.claims)) {
+      return context.json({ error: 'LLM_IN_FLIGHT' }, 409)
+    }
+    try {
+      aiAuthorization = await authorizeAiUse({
+        userId: auth.userId,
+        conversationSessionId,
+        kind: 'reply',
+      })
+    } catch {
+      releaseRelayLlm(relayAuth.claims)
+      return context.json({ error: 'QUOTA_UNAVAILABLE' }, 503)
+    }
   }
   if (!aiAuthorization.allowed) {
-    return context.json({ error: 'QUOTA_EXHAUSTED' }, 402)
+    if (role === 'primary') releaseRelayLlm(relayAuth.claims)
+    const error = relayLlmAuthorization?.error ?? 'QUOTA_EXHAUSTED'
+    return context.json(
+      { error },
+      error === 'LLM_IN_FLIGHT' ? 409 : 402,
+    )
   }
   const requestId = randomUUID()
   const startedAt = Date.now()
   return streamSSE(context, async (stream) => {
     let usage: LlmUsage | undefined
+    let refundLocalAllowance = false
     try {
       const signal = context.req.raw.signal
       const conversationLang = parseAppLanguage(body?.conversationLang, 'ja')
@@ -278,6 +368,13 @@ app.post('/api/llm', async (context) => {
       const prompt = messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join('\n\n')
       await stream.writeSSE({ event: 'prompt', data: prompt })
       const config = llmConfigFromEnv(process.env)
+      if (
+        process.env.APP_ENV === 'production'
+        && (
+          config.provider !== relayAuth.claims.llmProvider
+          || config.model !== relayAuth.claims.llmModel
+        )
+      ) throw new Error('RELAY_CAPABILITY_MISMATCH')
       const llmClient = createLlmClient(config)
       const tokenStream = llmClient.streamChat({
         messages,
@@ -300,12 +397,18 @@ app.post('/api/llm', async (context) => {
         outputTokens: usage?.outputTokens,
       })
     } catch (cause) {
+      refundLocalAllowance =
+        role === 'relay'
+        && aiAuthorization.allowanceConsumed
+        && !context.req.raw.signal.aborted
       if (aiAuthorization.allowanceConsumed && !context.req.raw.signal.aborted) {
-        await refundAiAllowance({
-          userId: auth.userId,
-          conversationSessionId,
-          kind: 'reply',
-        }).catch(() => {})
+        if (role === 'primary') {
+          await refundAiAllowance({
+            userId: auth.userId,
+            conversationSessionId,
+            kind: 'reply',
+          }).catch(() => {})
+        }
       }
       if (!context.req.raw.signal.aborted) {
         await stream.writeSSE({
@@ -322,6 +425,11 @@ app.post('/api/llm', async (context) => {
         outputTokens: usage?.outputTokens,
         errorCode: cause instanceof Error ? cause.name : 'UPSTREAM_ERROR',
       })
+    } finally {
+      releaseRelayLlm(
+        relayAuth.claims,
+        role === 'relay' && refundLocalAllowance,
+      )
     }
   })
 })

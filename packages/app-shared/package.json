@@ -24,6 +24,7 @@
     "@kibotalk/audio": "workspace:*",
     "@kibotalk/conversation": "workspace:*",
     "@kibotalk/pipeline": "workspace:*",
+    "@kibotalk/shared": "workspace:*",
     "@kibotalk/speaker": "workspace:*",
     "react": "^19.2.8"
   }

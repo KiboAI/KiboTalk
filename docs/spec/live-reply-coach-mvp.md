@@ -10,6 +10,10 @@
 > [ADR 0005](../adr/0005-competition-production-platform.md) 覆盖。正式入口为
 > `https://app.kibotalk.app`，账号、强制加密同步、额度和发布要求以 ADR 0005
 > 及本文新增 F12–F15 为准。
+>
+> **双节点生产补充（2026-07-26）**：日本主服务器继续作为唯一控制面，国内
+> `8443` API 中转作为第二数据面节点；会话开始测速并冻结节点。见
+> [ADR 0006](../adr/0006-session-pinned-api-relay.md)。
 
 ## 摘要
 
@@ -86,7 +90,7 @@
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
 | F12 | 账号与设备 | 开放邮箱 OTP 注册；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
 | F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 本地先持久化并后台补同步；同步故障不阻塞新会话；支持单会话和账户删除 |
-| F14 | 额度与兑换 | 免费 10 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
+| F14 | 额度与兑换 | 免费 30 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
 | F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `app.kibotalk.app` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
 
 #### P1 — 演示加分
@@ -574,11 +578,11 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 |------|------|------|------|
 | `POST /api/llm` | **SSE 流式** | 接收对话上下文，转发 DeepSeek，流式回 3 条候选或 `[]` | 必须登录；key 只在服务端 env |
 | `POST /api/session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 必须登录；客户端负责重试 |
-| `WS /api/stt-realtime` | **WebSocket** | 单次票据鉴权；speech PCM / commit；DashScope 中继；计时扣额度 | 生产唯一 STT；不保存音频 |
+| `WS /api/stt-realtime` | **WebSocket** | 中转短令牌换单次票据；speech PCM / commit；DashScope 中继；计时扣额度 | 产品默认 STT；不保存音频 |
 | `/api/auth/*` | REST | 邮箱 OTP、当前账户、设备撤销、WS 单次票据 | Resend + 安全 cookie / bearer |
 | `/api/sync/*` | REST | 加密会话、删除 tombstone 与偏好同步 | AES-256-GCM；不含声纹 / 音频 |
 | `/api/admin/*` | REST | 用户、账本、赠送、兑换码、运行面板 | 管理邮箱白名单 |
-| `POST /api/stt` | 普通 POST | 开发 / playground batch STT | 生产返回 404 |
+| `POST /api/stt` | 普通 POST | provider-agnostic batch STT | 生产由 `STT_BATCH_ACTIVE` 冻结 |
 
 **流式协议选型**：
 

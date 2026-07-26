@@ -3,10 +3,11 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { loadEnvFile } from 'node:process'
 import type { Server } from 'node:http'
-import { app } from './app'
 import { closeDatabase, databaseConfigured, getDatabase } from './db'
 import { migrateDatabase } from './migrations'
-import { attachSttRealtimeUpgrade } from './stt-realtime'
+import { startRelayRuntime } from './relay-runtime'
+import { initializeRelayUsageOutbox } from './relay-usage-outbox'
+import { serverRole } from './server-role'
 
 // Load repo-root .env (apps/api/src → ../../../ = repo root) so `pnpm dev:api`
 // picks up STT_* / LLM_* without manually exporting shell vars. Tests import
@@ -17,22 +18,37 @@ if (process.env.APP_ENV !== 'production' && existsSync(developmentEnvPath)) {
 }
 
 const port = Number(process.env.PORT ?? 8787)
+const role = serverRole()
 
 if (process.env.APP_ENV === 'production') {
-  const required = [
-    'DATABASE_URL',
-    'AUTH_SECRET',
-    'SYNC_ENCRYPTION_KEY',
-    'RESEND_API_KEY',
-    'RESEND_FROM_EMAIL',
-    'RESEND_FROM_NAME',
-    'ADMIN_EMAILS',
+  const commonRequired = [
+    'RELAY_NODE_ID',
+    'RELAY_PRIMARY_ORIGIN',
+    'RELAY_TOKEN_PUBLIC_KEY',
     'STT_ACTIVE',
     'STT_DASHSCOPE_API_KEY',
     'STT_DASHSCOPE_WS_URL',
     'STT_DASHSCOPE_REALTIME_MODEL',
+    'STT_BATCH_ACTIVE',
     'LLM_ACTIVE',
   ] as const
+  const roleRequired = role === 'primary'
+    ? [
+        'DATABASE_URL',
+        'AUTH_SECRET',
+        'SYNC_ENCRYPTION_KEY',
+        'RESEND_API_KEY',
+        'RESEND_FROM_EMAIL',
+        'RESEND_FROM_NAME',
+        'ADMIN_EMAILS',
+        'RELAY_TOKEN_PRIVATE_KEY',
+        'RELAY_NODE_SECRET',
+      ] as const
+    : [
+        'RELAY_NODE_SECRET',
+        'RELAY_OUTBOX_PATH',
+      ] as const
+  const required = [...commonRequired, ...roleRequired]
   const missing = required.filter((name) => !process.env[name])
   if (missing.length > 0) {
     throw new Error(`Missing production environment variables: ${missing.join(', ')}`)
@@ -45,6 +61,14 @@ if (process.env.APP_ENV === 'production') {
   }
   if (process.env.STT_DASHSCOPE_REALTIME_MODEL !== 'qwen3-asr-flash-realtime') {
     throw new Error('Production STT model must be qwen3-asr-flash-realtime')
+  }
+  const batchProvider = process.env.STT_BATCH_ACTIVE!
+  const batchGroup = `STT_${batchProvider.toUpperCase()}_`
+  const missingBatch = ['BASE_URL', 'API_KEY', 'MODEL']
+    .map((field) => `${batchGroup}${field}`)
+    .filter((name) => !process.env[name])
+  if (missingBatch.length > 0) {
+    throw new Error(`Missing production environment variables: ${missingBatch.join(', ')}`)
   }
   const llmGroup = `LLM_${process.env.LLM_ACTIVE!.toUpperCase()}_`
   const llmRequired = [`${llmGroup}BASE_URL`, `${llmGroup}API_KEY`, `${llmGroup}MODEL`]
@@ -70,7 +94,8 @@ process.on('unhandledRejection', (reason) => {
 })
 
 async function main(): Promise<void> {
-  if (databaseConfigured()) {
+  if (role === 'relay') await initializeRelayUsageOutbox()
+  if (role === 'primary' && databaseConfigured()) {
     await migrateDatabase()
     const sql = getDatabase()
     const pruneExpiredRecords = async () => {
@@ -79,6 +104,11 @@ async function main(): Promise<void> {
       await sql`DELETE FROM websocket_tickets WHERE expires_at < now() - interval '1 hour'`
       await sql`DELETE FROM active_ai_sessions WHERE expires_at <= now()`
       await sql`DELETE FROM final_ai_allowances WHERE expires_at <= now()`
+      await sql`DELETE FROM relay_sessions
+        WHERE ended_at < now() - interval '24 hours'
+          OR expires_at < now() - interval '7 days'`
+      await sql`DELETE FROM relay_node_status
+        WHERE last_seen_at < now() - interval '7 days'`
     }
     await pruneExpiredRecords()
     setInterval(() => {
@@ -86,6 +116,11 @@ async function main(): Promise<void> {
     }, 24 * 60 * 60 * 1000).unref()
   }
 
+  const [{ app }, { attachSttRealtimeUpgrade }] = await Promise.all([
+    import('./app'),
+    import('./stt-realtime'),
+  ])
+  const stopRelayRuntime = startRelayRuntime(role)
   const server = serve({ fetch: app.fetch, port }, (info) => {
     // eslint-disable-next-line no-console
     console.log(`api listening on http://localhost:${info.port}`)
@@ -93,6 +128,7 @@ async function main(): Promise<void> {
   attachSttRealtimeUpgrade(server)
 
   async function shutdown(): Promise<void> {
+    stopRelayRuntime()
     server.close()
     await closeDatabase()
   }

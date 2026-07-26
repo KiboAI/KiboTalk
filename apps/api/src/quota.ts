@@ -1,6 +1,6 @@
 import { getDatabase } from './db'
 
-export const FREE_MONTHLY_SECONDS = 10 * 60
+export const FREE_MONTHLY_SECONDS = 30 * 60
 export const PRO_PLAN_SECONDS = 600 * 60
 export const PRO_PLAN_DAYS = 30
 export const MAX_TURN_OVERDRAW_SECONDS = 30
@@ -42,7 +42,13 @@ export async function ensureMonthlyFreeBucket(userId: string): Promise<void> {
       ${userId}, 'free', ${period.source}, ${FREE_MONTHLY_SECONDS},
       ${FREE_MONTHLY_SECONDS}, ${period.startsAt}, ${period.expiresAt}
     )
-    ON CONFLICT (user_id, source) DO NOTHING
+    ON CONFLICT (user_id, source) DO UPDATE SET
+      remaining_seconds =
+        credit_buckets.remaining_seconds
+        + (${FREE_MONTHLY_SECONDS} - credit_buckets.granted_seconds),
+      granted_seconds = ${FREE_MONTHLY_SECONDS}
+    WHERE credit_buckets.kind = 'free'
+      AND credit_buckets.granted_seconds < ${FREE_MONTHLY_SECONDS}
   `
 }
 

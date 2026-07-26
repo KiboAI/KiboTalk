@@ -25,6 +25,12 @@ export type { SseMessage } from './sse'
 export {
   apiUrl,
   authorizedFetch,
+  currentRelayNode,
+  fetchRelayNodes,
+  openRelaySession,
+  relayFetch,
+  releaseRelaySession,
+  releaseRelaySessionById,
   clearAccountCache,
   clearAccessToken,
   isDesktopRuntime,
@@ -35,7 +41,13 @@ export {
   saveAccountCache,
   saveAccessToken,
   websocketApiUrl,
+  type RelaySessionSelection,
 } from './api-runtime'
+export {
+  probeRelayNodes,
+  selectRelayNode,
+  type RelayProbeResult,
+} from './relay-routing'
 export {
   deleteCloudAccount,
   fetchAccountDevices,
@@ -74,6 +86,7 @@ export { finalizedTurnFromRealtimeSegments } from './session/realtime-turn'
 export type { TranscribedAudioSegment } from './session/realtime-turn'
 export { ProxySttClient, ProxyLlmClient } from './proxy-clients'
 export type { SessionLanguageSnapshot } from './proxy-clients'
+export type { RelayNode } from '@kibotalk/shared'
 
 export {
   defaultAppConfig,

@@ -1,3 +1,14 @@
+import type {
+  RelayNode,
+  RelayNodeList,
+  RelaySessionGrant,
+} from '@kibotalk/shared'
+import {
+  probeRelayNodes,
+  selectRelayNode,
+  type RelayProbeResult,
+} from './relay-routing'
+
 const PRODUCTION_API_ORIGIN = 'https://app.kibotalk.app'
 
 type DesktopBridge = {
@@ -14,6 +25,19 @@ type DesktopBridge = {
     getVersion?: () => Promise<string>
   }
 }
+
+type ActiveRelaySession = {
+  grant: RelaySessionGrant
+  renewTimer: ReturnType<typeof setTimeout> | null
+}
+
+export type RelaySessionSelection = {
+  node: RelayNode
+  latencyMs: number | null
+  results: RelayProbeResult[]
+}
+
+let activeRelaySession: ActiveRelaySession | null = null
 
 function desktopBridge(): DesktopBridge | undefined {
   return (globalThis as typeof globalThis & { kibotalk?: DesktopBridge }).kibotalk
@@ -49,6 +73,254 @@ export async function authorizedFetch(
     credentials: 'include',
     headers,
   })
+}
+
+export async function fetchRelayNodes(): Promise<RelayNodeList> {
+  const response = await authorizedFetch('/api/relay/nodes')
+  const body = (await response.json().catch(() => ({}))) as Partial<RelayNodeList> & {
+    error?: string
+  }
+  if (
+    !response.ok
+    || !Array.isArray(body.nodes)
+    || typeof body.primaryNodeId !== 'string'
+    || !body.probe
+  ) throw new Error(body.error ?? `Relay nodes HTTP ${response.status}`)
+  return body as RelayNodeList
+}
+
+async function requestRelayGrant(
+  conversationSessionId: string,
+  nodeId: string,
+): Promise<RelaySessionGrant> {
+  const response = await authorizedFetch('/api/relay/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ conversationSessionId, nodeId }),
+  })
+  const body = (await response.json().catch(() => ({}))) as Partial<RelaySessionGrant> & {
+    error?: string
+  }
+  if (!response.ok || !body.token || !body.node || !body.claims) {
+    throw new Error(body.error ?? `Relay session HTTP ${response.status}`)
+  }
+  return body as RelaySessionGrant
+}
+
+async function relayOriginFetch(
+  grant: RelaySessionGrant,
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(init.headers)
+  headers.set('authorization', `Bearer ${grant.token}`)
+  headers.set('x-kibotalk-client-version', await runtimeClientVersion())
+  return fetch(new URL(path, grant.node.origin), {
+    ...init,
+    credentials: 'omit',
+    headers,
+  })
+}
+
+async function handshakeRelay(grant: RelaySessionGrant): Promise<void> {
+  const response = await relayOriginFetch(grant, '/api/relay/handshake', {
+    method: 'POST',
+  })
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string
+    nodeId?: string
+  }
+  if (!response.ok || body.nodeId !== grant.node.id) {
+    throw new Error(body.error ?? `Relay handshake HTTP ${response.status}`)
+  }
+}
+
+async function confirmRelaySession(grant: RelaySessionGrant): Promise<void> {
+  const response = await authorizedFetch(
+    `/api/relay/sessions/${encodeURIComponent(grant.claims.conversationSessionId)}/confirm`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: grant.node.id }),
+    },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? `Relay confirm HTTP ${response.status}`)
+  }
+}
+
+function clearRelayRenewTimer(): void {
+  if (activeRelaySession?.renewTimer) clearTimeout(activeRelaySession.renewTimer)
+  if (activeRelaySession) activeRelaySession.renewTimer = null
+}
+
+function scheduleRelayRenewal(): void {
+  clearRelayRenewTimer()
+  const current = activeRelaySession
+  if (!current) return
+  const renewAt =
+    current.grant.claims.issuedAt * 1_000
+    + current.grant.renewAfterSeconds * 1_000
+  const delay = Math.max(1_000, renewAt - Date.now())
+  current.renewTimer = setTimeout(() => {
+    void renewRelaySession().catch(() => {
+      const active = activeRelaySession
+      if (!active) return
+      const expiresAt = active.grant.claims.expiresAt * 1_000
+      if (Date.now() >= expiresAt) return
+      active.renewTimer = setTimeout(() => {
+        void renewRelaySession().catch(() => {})
+      }, Math.min(30_000, Math.max(1_000, expiresAt - Date.now())))
+    })
+  }, delay)
+}
+
+async function renewRelaySession(): Promise<void> {
+  const current = activeRelaySession
+  if (!current) return
+  const grant = await requestRelayGrant(
+    current.grant.claims.conversationSessionId,
+    current.grant.node.id,
+  )
+  if (grant.node.id !== current.grant.node.id) {
+    throw new Error('RELAY_NODE_CHANGED_DURING_SESSION')
+  }
+  activeRelaySession = { grant, renewTimer: null }
+  scheduleRelayRenewal()
+}
+
+async function reportRelaySelection(
+  conversationSessionId: string,
+  selectedNodeId: string,
+  results: RelayProbeResult[],
+): Promise<void> {
+  await authorizedFetch('/api/relay/selection-telemetry', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      conversationSessionId,
+      selectedNodeId,
+      results: results.map((result) => ({
+        nodeId: result.node.id,
+        latencyMs: result.latencyMs,
+        successfulAttempts: result.successfulAttempts,
+      })),
+    }),
+  }).catch(() => null)
+}
+
+export async function openRelaySession(options: {
+  conversationSessionId: string
+  fixedNodeId?: string
+  preferredNodeId?: string
+}): Promise<RelaySessionSelection> {
+  const nodeList = await fetchRelayNodes()
+  const results = options.fixedNodeId
+    ? nodeList.nodes.map((node) => ({
+        node,
+        latencyMs: null,
+        successfulAttempts: 0,
+      }))
+    : await probeRelayNodes(nodeList)
+  const automaticallySelected = selectRelayNode(
+    results,
+    nodeList.primaryNodeId,
+    nodeList.probe.primaryTieThresholdMs,
+  )
+  const preferred =
+    options.fixedNodeId ?? options.preferredNodeId ?? automaticallySelected.node.id
+  const preferredResult = results.find(({ node }) => node.id === preferred)
+  if (!preferredResult) throw new Error('FROZEN_RELAY_NODE_UNAVAILABLE')
+
+  const candidates = options.fixedNodeId
+    ? [preferredResult]
+    : [
+        preferredResult,
+        ...results
+          .filter(({ node, latencyMs }) => node.id !== preferred && latencyMs !== null)
+          .sort((left, right) => left.latencyMs! - right.latencyMs!),
+      ]
+  let lastError: unknown
+  for (const candidate of candidates) {
+    try {
+      const grant = await requestRelayGrant(
+        options.conversationSessionId,
+        candidate.node.id,
+      )
+      await handshakeRelay(grant)
+      await confirmRelaySession(grant)
+      clearRelayRenewTimer()
+      activeRelaySession = { grant, renewTimer: null }
+      scheduleRelayRenewal()
+      void reportRelaySelection(
+        options.conversationSessionId,
+        grant.node.id,
+        results,
+      )
+      return {
+        node: grant.node,
+        latencyMs: candidate.latencyMs,
+        results,
+      }
+    } catch (cause) {
+      lastError = cause
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('RELAY_SESSION_UNAVAILABLE')
+}
+
+export async function relayFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const current = activeRelaySession
+  if (!current) {
+    if (typeof location === 'undefined' || location.hostname === 'localhost') {
+      return authorizedFetch(path, init)
+    }
+    throw new Error('RELAY_SESSION_NOT_STARTED')
+  }
+  if (Date.now() >= current.grant.claims.expiresAt * 1_000) {
+    await renewRelaySession()
+  }
+  return relayOriginFetch(activeRelaySession!.grant, path, init)
+}
+
+export async function releaseRelaySession(final: boolean): Promise<void> {
+  const current = activeRelaySession
+  clearRelayRenewTimer()
+  activeRelaySession = null
+  if (!current) return
+  await releaseRelaySessionById(
+    current.grant.claims.conversationSessionId,
+    final,
+  )
+}
+
+export async function releaseRelaySessionById(
+  conversationSessionId: string,
+  final: boolean,
+): Promise<void> {
+  await authorizedFetch(
+    `/api/relay/sessions/${encodeURIComponent(conversationSessionId)}/release`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ final }),
+    },
+  ).catch(() => null)
+}
+
+export function currentRelayNode(): RelayNode | null {
+  return activeRelaySession?.grant.node ?? null
+}
+
+export function resetRelaySessionForTests(): void {
+  clearRelayRenewTimer()
+  activeRelaySession = null
 }
 
 export async function saveAccessToken(token: string): Promise<void> {
@@ -120,18 +392,21 @@ export async function websocketApiUrl(
   path: string,
   params: URLSearchParams,
 ): Promise<string> {
-  const response = await authorizedFetch('/api/auth/ws-ticket', { method: 'POST' })
+  const response = await relayFetch('/api/relay/ws-ticket', { method: 'POST' })
   const body = (await response.json().catch(() => ({}))) as { ticket?: string; error?: string }
   if (!response.ok || !body.ticket) {
     throw new Error(body.error ?? `WS ticket HTTP ${response.status}`)
   }
   params.set('ticket', body.ticket)
   const base =
-    typeof location !== 'undefined'
-    && (location.protocol === 'http:' || location.protocol === 'https:')
-      ? location.origin
-      : PRODUCTION_API_ORIGIN
-  const httpUrl = new URL(apiUrl(path), base)
+    activeRelaySession?.grant.node.origin
+    ?? (
+      typeof location !== 'undefined'
+      && (location.protocol === 'http:' || location.protocol === 'https:')
+        ? location.origin
+        : PRODUCTION_API_ORIGIN
+    )
+  const httpUrl = new URL(path, base)
   httpUrl.search = params.toString()
   httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
   return httpUrl.toString()

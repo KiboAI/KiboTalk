@@ -43,6 +43,7 @@ class SyncAwareMemoryStorage
 function session(title: string): ConversationSession {
   return {
     id: 'session-1',
+    relayNodeId: 'jp-primary',
     status: 'stopped',
     startedAt: 1,
     endedAt: 2,
@@ -145,6 +146,7 @@ describe('CloudConversationStorage recovery', () => {
 
     await expect(cloud.startSession({
       id: 'new-session',
+      relayNodeId: 'cn-relay',
       startedAt: 10,
       snapshot: session('snapshot').snapshot,
       title: 'local first',

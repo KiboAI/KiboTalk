@@ -1,6 +1,6 @@
 import { getDatabase } from './db'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 export async function migrateDatabase(): Promise<void> {
   const sql = getDatabase()
@@ -189,6 +189,31 @@ export async function migrateDatabase(): Promise<void> {
       review_remaining integer NOT NULL DEFAULT 1 CHECK (review_remaining BETWEEN 0 AND 1),
       expires_at timestamptz NOT NULL,
       PRIMARY KEY (user_id, conversation_session_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS relay_sessions (
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_session_id uuid NOT NULL REFERENCES device_sessions(id) ON DELETE CASCADE,
+      conversation_session_id text NOT NULL,
+      node_id text NOT NULL,
+      confirmed_at timestamptz,
+      expires_at timestamptz NOT NULL,
+      ended_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, conversation_session_id)
+    );
+    CREATE INDEX IF NOT EXISTS relay_sessions_expiry_idx
+      ON relay_sessions (expires_at)
+      WHERE ended_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS relay_node_status (
+      node_id text PRIMARY KEY,
+      accepting_new_sessions boolean NOT NULL,
+      provider_healthy boolean NOT NULL,
+      version text,
+      last_seen_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
     );
 
     INSERT INTO schema_migrations (version)

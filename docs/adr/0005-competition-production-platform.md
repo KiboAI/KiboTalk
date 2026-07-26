@@ -4,6 +4,9 @@
 - **日期**：2026-07-25
 - **覆盖**：ADR 0001 中 Railway / Supabase / 无账号的部署假设；ADR 0004 中生产降级策略
 
+> **2026-07-26 更新**：单 VPS 数据面、生产 batch STT 禁用和免费 10 分钟规则已由
+> [ADR 0006](./0006-session-pinned-api-relay.md) 覆盖。日本 VPS 仍是唯一控制面。
+
 ## 决策
 
 比赛 Beta 最初入口为 `https://advx.kibotalk.app`，正式 Web 入口随后迁至
@@ -51,7 +54,7 @@ ID，防止凭据切换竞态。客户端只缓存不含 token 的最小账户�
 
 ## 额度
 
-- 免费：每个北京时间自然月 10 分钟；
+- 免费：每个北京时间自然月 30 分钟（由 ADR 0006 更新）；
 - Pro：¥30 展示价，30 天 600 分钟，不结转；
 - 永久分钟：仅兑换码或后台人工赠送；
 - 扣减顺序：免费 → Pro → 永久；
@@ -67,9 +70,10 @@ ID，防止凭据切换竞态。客户端只缓存不含 token 的最小账户�
 
 ## 生产 provider
 
-生产只暴露：
+产品默认使用：
 
-- STT：`STT_ACTIVE=dashscope-realtime`，DashScope
+- STT：`STT_ACTIVE=dashscope-realtime`，DashScope；生产 batch 路径由
+  `STT_BATCH_ACTIVE` 同时保留
   `qwen3-asr-flash-realtime`；
 - LLM：DeepSeek `deepseek-v4-flash`，thinking disabled。
 

@@ -33,6 +33,11 @@ import {
   finalizedTurnFromRealtimeSegments,
   type TranscribedAudioSegment,
 } from './realtime-turn'
+import {
+  openRelaySession,
+  releaseRelaySession,
+  releaseRelaySessionById,
+} from '../api-runtime'
 
 export type SessionTurn = ConversationTurn & { candidates?: ReplyCandidate[] }
 
@@ -68,6 +73,8 @@ export type ConversationSessionParams = {
   providers: SttProvider[]
   /** Preferred provider id; realtime if its mode is `realtime`, else batch. */
   selectedProvider: string | null
+  /** Playground-only forced data-plane node. Product sessions leave this automatic. */
+  relayNodeOverride?: string
   /** Defaults to a fresh `InMemoryConversationStorage` (playground behavior). */
   storage?: ConversationStorage
   /** Product shells persist lifecycle/history; playground sessions stay ephemeral. */
@@ -110,6 +117,8 @@ export function useConversationSession(params: ConversationSessionParams) {
   const [activeSession, setActiveSession] = useState<ConversationSession | null>(null)
   const [recoveredUnexpectedPause, setRecoveredUnexpectedPause] = useState(false)
   const [quotaExhausted, setQuotaExhausted] = useState(false)
+  const [relayNodeId, setRelayNodeId] = useState<string | null>(null)
+  const [relayLatencyMs, setRelayLatencyMs] = useState<number | null>(null)
 
   const speakerRef = useRef(speaker)
   speakerRef.current = speaker
@@ -284,8 +293,16 @@ export function useConversationSession(params: ConversationSessionParams) {
     setDraft(null)
     if (!resuming) setCandidateRounds([])
     if (!resuming) setQuotaExhausted(false)
+    let conversationSessionId = `ephemeral-${Date.now()}`
     try {
-      let conversationSessionId = `ephemeral-${Date.now()}`
+      let frozenRelayNodeId: string | undefined
+      let pendingSessionStart: {
+        id: string
+        relayNodeId: string
+        startedAt: number
+        snapshot: ConversationSessionSnapshot
+        title: string
+      } | null = null
       if (!verifierRef.current) {
         verifierRef.current = new EmbeddingSpeakerVerifier({
           embedAudio: createWorkerEmbedAudio(),
@@ -306,24 +323,46 @@ export function useConversationSession(params: ConversationSessionParams) {
           const resumed = await storageRef.current.resumeActiveSession()
           if (!resumed) throw new Error('NO_SESSION_TO_RESUME')
           conversationSessionId = resumed.id
+          frozenRelayNodeId = resumed.relayNodeId
           setActiveSession(resumed)
           setRecoveredUnexpectedPause(false)
         } else {
           const snapshot = paramsRef.current.sessionSnapshot
           if (!snapshot) throw new Error('MISSING_SESSION_SNAPSHOT')
           const startedAt = Date.now()
-          const created = await storageRef.current.startSession({
-            id: globalThis.crypto?.randomUUID?.() ?? `${startedAt}-${Math.random().toString(36).slice(2)}`,
+          conversationSessionId =
+            globalThis.crypto?.randomUUID?.()
+            ?? `${startedAt}-${Math.random().toString(36).slice(2)}`
+          pendingSessionStart = {
+            id: conversationSessionId,
+            relayNodeId: '',
             startedAt,
             snapshot,
             title: paramsRef.current.sessionTitle ?? '',
-          })
-          conversationSessionId = created.id
-          setActiveSession(created)
+          }
         }
       }
 
       const p = paramsRef.current
+      setLoading('正在选择最快网络节点…')
+      const relaySelection = await openRelaySession({
+        conversationSessionId,
+        fixedNodeId: frozenRelayNodeId,
+        preferredNodeId: p.relayNodeOverride,
+      })
+      setRelayNodeId(relaySelection.node.id)
+      setRelayLatencyMs(relaySelection.latencyMs)
+      const relayStatus =
+        relaySelection.latencyMs === null
+          ? `网络节点：${relaySelection.node.id}`
+          : `网络节点：${relaySelection.node.id}（${Math.round(relaySelection.latencyMs)} ms）`
+      if (pendingSessionStart) {
+        const created = await storageRef.current.startSession({
+          ...pendingSessionStart,
+          relayNodeId: relaySelection.node.id,
+        })
+        setActiveSession(created)
+      }
       const selectedProvider = p.selectedProvider
       const audioSourceMode = p.sessionSnapshot?.audioSource ?? 'microphone'
       const isRealtime =
@@ -380,7 +419,7 @@ export function useConversationSession(params: ConversationSessionParams) {
       setActiveSttPath(isRealtime ? 'realtime' : 'batch')
       if (!isRealtime) {
         setStatusNote(
-          '当前为 batch STT：无实时草稿，停顿后整段上传。要边说边出字请选择带「· 实时」的 provider。',
+          `${relayStatus}；当前为 batch STT：无实时草稿，停顿后整段上传。`,
         )
       }
       if (isRealtime && selectedProvider) {
@@ -411,7 +450,7 @@ export function useConversationSession(params: ConversationSessionParams) {
             },
           })
           realtimeRef.current = rt
-          setStatusNote('实时转写已连接：说话中应出现草稿字幕。')
+          setStatusNote(`${relayStatus}；实时转写已连接。`)
           setActiveSttPath('realtime')
         } catch (e) {
           if (!degradeToBatch((e as Error).message)) {
@@ -790,6 +829,8 @@ export function useConversationSession(params: ConversationSessionParams) {
       releaseCapture()
       await realtimeBusyRef.current.catch(() => {})
       flushRealtimeAggregators()
+      await releaseRelaySession(false)
+      await releaseRelaySessionById(conversationSessionId, false)
       if (paramsRef.current.persistSessionLifecycle) {
         const paused = await storageRef.current.pauseActiveSession('unexpected')
         setActiveSession(paused)
@@ -878,6 +919,7 @@ export function useConversationSession(params: ConversationSessionParams) {
     await realtimeBusyRef.current.catch(() => {})
     flushRealtimeAggregators()
     await pipelineBusyRef.current.catch(() => {})
+    await releaseRelaySession(false)
     if (paramsRef.current.persistSessionLifecycle) {
       const paused = await storageRef.current.pauseActiveSession(reason)
       setActiveSession(paused)
@@ -904,6 +946,7 @@ export function useConversationSession(params: ConversationSessionParams) {
     await pipelineBusyRef.current.catch(() => {})
     await pipeline?.idle().catch(() => {})
     settlingPipelineRef.current = null
+    await releaseRelaySession(true)
     if (paramsRef.current.persistSessionLifecycle) {
       const stopped = await storageRef.current.stopActiveSession()
       setActiveSession(stopped)
@@ -919,6 +962,8 @@ export function useConversationSession(params: ConversationSessionParams) {
   }
 
   async function clearSession() {
+    const sessionId = activeSession?.id
+    if (sessionId) await releaseRelaySessionById(sessionId, true)
     await storageRef.current.clearActiveSession()
     setTurns([])
     setDraft(null)
@@ -948,6 +993,8 @@ export function useConversationSession(params: ConversationSessionParams) {
     activeSession,
     recoveredUnexpectedPause,
     quotaExhausted,
+    relayNodeId,
+    relayLatencyMs,
     start,
     pause,
     resume,

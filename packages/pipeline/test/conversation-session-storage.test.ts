@@ -13,7 +13,13 @@ const snapshot = {
 describe('conversation session lifecycle storage', () => {
   it('preserves one context through pause/resume and starts history on stop', async () => {
     const storage = new InMemoryConversationStorage()
-    await storage.startSession({ id: 's1', startedAt: 1000, snapshot, title: 'fallback' })
+    await storage.startSession({
+      id: 's1',
+      relayNodeId: 'jp-primary',
+      startedAt: 1000,
+      snapshot,
+      title: 'fallback',
+    })
     await storage.appendTurn({
       id: 't1',
       speaker: 'other',
@@ -44,9 +50,21 @@ describe('conversation session lifecycle storage', () => {
 
   it('persists committed suggestions and keeps the active session when clearing history', async () => {
     const storage = new InMemoryConversationStorage()
-    await storage.startSession({ id: 'past', startedAt: 1000, snapshot, title: 'past' })
+    await storage.startSession({
+      id: 'past',
+      relayNodeId: 'jp-primary',
+      startedAt: 1000,
+      snapshot,
+      title: 'past',
+    })
     await storage.stopActiveSession(2000)
-    await storage.startSession({ id: 'active', startedAt: 3000, snapshot, title: 'active' })
+    await storage.startSession({
+      id: 'active',
+      relayNodeId: 'cn-relay',
+      startedAt: 3000,
+      snapshot,
+      title: 'active',
+    })
     await storage.appendTurn({
       id: 't1',
       speaker: 'other',

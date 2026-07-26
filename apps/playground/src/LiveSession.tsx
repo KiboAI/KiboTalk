@@ -27,6 +27,8 @@ import {
   type RealtimeSttClient,
   type TranscribedAudioSegment,
   providerMode,
+  openRelaySession,
+  releaseRelaySession,
   type SttProvider,
 } from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
@@ -123,6 +125,7 @@ export default function LiveSession({
   const inSpeechRef = useRef(false)
   /** True after append until commit completes — blocks next speech stream from mixing. */
   const uncommittedRef = useRef(false)
+  const relaySessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     vadRef.current?.updateConfig({
@@ -278,6 +281,19 @@ export default function LiveSession({
       const cfg = useConfig.getState()
       const selectedProvider = cfg.transcribeProvider
       const isRealtime = providerMode(providers, selectedProvider) === 'realtime'
+      const relaySessionId =
+        globalThis.crypto?.randomUUID?.()
+        ?? `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      setLoading('正在选择 API 网络节点…')
+      const relaySelection = await openRelaySession({
+        conversationSessionId: relaySessionId,
+        preferredNodeId: cfg.relayNodeOverride ?? undefined,
+      })
+      relaySessionIdRef.current = relaySessionId
+      const relayStatus =
+        relaySelection.latencyMs === null
+          ? relaySelection.node.id
+          : `${relaySelection.node.id} · ${Math.round(relaySelection.latencyMs)} ms`
 
       setLoading('正在启动麦克风与音频处理…')
       const audio = new AudioSource()
@@ -322,6 +338,7 @@ export default function LiveSession({
           const rt = await connectRealtimeSttWithRetry({
             provider: selectedProvider,
             language: cfg.conversationLang,
+            sessionId: relaySessionId,
             handlers: {
               onPartial: (text) => {
                 const meta = draftMetaRef.current
@@ -339,7 +356,7 @@ export default function LiveSession({
             },
           })
           realtimeRef.current = rt
-          setStatusNote('实时转写已连接：说话中应出现草稿字幕。')
+          setStatusNote(`实时转写已连接 · ${relayStatus}`)
           setActiveSttPath('realtime')
         } catch (e) {
           if (!degradeToBatch((e as Error).message)) {
@@ -601,6 +618,8 @@ export default function LiveSession({
     setVadStatus('idle')
     setConfidence(null)
     useIoTracerStore.getState().stopRecording()
+    relaySessionIdRef.current = null
+    void releaseRelaySession(true)
   }
 
   async function clearSession() {

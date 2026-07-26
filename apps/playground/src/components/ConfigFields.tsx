@@ -17,7 +17,11 @@ import {
   LEARNER_LEVEL_OPTIONS,
   useConfig,
 } from '../config-store'
-import { SILERO_VARIANTS } from '@kibotalk/app-shared'
+import {
+  fetchRelayNodes,
+  SILERO_VARIANTS,
+  type RelayNode,
+} from '@kibotalk/app-shared'
 import { SttProviderSelect } from '../SttProviderSelect'
 import { useTranscribeProvider } from '../SttProviderSelect'
 import type { TranscribeMode } from '../config-store'
@@ -252,6 +256,51 @@ export function TranscribeProviderSelect({
   )
 }
 
+/** Data-plane node override for playground diagnostics. */
+export function RelayNodeSelect({ disabled }: { disabled?: boolean }) {
+  const relayNodeOverride = useConfig((state) => state.relayNodeOverride)
+  const patch = useConfig((state) => state.patch)
+  const [nodes, setNodes] = useState<RelayNode[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchRelayNodes()
+      .then((nodeList) => {
+        if (!cancelled) setNodes(nodeList.nodes)
+      })
+      .catch(() => {
+        if (!cancelled) setNodes([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs text-muted-foreground">API 网络节点</Label>
+      <Select
+        value={relayNodeOverride ?? 'auto'}
+        onValueChange={(value) =>
+          patch({ relayNodeOverride: value === 'auto' ? null : value })}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-9">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">自动测速</SelectItem>
+          {nodes.map((node) => (
+            <SelectItem key={node.id} value={node.id}>
+              {node.id} · {node.role === 'primary' ? '日本主节点' : '国内中转'}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 /** Conversation language + product UI language (also the derived meaning language). */
 export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
   const conversationLang = useConfig((s) => s.conversationLang)
@@ -316,3 +365,4 @@ export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
     </div>
   )
 }
+import { useEffect, useState } from 'react'

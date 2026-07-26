@@ -16,6 +16,7 @@
     "@kibotalk/conversation": "workspace:*",
     "@kibotalk/llm": "workspace:*",
     "@kibotalk/prompts": "workspace:*",
+    "@kibotalk/shared": "workspace:*",
     "@kibotalk/stt": "workspace:*",
     "dotenv": "^16.4.0",
     "hono": "^4.6.0",

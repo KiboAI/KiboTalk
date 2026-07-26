@@ -152,6 +152,10 @@ jobs:
             kibotalk-relay-caddy:2.10 \
             kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
+          docker save \
+            "kibotalk-api:${GITHUB_SHA}" \
+            kibotalk-relay-caddy:2.10 \
+            | gzip -1 > /tmp/kibotalk-relay-images.tar.gz
       - name: Stage on-device model mirror
         run: |
           pnpm --filter @kibotalk/desktop download-models
@@ -167,11 +171,18 @@ jobs:
           scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
       - name: Upload relay payload
         env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" "mkdir -p /opt/kibotalk-relay/incoming"
-          scp -i ~/.ssh/id_ed25519_cn /tmp/kibotalk-images.tar.gz "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
+          scp \
+            -o "ProxyCommand=ssh -i ~/.ssh/id_ed25519_primary -o IdentitiesOnly=yes -W %h:%p ${SERVER_USER}@${SERVER_HOST}" \
+            -o IdentitiesOnly=yes \
+            -i ~/.ssh/id_ed25519_cn \
+            /tmp/kibotalk-relay-images.tar.gz \
+            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
           scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml infra/relay/Caddyfile "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
       - name: Activate release
         env:

@@ -4,6 +4,14 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      input: {
+        app: 'index.html',
+        legacyOriginCleanup: 'legacy-origin-cleanup.html',
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

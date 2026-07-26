@@ -1,4 +1,4 @@
-const PRODUCTION_API_ORIGIN = 'https://advx.kibotalk.app'
+const PRODUCTION_API_ORIGIN = 'https://app.kibotalk.app'
 
 type DesktopBridge = {
   auth?: {

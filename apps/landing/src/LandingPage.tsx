@@ -29,7 +29,7 @@ import {
 } from '@kibotalk/ui'
 import { copy, locales, type Locale } from './copy'
 
-const webAppUrl = 'https://advx.kibotalk.app'
+const webAppUrl = 'https://app.kibotalk.app'
 const macReleaseUrl = 'https://github.com/KiboAI/KiboTalk/releases/latest'
 const lingguangUrl =
   'https://www.lingguang.com/share/FLASH_APP-47cf7a20-7033-463d-a975-eacb0b0e6c1764'

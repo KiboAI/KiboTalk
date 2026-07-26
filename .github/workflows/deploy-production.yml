@@ -140,7 +140,7 @@ jobs:
             caddy validate --config /etc/caddy/Caddyfile
           docker run --rm \
             --env ACME_EMAIL=validation@kibotalk.app \
-            --env CLOUDFLARE_API_TOKEN=validation \
+            --env CLOUDFLARE_API_TOKEN=0000000000000000000000000000000000000000 \
             --env RELAY_DOMAIN=relay-validation.kibotalk.app \
             --env RELAY_HTTPS_PORT=8443 \
             --volume "$PWD/infra/relay/Caddyfile:/etc/caddy/Caddyfile:ro" \

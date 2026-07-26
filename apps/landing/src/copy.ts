@@ -84,8 +84,9 @@ type LandingCopy = {
   }
   footer: {
     statement: string
+    github: string
+    adventurex: string
     original: string
-    release: string
   }
 }
 
@@ -184,8 +185,9 @@ export const copy: Record<Locale, LandingCopy> = {
     },
     footer: {
       statement: 'AI 提示，你开口。',
+      github: 'GitHub',
+      adventurex: 'AdventureX',
       original: '灵光闪应用',
-      release: 'GitHub Releases',
     },
   },
   ja: {
@@ -282,8 +284,9 @@ export const copy: Record<Locale, LandingCopy> = {
     },
     footer: {
       statement: 'AIがヒントを。話すのは、あなた。',
+      github: 'GitHub',
+      adventurex: 'AdventureX',
       original: '灵光 Flash App',
-      release: 'GitHub Releases',
     },
   },
   en: {
@@ -380,8 +383,9 @@ export const copy: Record<Locale, LandingCopy> = {
     },
     footer: {
       statement: 'AI gives the cue. You speak.',
+      github: 'GitHub',
+      adventurex: 'AdventureX',
       original: 'Lingguang Flash App',
-      release: 'GitHub Releases',
     },
   },
 }

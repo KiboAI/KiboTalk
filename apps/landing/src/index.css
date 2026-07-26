@@ -611,7 +611,6 @@ a {
 
 .footer-wordmark {
   width: 10rem;
-  filter: brightness(0) invert(1);
 }
 
 .site-footer p {

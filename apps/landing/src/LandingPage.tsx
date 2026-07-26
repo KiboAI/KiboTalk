@@ -30,6 +30,8 @@ import { copy, locales, type Locale } from './copy'
 
 const webAppUrl = 'https://app.kibotalk.app'
 const macReleaseUrl = 'https://github.com/KiboAI/KiboTalk/releases/latest'
+const githubRepoUrl = 'https://github.com/KiboAI/KiboTalk'
+const adventurexUrl = 'https://adventure-x.org/'
 const lingguangUrl =
   'https://www.lingguang.com/share/FLASH_APP-47cf7a20-7033-463d-a975-eacb0b0e6c1764'
 
@@ -414,18 +416,22 @@ function Footer({ locale }: { locale: Locale }) {
         <div>
           <img
             className="footer-wordmark"
-            src="/assets/kibotalk-wordmark-no-border.svg"
+            src="/assets/kibotalk-wordmark.svg"
             alt="KiboTalk"
           />
           <p>{footer.statement}</p>
         </div>
         <div className="footer-links">
-          <a href={lingguangUrl} target="_blank" rel="noreferrer">
-            {footer.original}
+          <a href={githubRepoUrl} target="_blank" rel="noreferrer">
+            {footer.github}
             <ArrowUpRight aria-hidden />
           </a>
-          <a href={macReleaseUrl} target="_blank" rel="noreferrer">
-            {footer.release}
+          <a href={adventurexUrl} target="_blank" rel="noreferrer">
+            {footer.adventurex}
+            <ArrowUpRight aria-hidden />
+          </a>
+          <a href={lingguangUrl} target="_blank" rel="noreferrer">
+            {footer.original}
             <ArrowUpRight aria-hidden />
           </a>
           <a href="#top">{actions.top}</a>

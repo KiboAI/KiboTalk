@@ -167,6 +167,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
+          scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-relay-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-relay-images.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
       - name: Upload relay payload
@@ -176,13 +177,58 @@ jobs:
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" "mkdir -p /opt/kibotalk-relay/incoming"
-          scp \
-            -o "ProxyCommand=ssh -i ~/.ssh/id_ed25519_primary -o IdentitiesOnly=yes -W %h:%p ${SERVER_USER}@${SERVER_HOST}" \
-            -o IdentitiesOnly=yes \
-            -i ~/.ssh/id_ed25519_cn \
-            /tmp/kibotalk-relay-images.tar.gz \
-            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" \
+            "mkdir -p /opt/kibotalk-relay/incoming/parts-${GITHUB_SHA}"
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
+            "mkdir -p /opt/kibotalk/incoming/relay-parts-${GITHUB_SHA} \
+              && split --number=8 --numeric-suffixes=0 --suffix-length=3 \
+                /opt/kibotalk/incoming/kibotalk-relay-images.tar.gz \
+                /opt/kibotalk/incoming/relay-parts-${GITHUB_SHA}/part-"
+          eval "$(ssh-agent -s)"
+          trap 'ssh-agent -k >/dev/null' EXIT
+          ssh-add ~/.ssh/id_ed25519_cn
+          ssh -A -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519_primary \
+            "${SERVER_USER}@${SERVER_HOST}" \
+            bash -s -- "$CN_SERVER_USER" "$CN_SERVER_HOST" "$GITHUB_SHA" <<'REMOTE'
+          set -eu
+          cn_user=$1
+          cn_host=$2
+          release_sha=$3
+          part_dir="/opt/kibotalk/incoming/relay-parts-${release_sha}"
+          pids=""
+          for part in "${part_dir}"/part-*; do
+            scp -q -o StrictHostKeyChecking=accept-new \
+              "$part" \
+              "${cn_user}@${cn_host}:/opt/kibotalk-relay/incoming/parts-${release_sha}/" &
+            pids="${pids} $!"
+          done
+          transfer_status=0
+          for pid in $pids; do
+            wait "$pid" || transfer_status=1
+          done
+          test "$transfer_status" -eq 0
+          REMOTE
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -eu
+          release_sha=$1
+          part_dir="/opt/kibotalk-relay/incoming/parts-${release_sha}"
+          cat "${part_dir}"/part-* > /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz
+          gzip -t /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz
+          for part in "${part_dir}"/part-*; do
+            unlink "$part"
+          done
+          rmdir "$part_dir"
+          REMOTE
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -eu
+          part_dir="/opt/kibotalk/incoming/relay-parts-${1}"
+          for part in "${part_dir}"/part-*; do
+            unlink "$part"
+          done
+          rmdir "$part_dir"
+          REMOTE
           scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml infra/relay/Caddyfile "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
       - name: Activate release
         env:

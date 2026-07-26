@@ -5,7 +5,6 @@ import {
   CircleDollarSign,
   ExternalLink,
   Languages,
-  MapPin,
   Pause,
   Sparkles,
   Square,
@@ -160,22 +159,6 @@ function Hero({ locale }: { locale: Locale }) {
   )
 }
 
-function SceneCard({
-  item,
-  index,
-}: {
-  item: (typeof copy.zh.scenes.items)[number]
-  index: number
-}) {
-  return (
-    <article className={`scene-card scene-card-${index}`}>
-      <img src={item.image} alt={item.imageAlt} />
-      <strong>{item.title}</strong>
-      <span>{item.detail}</span>
-    </article>
-  )
-}
-
 function SceneMap({ locale }: { locale: Locale }) {
   const { scenes } = copy[locale]
 
@@ -190,25 +173,12 @@ function SceneMap({ locale }: { locale: Locale }) {
           </h2>
         </div>
 
-        <div className="scene-map" aria-label={scenes.ariaLabel}>
-          <img className="map-image" src="/assets/map.png" alt="" />
-          <img className="connector connector-0" src="/assets/connector-1.png" alt="" />
-          <img className="connector connector-1" src="/assets/connector-1.png" alt="" />
-          <img className="connector connector-2" src="/assets/connector-1.png" alt="" />
-          <img className="connector connector-3" src="/assets/connector-1.png" alt="" />
-          <img className="connector connector-4" src="/assets/connector-1.png" alt="" />
-          {scenes.items.map((item, index) => (
-            <SceneCard key={item.title} item={item} index={index} />
-          ))}
-          {[0, 1, 2, 3, 4].map((pin) => (
-            <MapPin
-              key={pin}
-              className={`map-pin map-pin-${pin}`}
-              fill="currentColor"
-              strokeWidth={2.6}
-              aria-hidden
-            />
-          ))}
+        <div className="scene-map">
+          <img
+            className="map-image"
+            src="/assets/japan-scenes-map.png"
+            alt={scenes.ariaLabel}
+          />
         </div>
       </div>
     </section>

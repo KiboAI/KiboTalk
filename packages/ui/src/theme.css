@@ -27,9 +27,11 @@
   --secondary-foreground: #3a342c;
   --muted: #f2f0e8;
   --muted-foreground: #7d7669;
-  /* Soft yellow tint — chip / pill-tag / icon-btn resting surface. */
+  /* Soft yellow tint — chip / pill-tag / icon-btn resting surface.
+     Foreground is orange (not muddy yellow-700/800) so accent text stays
+     on the Tailwind orange scale. */
   --accent: var(--color-yellow-100);
-  --accent-foreground: var(--color-yellow-800);
+  --accent-foreground: var(--color-orange-600);
   --destructive: #dc2626;
   --destructive-foreground: #fafafa;
   --border: #e7e2d5;
@@ -72,7 +74,7 @@
   --muted: #241f18;
   --muted-foreground: #a89e8c;
   --accent: #33291a;
-  --accent-foreground: var(--color-yellow-200);
+  --accent-foreground: var(--color-orange-300);
   --destructive: #dc2626;
   --destructive-foreground: #fafafa;
   --border: #332c22;

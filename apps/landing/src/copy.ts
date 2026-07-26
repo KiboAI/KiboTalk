@@ -2,13 +2,6 @@ export const locales = ['zh', 'ja', 'en'] as const
 
 export type Locale = (typeof locales)[number]
 
-type Scenario = {
-  title: string
-  detail: string
-  image: string
-  imageAlt: string
-}
-
 type LandingCopy = {
   localeName: string
   nav: {
@@ -39,7 +32,6 @@ type LandingCopy = {
     titleLead: string
     titleMark: string
     ariaLabel: string
-    items: Scenario[]
   }
   product: {
     eyebrow: string
@@ -97,14 +89,6 @@ type LandingCopy = {
   }
 }
 
-const assets = {
-  convenience: '/assets/card-convenience.jpg',
-  clinic: '/assets/card-clinic.jpg',
-  rent: '/assets/card-rent.jpg',
-  bank: '/assets/card-bank.jpg',
-  restaurant: '/assets/card-restaurant.jpg',
-}
-
 export const copy: Record<Locale, LandingCopy> = {
   zh: {
     localeName: '中文',
@@ -136,38 +120,6 @@ export const copy: Record<Locale, LandingCopy> = {
       titleLead: '每一次开口，',
       titleMark: '都在真实世界。',
       ariaLabel: '日本真实生活场景地图',
-      items: [
-        {
-          title: '便利店兼职',
-          detail: 'コンビニのアルバイト',
-          image: assets.convenience,
-          imageAlt: '日本便利店',
-        },
-        {
-          title: '就医问诊',
-          detail: '診察を受ける',
-          image: assets.clinic,
-          imageAlt: '日本医院',
-        },
-        {
-          title: '租房签约',
-          detail: '賃貸物件の契約',
-          image: assets.rent,
-          imageAlt: '日本公寓',
-        },
-        {
-          title: '银行业务',
-          detail: '銀行業務の手続き',
-          image: assets.bank,
-          imageAlt: '日本银行',
-        },
-        {
-          title: '餐厅点餐',
-          detail: 'レストランでの注文',
-          image: assets.restaurant,
-          imageAlt: '日本餐厅',
-        },
-      ],
     },
     product: {
       eyebrow: 'THE SOLUTION',
@@ -266,38 +218,6 @@ export const copy: Record<Locale, LandingCopy> = {
       titleLead: '話すたびに、',
       titleMark: 'そこは本当の世界。',
       ariaLabel: '日本でのリアルな生活場面',
-      items: [
-        {
-          title: 'コンビニのアルバイト',
-          detail: 'Working at a convenience store',
-          image: assets.convenience,
-          imageAlt: '日本のコンビニ',
-        },
-        {
-          title: '病院での診察',
-          detail: 'Seeing a doctor',
-          image: assets.clinic,
-          imageAlt: '日本の病院',
-        },
-        {
-          title: '賃貸契約',
-          detail: 'Signing a lease',
-          image: assets.rent,
-          imageAlt: '日本の賃貸住宅',
-        },
-        {
-          title: '銀行での手続き',
-          detail: 'Banking in person',
-          image: assets.bank,
-          imageAlt: '日本の銀行',
-        },
-        {
-          title: 'レストランで注文',
-          detail: 'Ordering at a restaurant',
-          image: assets.restaurant,
-          imageAlt: '日本のレストラン',
-        },
-      ],
     },
     product: {
       eyebrow: 'THE SOLUTION',
@@ -396,38 +316,6 @@ export const copy: Record<Locale, LandingCopy> = {
       titleLead: 'Every time you speak,',
       titleMark: "it's in the real world.",
       ariaLabel: 'Map of real-life situations in Japan',
-      items: [
-        {
-          title: 'Convenience-store shift',
-          detail: 'コンビニのアルバイト',
-          image: assets.convenience,
-          imageAlt: 'Convenience store in Japan',
-        },
-        {
-          title: "Doctor's appointment",
-          detail: '診察を受ける',
-          image: assets.clinic,
-          imageAlt: 'Clinic in Japan',
-        },
-        {
-          title: 'Signing a lease',
-          detail: '賃貸物件の契約',
-          image: assets.rent,
-          imageAlt: 'Apartment building in Japan',
-        },
-        {
-          title: 'Banking in person',
-          detail: '銀行業務の手続き',
-          image: assets.bank,
-          imageAlt: 'Bank in Japan',
-        },
-        {
-          title: 'Ordering a meal',
-          detail: 'レストランでの注文',
-          image: assets.restaurant,
-          imageAlt: 'Restaurant in Japan',
-        },
-      ],
     },
     product: {
       eyebrow: 'THE SOLUTION',

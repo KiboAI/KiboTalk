@@ -123,12 +123,16 @@ jobs:
           docker build --platform linux/amd64 --tag kibotalk-relay-caddy:2.10 --file infra/relay/Caddy.Dockerfile .
           docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
           touch infra/production/.env infra/relay/.env
-          POSTGRES_PASSWORD=validation \
-            docker compose -f infra/production/compose.yaml \
+          (
+            cd infra/production
+            POSTGRES_PASSWORD=validation docker compose -f compose.yaml \
               config --quiet --no-env-resolution --no-path-resolution
-          RELAY_HTTPS_PORT=8443 \
-            docker compose -f infra/relay/compose.yaml \
+          )
+          (
+            cd infra/relay
+            RELAY_HTTPS_PORT=8443 docker compose -f compose.yaml \
               config --quiet --no-env-resolution --no-path-resolution
+          )
           rm infra/production/.env infra/relay/.env
           docker run --rm \
             --volume "$PWD/infra/production/Caddyfile:/etc/caddy/Caddyfile:ro" \

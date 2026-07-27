@@ -29,7 +29,6 @@ if (process.env.APP_ENV === 'production') {
     'STT_DASHSCOPE_API_KEY',
     'STT_DASHSCOPE_WS_URL',
     'STT_DASHSCOPE_REALTIME_MODEL',
-    'STT_BATCH_ACTIVE',
     'LLM_ACTIVE',
   ] as const
   const roleRequired = role === 'primary'
@@ -61,14 +60,6 @@ if (process.env.APP_ENV === 'production') {
   }
   if (process.env.STT_DASHSCOPE_REALTIME_MODEL !== 'qwen3-asr-flash-realtime') {
     throw new Error('Production STT model must be qwen3-asr-flash-realtime')
-  }
-  const batchProvider = process.env.STT_BATCH_ACTIVE!
-  const batchGroup = `STT_${batchProvider.toUpperCase()}_`
-  const missingBatch = ['BASE_URL', 'API_KEY', 'MODEL']
-    .map((field) => `${batchGroup}${field}`)
-    .filter((name) => !process.env[name])
-  if (missingBatch.length > 0) {
-    throw new Error(`Missing production environment variables: ${missingBatch.join(', ')}`)
   }
   const llmGroup = `LLM_${process.env.LLM_ACTIVE!.toUpperCase()}_`
   const llmRequired = [`${llmGroup}BASE_URL`, `${llmGroup}API_KEY`, `${llmGroup}MODEL`]

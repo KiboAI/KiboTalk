@@ -17,7 +17,7 @@ const TOKEN_ISSUER = 'kibotalk-primary'
 const CLOCK_SKEW_SECONDS = 30
 const SESSION_SECONDS = 30 * 60
 const RENEW_AFTER_SECONDS = 20 * 60
-const RELAY_SCOPES = new Set<RelayScope>(['llm', 'stt', 'stt-realtime'])
+const RELAY_SCOPES = new Set<RelayScope>(['llm', 'stt-realtime'])
 
 let developmentKeys: { privateKey: KeyObject; publicKey: KeyObject } | undefined
 
@@ -64,7 +64,6 @@ function parseClaims(value: unknown): RelaySessionClaims | null {
     || !Array.isArray(claims.scopes)
     || claims.scopes.some((scope) => !RELAY_SCOPES.has(scope))
     || typeof claims.sttProvider !== 'string'
-    || typeof claims.sttBatchProvider !== 'string'
     || typeof claims.llmProvider !== 'string'
     || typeof claims.llmModel !== 'string'
     || typeof claims.quotaSeconds !== 'number'

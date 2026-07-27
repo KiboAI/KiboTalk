@@ -23,9 +23,8 @@ const input = {
   deviceSessionId: 'device-1',
   conversationSessionId: 'conversation-1',
   nodeId: 'cn-relay',
-  scopes: ['llm', 'stt-realtime'] as const,
+  scopes: ['llm'] as const,
   sttProvider: 'dashscope-realtime',
-  sttBatchProvider: 'dashscope',
   llmProvider: 'openai',
   llmModel: 'deepseek-v4-flash',
   quotaSeconds: 120,
@@ -61,7 +60,7 @@ describe('relay session token', () => {
     expect(verifyRelaySessionToken(token, {
       env,
       nodeId: 'cn-relay',
-      requiredScope: 'stt',
+      requiredScope: 'stt-realtime',
       now,
     })).toBeNull()
   })

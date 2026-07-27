@@ -1,14 +1,9 @@
 let cachedProviderHealthy = false
-const REQUIRED_UPSTREAM_COUNT = 3
+const REQUIRED_UPSTREAM_COUNT = 2
 
 function configuredUpstreamUrls(env: NodeJS.ProcessEnv): string[] {
   const urls: string[] = []
   if (env.STT_DASHSCOPE_WS_URL) urls.push(env.STT_DASHSCOPE_WS_URL)
-  const batchProvider = env.STT_BATCH_ACTIVE
-  if (batchProvider) {
-    const batchUrl = env[`STT_${batchProvider.toUpperCase()}_BASE_URL`]
-    if (batchUrl) urls.push(batchUrl)
-  }
   const llmProvider = env.LLM_ACTIVE
   if (llmProvider) {
     const llmUrl = env[`LLM_${llmProvider.toUpperCase()}_BASE_URL`]

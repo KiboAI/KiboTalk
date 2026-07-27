@@ -30,7 +30,6 @@ export const IOAttributes = {
   ASRText: `${customPrefix}.asr.text`,
   ASRAbort: `${customPrefix}.asr.abort`,
   SttPath: `${customPrefix}.stt.path`,
-  SttDegraded: `${customPrefix}.stt.degraded`,
   SpeakerConfidence: `${customPrefix}.speaker.confidence`,
   SpeakerThreshold: `${customPrefix}.speaker.threshold`,
   SpeakerResult: `${customPrefix}.speaker.result`,

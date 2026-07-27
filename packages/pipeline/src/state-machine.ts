@@ -6,7 +6,6 @@ import type {
   PipelineEvent,
   PipelineEventHandler,
   PipelineState,
-  Segment,
 } from './types'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 import type { Span } from '@kibotalk/observability'
@@ -27,47 +26,43 @@ const defaultGenerateId = (): string =>
 /**
  * The conversation pipeline state machine (spec §2.4 rules 1–8).
  *
- * Concurrency model: `ingestSegment` awaits STT + turn append, then — for a
- * non-interrupted turn (user or other) — starts the LLM stream as a DETACHED
- * task and resolves. A subsequent segment aborts any in-flight LLM
+ * Concurrency model: `ingestFinalizedTurn` appends a pre-transcribed turn, then
+ * — for a non-interrupted turn (user or other) — starts the LLM stream as a
+ * DETACHED task and resolves. A subsequent turn aborts any in-flight LLM
  * (AbortController), discards its partial candidates, and proceeds. Ownership
  * tracking prevents a superseded LLM task from mutating shared state when it
  * finally returns.
  *
  * Invariants:
- * - Every segment is appended as a turn (other's words are never lost).
+ * - Every finalized turn is appended (other's words are never lost).
  * - LLM is triggered after any non-interrupted turn append (including
  *   sttFailed turns — model may return []).
- * - STT/LLM each retry once on failure (1s backoff), then surface a
- *   user-visible state without killing the session.
+ * - LLM retries once on failure (1s backoff), then surfaces a user-visible
+ *   state without killing the session.
  * - Partial candidates never enter the next LLM's context — context is the
  *   completed turns from `conversation.loadActiveSession()`.
  *
- * Callers MUST await `ingestSegment` before feeding the next segment (VAD
- * emits segments sequentially; tests control timing).
+ * Callers MUST await `ingestFinalizedTurn` before feeding the next turn
+ * (TurnGate emits segments sequentially; tests control timing).
  */
 export class Pipeline {
   private state: PipelineState = 'IDLE'
   private handlers = new Set<PipelineEventHandler>()
-  private stt: NonNullable<PipelineDeps['stt']>
   private llm: NonNullable<PipelineDeps['llm']>
   private conversation: NonNullable<PipelineDeps['conversation']>
   private config: Required<import('./types').PipelineConfig>
   private generateId: () => string
   private sleep: (ms: number) => Promise<void>
   private currentLlm: { abort: AbortController; turnId: string; span?: Span } | null = null
-  private currentStt: AbortController | null = null
   private turnSpans = new Map<string, Span>()
 
   constructor(deps: PipelineDeps) {
-    this.stt = deps.stt
     this.llm = deps.llm
     this.conversation = deps.conversation
     const cfg = deps.config ?? {}
     this.config = {
       vadOtherPauseMs: cfg.vadOtherPauseMs ?? envNumber('VAD_OTHER_PAUSE_MS', 1000),
       vadUserPauseMs: cfg.vadUserPauseMs ?? envNumber('VAD_USER_PAUSE_MS', 1000),
-      sttRetryBackoffMs: cfg.sttRetryBackoffMs ?? 1000,
       llmRetryBackoffMs: cfg.llmRetryBackoffMs ?? 1000,
     }
     this.generateId = deps.generateId ?? defaultGenerateId
@@ -96,38 +91,7 @@ export class Pipeline {
     })
   }
 
-  async ingestSegment(segment: Segment): Promise<void> {
-    this.abortInFlightLlm()
-    this.setState(segment.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
-
-    const turnId = this.generateId()
-    const turnSpan = startSpan(IOSpanNames.InteractionTurn, {
-      attrs: {
-        [IOAttributes.TurnId]: turnId,
-      },
-    })
-    this.turnSpans.set(turnId, turnSpan)
-    setActiveTurnSpan(turnSpan)
-
-    const text = await this.transcribeWithRetry(segment.pcm, turnSpan)
-    const sttFailed = text === null
-
-    await this.commitTurn({
-      turnId,
-      speaker: segment.speaker,
-      text: sttFailed ? '' : text!,
-      startedAt: segment.startedAt,
-      endedAt: segment.endedAt,
-      sttFailed,
-      interrupted: segment.interrupted,
-      turnSpan,
-    })
-  }
-
-  /**
-   * Append a turn whose text is already known (realtime STT `completed`).
-   * Same LLM / interrupt rules as `ingestSegment` after transcription.
-   */
+  /** Append a pre-transcribed turn (realtime STT `completed`). */
   async ingestFinalizedTurn(input: FinalizedTurnInput): Promise<void> {
     this.abortInFlightLlm()
     this.setState(input.speaker === 'other' ? 'OTHER_SPEAKING' : 'USER_SPEAKING')
@@ -207,40 +171,6 @@ export class Pipeline {
     }
   }
 
-  private async transcribeWithRetry(pcm: Float32Array, parent: Span): Promise<string | null> {
-    const sttSpan = startSpan(IOSpanNames.SpeechRecognition, {
-      parent,
-      attrs: {
-        [IOAttributes.Subsystem]: IOSubsystems.STT,
-        [IOAttributes.SttPath]: 'batch',
-      },
-    })
-    this.currentStt = new AbortController()
-    try {
-      try {
-        const text = await this.stt.transcribe(pcm, this.currentStt.signal)
-        sttSpan.setAttribute(IOAttributes.ASRText, text)
-        sttSpan.end()
-        return text
-      } catch {
-        this.currentStt = new AbortController()
-        await this.sleep(this.config.sttRetryBackoffMs)
-        try {
-          const text = await this.stt.transcribe(pcm, this.currentStt.signal)
-          sttSpan.setAttribute(IOAttributes.ASRText, text)
-          sttSpan.end()
-          return text
-        } catch {
-          sttSpan.setAttribute(IOAttributes.ASRAbort, true)
-          sttSpan.end()
-          return null
-        }
-      }
-    } finally {
-      this.currentStt = null
-    }
-  }
-
   private async runLlm(turnId: string, turnSpan: Span): Promise<void> {
     const context = (await this.conversation.loadActiveSession()) ?? []
     const controller = new AbortController()
@@ -293,7 +223,7 @@ export class Pipeline {
       outcome = await streamOnce()
     }
 
-    // Only the current owner may mutate shared state; a superseding segment
+    // Only the current owner may mutate shared state; a superseding turn
     // already aborted this task and emitted llmAborted.
     if (this.currentLlm?.abort !== controller) return
 
@@ -315,7 +245,7 @@ export class Pipeline {
       this.setState('IDLE')
     }
     // outcome === 'aborted': partials already discarded by the superseding
-    // segment; emit nothing here (abortInFlightLlm already ended spans).
+    // turn; emit nothing here (abortInFlightLlm already ended spans).
   }
 
   private handleStreamEvent(

@@ -9,7 +9,6 @@ export type {
   PipelineState,
   Segment,
   FinalizedTurnInput,
-  SttClient,
 } from './types'
 export { Pipeline } from './state-machine'
 export { defaultConfig } from './types'

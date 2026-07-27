@@ -4,10 +4,10 @@ import { envNumber } from './env'
 /**
  * Pipeline state machine states (spec §2.4).
  *
- * Segments arrive pre-cut by VAD + speaker (pipeline does no VAD/speaker
- * itself). OTHER_SPEAKING / USER_SPEAKING mean "STT is in flight for that
- * speaker, the turn has not been appended yet". LLM_STREAMING means candidates
- * are streaming for the most recent turn (user or other).
+ * Turns arrive pre-cut by VAD + speaker (pipeline does no VAD/speaker
+ * itself). OTHER_SPEAKING / USER_SPEAKING mean a turn for that speaker is
+ * being committed. LLM_STREAMING means candidates are streaming for the most
+ * recent turn (user or other).
  */
 export type PipelineState = 'IDLE' | 'OTHER_SPEAKING' | 'USER_SPEAKING' | 'LLM_STREAMING'
 
@@ -16,7 +16,8 @@ export type PipelineState = 'IDLE' | 'OTHER_SPEAKING' | 'USER_SPEAKING' | 'LLM_S
  * when the segment was cut short because a new voice started (as opposed to a
  * pause ≥ threshold). An interrupted segment is still appended but does NOT
  * trigger LLM — the interrupting segment follows and requests coach (spec
- * §2.4 rule 5).
+ * §2.4 rule 5). Used by the audio aggregator (TurnGate); transcription
+ * happens outside the pipeline.
  */
 export type Segment = {
   pcm: Float32Array
@@ -26,14 +27,14 @@ export type Segment = {
   interrupted?: boolean
 }
 
-/** Pre-transcribed turn for realtime STT (ADR 0004). Skips pipeline STT. */
+/** Pre-transcribed turn for realtime STT (ADR 0004). */
 export type FinalizedTurnInput = {
   speaker: 'user' | 'other'
   text: string
   startedAt: number
   endedAt: number
   interrupted?: boolean
-  /** When true, append empty text and emit sttFailed (same as batch STT failure). */
+  /** When true, append empty text and emit sttFailed. */
   sttFailed?: boolean
 }
 
@@ -58,17 +59,11 @@ export interface LlmClient {
   ): AsyncIterable<CandidateStreamEvent>
 }
 
-/** STT client — transcribes one segment's PCM. No internal retry. */
-export interface SttClient {
-  transcribe(pcm: Float32Array, signal: AbortSignal): Promise<string>
-}
-
 /** Pipeline behavior knobs. Pause thresholds are VAD's, surfaced here so the
  * pipeline can read env config; tests inject directly. */
 export type PipelineConfig = {
   vadOtherPauseMs: number
   vadUserPauseMs: number
-  sttRetryBackoffMs: number
   llmRetryBackoffMs: number
 }
 
@@ -76,7 +71,6 @@ export function defaultConfig(overrides: Partial<PipelineConfig> = {}): Pipeline
   return {
     vadOtherPauseMs: envNumber('VAD_OTHER_PAUSE_MS', 1000),
     vadUserPauseMs: envNumber('VAD_USER_PAUSE_MS', 1000),
-    sttRetryBackoffMs: 1000,
     llmRetryBackoffMs: 1000,
     ...overrides,
   }
@@ -96,7 +90,6 @@ export type PipelineEvent =
 export type PipelineEventHandler = (event: PipelineEvent) => void
 
 export type PipelineDeps = {
-  stt: SttClient
   llm: LlmClient
   conversation: ConversationStorage
   config?: Partial<PipelineConfig>

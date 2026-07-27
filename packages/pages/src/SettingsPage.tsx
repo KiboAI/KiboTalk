@@ -15,6 +15,7 @@ import {
   systemUiLanguage,
   useI18n,
   useRelayNodeProbes,
+  relayNodeLabelKind,
   type LanguagePrefs,
   type ProductTheme,
   type RelayNodePreference,
@@ -95,12 +96,16 @@ function SettingRow({
   danger?: boolean
 }) {
   return (
-    <div className="flex min-h-16 flex-col items-start justify-between gap-3 border-b border-border px-4 py-3.5 last:border-b-0 sm:flex-row sm:items-center">
-      <div className="min-w-0">
+    <div className="flex min-h-16 flex-col gap-3 border-b border-border px-4 py-3.5 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 w-full sm:flex-1">
         <div className={`text-sm font-semibold ${danger ? 'text-destructive' : ''}`}>{title}</div>
-        {description ? <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div> : null}
+        {description ? (
+          <div className="mt-1 text-xs leading-relaxed break-words text-muted-foreground">
+            {description}
+          </div>
+        ) : null}
       </div>
-      <div className="flex w-full shrink-0 justify-end sm:w-auto">{children}</div>
+      <div className="flex w-full min-w-0 shrink-0 sm:w-auto sm:justify-end">{children}</div>
     </div>
   )
 }
@@ -217,23 +222,23 @@ export function SettingsPage({
     both: t('bothAudio'),
   }
   const activeLock = sessionActive ? (
-    <div className="flex max-w-sm items-start gap-2 rounded-md bg-accent px-3 py-2 text-xs leading-relaxed text-accent-foreground">
+    <div className="flex w-full max-w-sm items-start gap-2 rounded-md bg-accent px-3 py-2 text-xs leading-relaxed text-accent-foreground">
       <Lock className="mt-0.5 size-3.5 shrink-0" />
-      {t('lockedWhileActive')}
+      <span className="min-w-0 flex-1 break-words">{t('lockedWhileActive')}</span>
     </div>
   ) : null
 
   return (
-    <div className="min-h-dvh bg-background p-2 sm:p-5">
-      <div className="paper-sheet mx-auto grid min-h-[calc(100dvh-1rem)] max-w-6xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:min-h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
-        <aside className="border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
+    <div className="min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5">
+      <div className="paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
+        <aside className="min-w-0 border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
           <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             <Button variant="ghost" size="icon" onClick={onBack} aria-label={t('back')}>
               <ArrowLeft className="size-4" />
             </Button>
             <strong>KiboTalk</strong>
           </div>
-          <nav className="flex gap-1 overflow-x-auto pb-1 sm:grid sm:overflow-visible">
+          <nav className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:overflow-visible sm:px-0">
             {sections.map((item) => {
               const Icon = item.icon
               return (
@@ -247,17 +252,17 @@ export function SettingsPage({
                       : 'text-muted-foreground hover:bg-foreground/5'
                   }`}
                 >
-                  <Icon className="size-4" />
-                  <span>{item.label}</span>
+                  <Icon className="size-4 shrink-0" />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               )
             })}
           </nav>
         </aside>
 
-        <main className="min-w-0 p-4 sm:p-8">
+        <main className="min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 pb-6 sm:p-8">
           <div className="mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl font-bold">{sections.find((item) => item.id === section)?.label}</h1>
               <p className="mt-1 text-xs text-muted-foreground">{t('settings')}</p>
             </div>
@@ -354,49 +359,62 @@ export function SettingsPage({
                   title={t('defaultNetworkNode')}
                   description={t('defaultNetworkNodeDescription')}
                 >
-                  <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-                    <Select
-                      value={prefs.relayNodeId}
-                      disabled={
-                        sessionActive
-                        || relayProbes.loading
-                        || relayProbes.results.length === 0
-                      }
-                      onValueChange={(value) =>
-                        update({ relayNodeId: value as RelayNodePreference })}
-                    >
-                      <SelectTrigger className="w-full sm:w-56">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {RELAY_NODES.map((nodeId) => {
-                          const result = relayProbes.results.find(
-                            ({ node }) => node.id === nodeId,
-                          )
-                          let latencyLabel = t('checkingLatency')
-                          if (result?.latencyMs === null) {
-                            latencyLabel = t('nodeUnreachable')
-                          } else if (result) {
-                            latencyLabel = `${Math.round(result.latencyMs)} ms`
-                          }
-                          return (
-                            <SelectItem
-                              key={nodeId}
-                              value={nodeId}
-                              disabled={result?.latencyMs === null}
-                            >
-                              {nodeId === 'jp-primary' ? t('japanNode') : t('chinaNode')}
-                              {' · '}
-                              {latencyLabel}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
+                  <div className="flex w-full min-w-0 items-center gap-2">
+                    <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                      <Select
+                        value={prefs.relayNodeId}
+                        disabled={
+                          sessionActive
+                          || relayProbes.loading
+                          || relayProbes.results.length === 0
+                        }
+                        onValueChange={(value) =>
+                          update({ relayNodeId: value as RelayNodePreference })}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {RELAY_NODES.map((nodeId) => {
+                            const result = relayProbes.results.find(
+                              ({ node }) => node.id === nodeId,
+                            )
+                            let latencyLabel = t('checkingLatency')
+                            if (result?.latencyMs === null) {
+                              latencyLabel = t('nodeUnreachable')
+                            } else if (result) {
+                              latencyLabel = `${Math.round(result.latencyMs)} ms`
+                            }
+                            let title = nodeId === 'jp-primary' ? t('japanNode') : t('chinaNode')
+                            if (result?.node) {
+                              const kind = relayNodeLabelKind(result.node)
+                              title =
+                                kind === 'local'
+                                  ? t('localNode')
+                                  : kind === 'primary'
+                                    ? t('japanNode')
+                                    : t('chinaNode')
+                            }
+                            return (
+                              <SelectItem
+                                key={nodeId}
+                                value={nodeId}
+                                disabled={result?.latencyMs === null}
+                              >
+                                {title}
+                                {' · '}
+                                {latencyLabel}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <Button
                       type="button"
                       variant="soft"
                       size="icon"
+                      className="shrink-0"
                       disabled={relayProbes.loading}
                       onClick={() => void relayProbes.refresh()}
                       aria-label={t('refreshLatency')}

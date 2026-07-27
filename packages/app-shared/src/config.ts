@@ -21,8 +21,6 @@ export type AppConfig = {
     minSpeechDurationMs: number
   }
   vadVariantId: string
-  /** ASR-send padding (VAD cuts stay tight; padding applied at ASR send). */
-  asrPadMs: { pre: number; post: number }
   /** Segment-aggregator flush triggers (same-speaker accumulation → one turn). */
   aggregator: { pauseMs: number; maxMs: number }
   speakerThreshold: number
@@ -36,7 +34,6 @@ export const defaultAppConfig: AppConfig = {
     minSpeechDurationMs: defaultVadConfig.minSpeechDurationMs,
   },
   vadVariantId: SILERO_VARIANTS[0].id,
-  asrPadMs: { pre: 80, post: 80 },
   aggregator: { pauseMs: 500, maxMs: 30000 },
   speakerThreshold: 0.49,
 }

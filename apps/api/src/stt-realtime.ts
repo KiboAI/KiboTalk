@@ -307,7 +307,17 @@ async function handleConnection(
     closeBoth()
   })
 
-  upstream.on('close', () => {
+  upstream.on('close', (code, reason) => {
+    const reasonText = reason?.toString?.() ?? String(reason ?? '')
+    if (!closed) {
+      send({
+        type: 'error',
+        code: 'UPSTREAM_CLOSED',
+        message: reasonText
+          ? `实时转写上游已断开（${code}）：${reasonText}`
+          : `实时转写上游已断开（${code}）`,
+      })
+    }
     for (const billing of pendingBilling) {
       recordTelemetryLater(auth, {
         requestId: billing.requestId,

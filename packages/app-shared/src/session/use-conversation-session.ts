@@ -337,7 +337,9 @@ export function useConversationSession(params: ConversationSessionParams) {
         deviceId: p.sessionSnapshot?.microphoneDeviceId,
         stream: primaryStream,
         echoCancellation: audioSourceMode !== 'system',
-        onDeviceEnded: () => void pauseRef.current('unexpected'),
+        onDeviceEnded: () => {
+          void pauseRef.current('unexpected')
+        },
       })
       audioRef.current = audio
       const vadVariant = SILERO_VARIANTS.find((v) => v.id === p.vadVariantId) ?? SILERO_VARIANTS[0]
@@ -664,7 +666,8 @@ export function useConversationSession(params: ConversationSessionParams) {
       setLifecycle('running')
       setLoading('')
     } catch (e) {
-      reportError((e as Error).message)
+      const message = (e as Error).message
+      reportError(message)
       setLoading('')
       releaseCapture()
       await realtimeBusyRef.current.catch(() => {})
@@ -672,10 +675,12 @@ export function useConversationSession(params: ConversationSessionParams) {
       await releaseRelaySession(false)
       await releaseRelaySessionById(conversationSessionId, false)
       if (paramsRef.current.persistSessionLifecycle) {
-        const paused = await storageRef.current.pauseActiveSession('unexpected')
-        setActiveSession(paused)
-        setRecoveredUnexpectedPause(true)
-        setLifecycle(paused ? 'paused' : 'stopped')
+        // Abort the half-started session so the real error is visible
+        // (session errors are hidden while lifecycle === 'paused').
+        const stopped = await storageRef.current.stopActiveSession()
+        setActiveSession(stopped)
+        setRecoveredUnexpectedPause(false)
+        setLifecycle('stopped')
       } else {
         setLifecycle('stopped')
       }

@@ -220,7 +220,9 @@ export function SessionPage({ controller, onGoSettings, onGoHistory, onGoAccount
       ) : null}
       {shouldShowSessionError(session.lifecycle, session.error) ? (
         <div className="shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {session.error === 'VOICEPRINT_REQUIRED' ? t('voiceprintRequired') : t('sessionUnavailable')}
+          {session.error === 'VOICEPRINT_REQUIRED'
+            ? t('voiceprintRequired')
+            : session.error || t('sessionUnavailable')}
         </div>
       ) : null}
 

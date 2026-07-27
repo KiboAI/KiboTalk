@@ -68,7 +68,8 @@ Create `/opt/kibotalk/.env` from `.env.example` and set at least:
 - `POSTGRES_PASSWORD`
 - `AUTH_SECRET`
 - `SYNC_ENCRYPTION_KEY`
-- `STT_DASHSCOPE_API_KEY`
+- `STT_DASHSCOPE_API_KEY` (Japan (Tokyo) workspace key)
+- `STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime`
 - `LLM_OPENROUTER_API_KEY`
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
@@ -87,6 +88,10 @@ Create `/opt/kibotalk/.env` from `.env.example` and set at least:
 
 `RESEND_FROM_EMAIL` must use a sender domain verified in Resend. Keep
 `ALLOW_DEV_OTP=false` in production.
+
+The China relay keeps its own China (Beijing) `STT_DASHSCOPE_API_KEY` and
+`STT_DASHSCOPE_WS_URL`; production deployment only replaces the primary
+server's STT values from the `JP_STT_DASHSCOPE_*` GitHub secrets.
 
 ## China relay environment
 

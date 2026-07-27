@@ -676,11 +676,14 @@ STT 以 `STT_ACTIVE=dashscope-realtime` 直连 DashScope
 `qwen3-asr-flash-realtime`。
 
 ```bash
-# 生产 / 开发 STT（realtime only）
+# 日本主节点 STT（realtime only；东京 Workspace + 东京 Key）
 STT_ACTIVE=dashscope-realtime
 STT_DASHSCOPE_API_KEY=sk-xxxxxxxx
-STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime
+STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime
 STT_DASHSCOPE_REALTIME_MODEL=qwen3-asr-flash-realtime
+
+# 国内 relay 使用同名变量，但配置北京 Workspace + 北京 Key
+# STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime
 
 # 本地开发可选：LLM 走 OpenRouter
 LLM_ACTIVE=openrouter

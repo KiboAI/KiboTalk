@@ -44,6 +44,10 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_primary
           chmod 600 ~/.ssh/id_ed25519_primary
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+      - name: Resolve desktop release metadata
+        run: |
+          echo "APP_VERSION=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_ENV"
+          echo "APP_PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Configure primary routes and providers
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -51,16 +55,22 @@ jobs:
           STT_IFLYTEK_APP_ID: ${{ secrets.STT_IFLYTEK_APP_ID }}
           STT_IFLYTEK_API_KEY: ${{ secrets.STT_IFLYTEK_API_KEY }}
           STT_IFLYTEK_API_SECRET: ${{ secrets.STT_IFLYTEK_API_SECRET }}
+          APP_VERSION: ${{ env.APP_VERSION }}
+          APP_PUBLISHED_AT: ${{ env.APP_PUBLISHED_AT }}
         run: |
-          printf '%s\n%s\n%s\n' \
+          printf '%s\n%s\n%s\n%s\n%s\n' \
             "$STT_IFLYTEK_APP_ID" \
             "$STT_IFLYTEK_API_KEY" \
             "$STT_IFLYTEK_API_SECRET" \
+            "$APP_VERSION" \
+            "$APP_PUBLISHED_AT" \
             | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
                 set -eu
                 IFS= read -r stt_app_id
                 IFS= read -r stt_api_key
                 IFS= read -r stt_api_secret
+                IFS= read -r app_version
+                IFS= read -r app_published_at
                 set_env() {
                   name=$1
                   value=$2
@@ -77,6 +87,10 @@ jobs:
                 set_env STT_IFLYTEK_API_KEY "$stt_api_key"
                 set_env STT_IFLYTEK_API_SECRET "$stt_api_secret"
                 set_env STT_IFLYTEK_WS_URL "wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1"
+                set_env APP_VERSION "$app_version"
+                set_env APP_DMG_URL "https://github.com/KiboAI/KiboTalk/releases/download/v${app_version}/KiboTalk-${app_version}-arm64.dmg"
+                set_env APP_RELEASE_NOTES_URL "https://github.com/KiboAI/KiboTalk/releases/tag/v${app_version}"
+                set_env APP_PUBLISHED_AT "$app_published_at"
                 chmod 600 /opt/kibotalk/.env
               '
       - name: Validate server environments
@@ -92,7 +106,7 @@ jobs:
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
               STT_ACTIVE STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY \
               STT_IFLYTEK_API_SECRET STT_IFLYTEK_WS_URL \
-              LLM_ACTIVE; do
+              LLM_ACTIVE APP_VERSION APP_DMG_URL APP_RELEASE_NOTES_URL APP_PUBLISHED_AT; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
           '

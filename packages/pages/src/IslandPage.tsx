@@ -38,6 +38,7 @@ import {
   Square,
   UserRound,
 } from 'lucide-react'
+import { IslandShell } from './IslandShell'
 import { RelayNodeDialog } from './RelayNodeDialog'
 
 export type IslandPageProps = {
@@ -241,17 +242,12 @@ export function IslandPage({
 
   return (
     <>
-      <div
-        ref={rootRef}
-        className="island-window-shell h-dvh w-full p-2"
-        data-island-content-side={contentSide}
-        data-island-menu-side={contentSide === 'above' ? 'top' : 'bottom'}
-      >
-        <div className="flex h-full w-full flex-col gap-2.5">
-          {contentSide === 'above' ? content : island}
-          {contentSide === 'above' ? island : content}
-        </div>
-      </div>
+      <IslandShell
+        rootRef={rootRef}
+        contentSide={contentSide}
+        content={content}
+        island={island}
+      />
 
       <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
         <DialogContent>

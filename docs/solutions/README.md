@@ -28,3 +28,4 @@ problem_type: <integration-bug | config | api-misuse | regression | ...>
 - `silero-vad-v6-context-frame.md` — Silero VAD v6.2 needs 64-sample context (576 input), not 512 raw.
 - `transformers-js-automodel-callable.md` — `AutoModel.from_pretrained` returns a callable; invoke `model({...})`, not `model.__call__({...})`.
 - `api-dotenv-path.md` — `apps/api/src` → repo root is `../../../.env`, not `../../.env`.
+- `island-flip-bar-anchor.md` — use the visible Island bar, not the transparent window shell, for multi-monitor flip decisions.

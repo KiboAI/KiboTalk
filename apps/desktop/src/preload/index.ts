@@ -38,7 +38,11 @@ const api: KiboTalkDesktopApi = {
   },
   island: {
     getContentSide: () => ipcRenderer.invoke(IPC_CHANNEL.islandGetContentSide),
-    settleContentSide: (current) => ipcRenderer.invoke(IPC_CHANNEL.islandSettleContentSide, current),
+    settleContentSide: (current, barOffset) => ipcRenderer.invoke(
+      IPC_CHANNEL.islandSettleContentSide,
+      current,
+      barOffset,
+    ),
     hide: () => ipcRenderer.invoke(IPC_CHANNEL.islandHide),
     show: () => ipcRenderer.invoke(IPC_CHANNEL.islandShow),
     setPointerThrough: (ignored) => ipcRenderer.invoke(IPC_CHANNEL.islandSetPointerThrough, ignored),

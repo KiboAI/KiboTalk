@@ -119,5 +119,9 @@ export { StepIndicator, type Step, type StepIndicatorProps } from './components/
 export { LevelMeter, type LevelMeterProps } from './components/product/LevelMeter'
 export { ModelPreloadBadge, type ModelPreloadBadgeProps } from './components/product/ModelPreloadBadge'
 export { WizardScreen, type WizardScreenProps } from './components/product/WizardScreen'
+export {
+  DesktopProductWindowFrame,
+  type DesktopProductWindowFrameProps,
+} from './components/product/DesktopProductWindowFrame'
 export { SessionListItem, type SessionListItemProps } from './components/product/SessionListItem'
 export { PillTag, type PillTagProps } from './components/product/PillTag'

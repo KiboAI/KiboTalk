@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
+import { DesktopProductWindowFrame } from './DesktopProductWindowFrame'
 
 export type WizardScreenProps = {
   children: ReactNode
@@ -27,12 +28,11 @@ export function WizardScreen({ children, embedded, className }: WizardScreenProp
     // (see apps/desktop OnboardingApp + onboarding:resize). Filling the viewport
     // would make content height circularly equal the (too-tall) window.
     return (
-      <div className="flex w-full flex-col bg-background">
-        <div className="h-8 w-full shrink-0 [-webkit-app-region:drag]" aria-hidden />
+      <DesktopProductWindowFrame heightMode="content">
         <div className="flex items-start justify-center px-6 pb-10">
           <div className={cn('w-full max-w-md', className)}>{children}</div>
         </div>
-      </div>
+      </DesktopProductWindowFrame>
     )
   }
 

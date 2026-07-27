@@ -9,6 +9,7 @@
 export type MediaAccessStatus = 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'
 export type ProductWindowView = 'settings' | 'history' | 'voiceprint' | 'account'
 export type IslandContentSide = 'above' | 'below'
+export type IslandBarOffset = { x: number; y: number }
 export type DesktopSessionLifecycle = 'restoring' | 'stopped' | 'starting' | 'running' | 'paused'
 export type DesktopSessionCommand =
   | 'start'
@@ -98,7 +99,10 @@ export type KiboTalkDesktopApi = {
   island: {
     getContentSide: () => Promise<IslandContentSide>
     /** Single source of truth stays in the renderer; main only computes + persists. */
-    settleContentSide: (current: IslandContentSide) => Promise<IslandContentSide>
+    settleContentSide: (
+      current: IslandContentSide,
+      barOffset: IslandBarOffset,
+    ) => Promise<IslandContentSide>
     hide: () => Promise<void>
     show: () => Promise<void>
     setPointerThrough: (ignored: boolean) => Promise<void>

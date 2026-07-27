@@ -1,11 +1,19 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, screen, type Display, type Rectangle } from 'electron'
-import { IPC_CHANNEL, type IslandContentSide } from '../../shared/ipc'
+import {
+  IPC_CHANNEL,
+  type IslandBarOffset,
+  type IslandContentSide,
+} from '../../shared/ipc'
 import { loadRendererEntry } from '../location'
 import { readConfig, updateConfig } from '../config'
 import { protectPrivilegedWindowNavigation, transparentWindowConfig } from './shared'
-import { decideIslandContentSide } from './island-content-side'
+import {
+  boundsKeepingIslandBarFixed,
+  decideIslandContentSide,
+  islandBarPoint,
+} from './island-content-side'
 
 const isMacOS = process.platform === 'darwin'
 const mainDirname = dirname(fileURLToPath(import.meta.url))
@@ -60,7 +68,9 @@ function boundsInsideDisplay(bounds: Rectangle, display: Display): Rectangle {
 export function settleIslandContentSide(
   window: BrowserWindow,
   currentSide: IslandContentSide,
+  barOffset: IslandBarOffset,
 ): IslandContentSide {
+  const islandWindow = window as IslandBrowserWindow
   const boundsNow = window.getBounds()
   const displays = screen.getAllDisplays().map((item) => ({
     id: item.id,
@@ -69,10 +79,29 @@ export function settleIslandContentSide(
   const { desired } = decideIslandContentSide({
     bounds: boundsNow,
     currentSide,
+    barOffset,
     displays,
   })
   if (desired === currentSide) return currentSide
-  updateConfig({ islandContentSide: desired })
+  const next = boundsKeepingIslandBarFixed(
+    boundsNow,
+    currentSide,
+    desired,
+    barOffset,
+  )
+  const display = screen.getDisplayNearestPoint(islandBarPoint(next.bounds, next.barOffset))
+  islandWindow.__suppressMoveSettle = true
+  window.setBounds(next.bounds)
+  updateConfig({
+    islandContentSide: desired,
+    islandBoundsByDisplay: {
+      ...readConfig().islandBoundsByDisplay,
+      [displayKey(display)]: next.bounds,
+    },
+  })
+  setTimeout(() => {
+    if (!window.isDestroyed()) islandWindow.__suppressMoveSettle = false
+  }, 80)
   return desired
 }
 

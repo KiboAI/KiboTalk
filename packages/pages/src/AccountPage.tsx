@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { AccountDevice, AccountSession } from '@kibotalk/app-shared'
 import {
   deleteCloudAccount,
@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DesktopProductWindowFrame,
   Input,
   Label,
   Separator,
@@ -93,7 +94,13 @@ function LoginCard({
 
   return (
     <div className={embedded ? 'w-full p-5' : 'flex min-h-dvh items-center justify-center p-4'}>
-      <Card className="mx-auto w-full max-w-md">
+      <Card
+        className={
+          embedded
+            ? 'mx-auto w-full max-w-md border-0 shadow-none'
+            : 'mx-auto w-full max-w-md'
+        }
+      >
         <CardHeader>
           <CardTitle>登录 KiboTalk</CardTitle>
           <CardDescription>
@@ -166,6 +173,7 @@ function LoginCard({
 
 function AccountContent({
   account,
+  embedded,
   showAdminLink,
   onAccountChange,
   onBack,
@@ -222,9 +230,13 @@ function AccountContent({
     }
   }
 
-  return (
-    <div className="min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5">
-      <div className="paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
+  const windowClassName = 'min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5'
+  const panelClassName = embedded
+    ? 'grid min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none'
+    : 'paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none'
+  const page = (
+    <>
+      <div className={panelClassName}>
         <aside className="min-w-0 border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
           <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             {onBack ? (
@@ -405,20 +417,43 @@ function AccountContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
+
+  return embedded ? page : <div className={windowClassName}>{page}</div>
 }
 
 export function AccountPage(props: AccountPageProps) {
+  let content: ReactNode
   if (props.loading) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
+    content = (
+      <div
+        className={
+          props.embedded
+            ? 'flex min-h-40 items-center justify-center text-sm text-muted-foreground'
+            : 'flex min-h-dvh items-center justify-center text-sm text-muted-foreground'
+        }
+      >
         正在检查账户…
       </div>
     )
+  } else if (!props.account) {
+    content = (
+      <LoginCard
+        embedded={props.embedded}
+        onAuthenticated={props.onAuthenticated}
+      />
+    )
+  } else {
+    content = <AccountContent {...props} account={props.account} />
   }
-  if (!props.account) {
-    return <LoginCard embedded={props.embedded} onAuthenticated={props.onAuthenticated} />
-  }
-  return <AccountContent {...props} account={props.account} />
+
+  if (!props.embedded) return content
+  return (
+    <DesktopProductWindowFrame
+      heightMode={!props.loading && props.account ? 'viewport' : 'content'}
+    >
+      {content}
+    </DesktopProductWindowFrame>
+  )
 }

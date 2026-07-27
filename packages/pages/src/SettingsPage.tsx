@@ -29,6 +29,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DesktopProductWindowFrame,
   Select,
   SelectContent,
   SelectItem,
@@ -63,6 +64,7 @@ export type PermissionState = 'granted' | 'not-determined' | 'denied' | 'restric
 
 export type SettingsPageProps = {
   platform: 'web' | 'desktop'
+  embedded?: boolean
   prefs: LanguagePrefs
   sessionActive: boolean
   storage: ConversationStorage
@@ -120,6 +122,7 @@ function permissionAllowed(state?: PermissionState): boolean {
 
 export function SettingsPage({
   platform,
+  embedded = false,
   prefs,
   sessionActive,
   storage,
@@ -227,10 +230,14 @@ export function SettingsPage({
       <span className="min-w-0 flex-1 break-words">{t('lockedWhileActive')}</span>
     </div>
   ) : null
+  const windowClassName = 'min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5'
+  const panelClassName = embedded
+    ? 'grid min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none'
+    : 'paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none'
 
-  return (
-    <div className="min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5">
-      <div className="paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
+  const page = (
+    <>
+      <div className={panelClassName}>
         <aside className="min-w-0 border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
           <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             <Button variant="ghost" size="icon" onClick={onBack} aria-label={t('back')}>
@@ -360,6 +367,17 @@ export function SettingsPage({
                   description={t('defaultNetworkNodeDescription')}
                 >
                   <div className="flex w-full min-w-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="soft"
+                      size="icon"
+                      className="shrink-0"
+                      disabled={relayProbes.loading}
+                      onClick={() => void relayProbes.refresh()}
+                      aria-label={t('refreshLatency')}
+                    >
+                      <RefreshCw className={`size-4 ${relayProbes.loading ? 'animate-spin' : ''}`} />
+                    </Button>
                     <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
                       <Select
                         value={prefs.relayNodeId}
@@ -410,17 +428,6 @@ export function SettingsPage({
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button
-                      type="button"
-                      variant="soft"
-                      size="icon"
-                      className="shrink-0"
-                      disabled={relayProbes.loading}
-                      onClick={() => void relayProbes.refresh()}
-                      aria-label={t('refreshLatency')}
-                    >
-                      <RefreshCw className={`size-4 ${relayProbes.loading ? 'animate-spin' : ''}`} />
-                    </Button>
                   </div>
                 </SettingRow>
                 {prefs.relayNodeId === 'cn-relay' ? (
@@ -628,6 +635,14 @@ export function SettingsPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
+  )
+
+  return embedded ? (
+    <DesktopProductWindowFrame heightMode="viewport">
+      {page}
+    </DesktopProductWindowFrame>
+  ) : (
+    <div className={windowClassName}>{page}</div>
   )
 }

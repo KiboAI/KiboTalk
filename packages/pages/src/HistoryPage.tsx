@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DesktopProductWindowFrame,
   ScrollArea,
   SessionListItem,
   StickyNoteCard,
@@ -18,6 +19,7 @@ import { ArrowLeft, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 
 export type HistoryPageProps = {
   storage: ConversationStorage
+  embedded?: boolean
   activeSessionId?: string
   onBack: () => void
   onRetryReview?: (sessionId: string) => Promise<void>
@@ -73,6 +75,7 @@ function HistoryTimeline({ session }: { session: ConversationSession }) {
 
 export function HistoryPage({
   storage,
+  embedded = false,
   activeSessionId,
   onBack,
   onRetryReview,
@@ -108,10 +111,14 @@ export function HistoryPage({
     [selectedId, sessions],
   )
   const locale = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja-JP' : 'en'
+  const windowClassName = 'min-h-dvh bg-background p-2 sm:p-5'
+  const panelClassName = embedded
+    ? 'grid min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden sm:grid-cols-[19rem_minmax(0,1fr)]'
+    : 'paper-sheet mx-auto grid h-[calc(100dvh-1rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[19rem_minmax(0,1fr)]'
 
-  return (
-    <div className="min-h-dvh bg-background p-2 sm:p-5">
-      <div className="paper-sheet mx-auto grid h-[calc(100dvh-1rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[19rem_minmax(0,1fr)]">
+  const page = (
+    <>
+      <div className={panelClassName}>
         <aside
           className={`min-h-0 min-w-0 border-border bg-muted/45 sm:flex sm:flex-col sm:border-r ${
             selected ? 'hidden sm:flex' : 'flex flex-col'
@@ -254,6 +261,14 @@ export function HistoryPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
+  )
+
+  return embedded ? (
+    <DesktopProductWindowFrame heightMode="viewport">
+      {page}
+    </DesktopProductWindowFrame>
+  ) : (
+    <div className={windowClassName}>{page}</div>
   )
 }

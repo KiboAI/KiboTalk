@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import {
   IPC_CHANNEL,
   type DesktopSessionState,
+  type IslandBarOffset,
   type OnboardingContentSize,
   type ProductWindowView,
 } from '../shared/ipc'
@@ -36,6 +37,12 @@ function broadcastAuthChanged(sourceWebContentsId: number): void {
       window.webContents.send(IPC_CHANNEL.authChangedEvent)
     }
   }
+}
+
+function isIslandBarOffset(value: unknown): value is IslandBarOffset {
+  if (!value || typeof value !== 'object') return false
+  const offset = value as Partial<IslandBarOffset>
+  return Number.isFinite(offset.x) && Number.isFinite(offset.y)
 }
 
 /** Registers every `ipcMain.handle` channel the preload bridge exposes as `window.kibotalk`. */
@@ -86,12 +93,16 @@ export function registerIpcHandlers(params: {
   ipcMain.handle(IPC_CHANNEL.islandGetContentSide, () => readConfig().islandContentSide)
   ipcMain.handle(
     IPC_CHANNEL.islandSettleContentSide,
-    (_event, current: IslandContentSide) => {
+    (_event, current: IslandContentSide, barOffset: unknown) => {
       const window = params.getIslandWindow()
-      if (!window || (current !== 'above' && current !== 'below')) {
+      if (
+        !window
+        || (current !== 'above' && current !== 'below')
+        || !isIslandBarOffset(barOffset)
+      ) {
         return readConfig().islandContentSide
       }
-      return settleIslandContentSide(window, current)
+      return settleIslandContentSide(window, current, barOffset)
     },
   )
   ipcMain.handle(IPC_CHANNEL.islandHide, () => params.getIslandWindow()?.hide())

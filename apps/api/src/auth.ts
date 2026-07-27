@@ -8,6 +8,7 @@ import {
   FREE_MONTHLY_SECONDS,
   quotaSummary,
 } from './quota'
+import { findAvailableInviteCode } from './invite-code-store'
 
 export const SESSION_COOKIE = 'kibotalk_session'
 const SESSION_DAYS = 90
@@ -173,7 +174,10 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
 }
 
 export async function requestOtp(context: Context): Promise<Response> {
-  const body = (await context.req.json().catch(() => null)) as { email?: unknown } | null
+  const body = (await context.req.json().catch(() => null)) as {
+    email?: unknown
+    inviteCode?: unknown
+  } | null
   const email = normalizeEmail(body?.email)
   if (!email) return context.json({ error: 'INVALID_EMAIL' }, 400)
   const sql = getDatabase()
@@ -199,6 +203,10 @@ export async function requestOtp(context: Context): Promise<Response> {
     WHERE email = ${email} AND deleted_at IS NULL
   `
   if (existing?.status === 'banned') return context.json({ error: 'ACCOUNT_BANNED' }, 403)
+  if (!existing) {
+    const invite = await findAvailableInviteCode(sql, body?.inviteCode)
+    if ('error' in invite) return context.json({ error: invite.error }, 403)
+  }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000)
@@ -236,6 +244,7 @@ export async function verifyOtp(context: Context): Promise<Response> {
     deviceName?: unknown
     platform?: unknown
     clientVersion?: unknown
+    inviteCode?: unknown
   } | null
   const email = normalizeEmail(body?.email)
   const code = typeof body?.code === 'string' ? body.code.trim() : ''
@@ -278,16 +287,40 @@ export async function verifyOtp(context: Context): Promise<Response> {
       `
       return null
     }
+    const [existingUser] = await transaction<UserRow[]>`
+      SELECT id, email, status
+      FROM users
+      WHERE email = ${email} AND deleted_at IS NULL
+      FOR UPDATE
+    `
+    let user = existingUser
+    if (!user) {
+      const invite = await findAvailableInviteCode(transaction, body?.inviteCode)
+      if ('error' in invite) return { inviteError: invite.error } as const
+      const [createdUser] = await transaction<UserRow[]>`
+        INSERT INTO users (email)
+        VALUES (${email})
+        RETURNING id, email, status
+      `
+      user = createdUser
+      await transaction`
+        INSERT INTO invite_code_uses (invite_code_id, user_id)
+        VALUES (${invite.id}, ${user!.id})
+      `
+      await transaction`
+        UPDATE invite_codes
+        SET use_count = use_count + 1, updated_at = now()
+        WHERE id = ${invite.id}
+      `
+    } else {
+      await transaction`
+        UPDATE users SET updated_at = now() WHERE id = ${user.id}
+      `
+    }
     await transaction`
       UPDATE otp_codes
       SET consumed_at = now()
       WHERE email = ${email} AND consumed_at IS NULL
-    `
-    const [user] = await transaction<UserRow[]>`
-      INSERT INTO users (email)
-      VALUES (${email})
-      ON CONFLICT (email) DO UPDATE SET updated_at = now()
-      RETURNING id, email, status
     `
     if (!user || user.status !== 'active') return { banned: true } as const
     const token = randomToken()
@@ -306,6 +339,9 @@ export async function verifyOtp(context: Context): Promise<Response> {
   })
 
   if (!result) return context.json({ error: 'INVALID_OTP' }, 400)
+  if ('inviteError' in result && result.inviteError) {
+    return context.json({ error: result.inviteError }, 403)
+  }
   if ('banned' in result) return context.json({ error: 'ACCOUNT_BANNED' }, 403)
   await ensureMonthlyFreeBucket(result.user.id)
   setCookie(context, SESSION_COOKIE, result.token, cookieOptions())

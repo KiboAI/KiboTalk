@@ -1,9 +1,16 @@
-# Realtime-only STT（经代理 WebSocket）
+# Realtime-only STT（多 provider 传输）
 
 > **2026-07-27 更新**：batch `POST /stt`、本地 mlx-qwen3-asr 与 batch 降级已移除。
 > 产品仅保留 realtime。历史「与 batch 并行」叙述见文末 changelog。
 
-STT 仅走 **realtime** 路径：阿里云 DashScope `qwen3-asr-flash-realtime`（WSS）。浏览器只连同源 `WS /stt-realtime`；`apps/api` 中继并注入 key，把薄客户端 JSON 映射为上游事件。
+STT 仅走 **realtime** 路径。provider 工厂保留两种并行传输：
+
+- `dashscope-realtime`：浏览器连接同源 `WS /stt-realtime`，`apps/api`
+  中继并注入 Bearer key；
+- `iflytek-realtime`：浏览器向当前 KiboTalk 节点申请一次性签名 WSS URL，
+  随后直接连接讯飞并上传二进制 PCM；KiboTalk 节点不接收音频字节。
+
+生产只启用 `iflytek-realtime`，DashScope adapter 保留但不对生产客户端发布。
 
 ## 为何 realtime（且不再保留 batch）
 
@@ -13,15 +20,22 @@ Batch 路径曾是：本地 VAD 判停顿 → 再上传整段 WAV → 才开始�
 
 ## 为何 Manual + 本地 turn gate（不用 server VAD）
 
-产品要的是 **enrolled 声纹 verification**（`user` / `other`），不是云端 diarization。`qwen3-asr-flash-realtime` **不支持** speaker diarization；若把 turn 边界交给 server VAD，会与本地 Silero + WeSpeaker 双时钟打架，还要对齐时间轴。
+产品要的是 **enrolled 声纹 verification**（`user` / `other`），不是云端
+diarization。若把 turn 边界交给 provider VAD，会与本地 Silero + WeSpeaker
+双时钟打架，还要对齐时间轴。
 
-因此：本地 VAD + 声纹 + 单一 `pauseMs` 独掌 turn；realtime 上游设 `turn_detection: null`（Manual）。每个 VAD speech fragment 做一次 `commit` 取得定稿文本，但它还不是正式 turn；定稿文本与声纹结果进入本地 TurnGate，只有 `pauseMs` / 换人 / `maxMs` flush 后才 `ingestFinalizedTurn`。只上行 Silero 判为 speech 的 PCM。
+因此：本地 VAD + 声纹 + 单一 `pauseMs` 独掌 turn。DashScope 通过 Manual
+`commit` 获取 fragment 定稿；讯飞没有 Manual commit，每个 VAD speech fragment
+使用一条直接 WSS 连接，并在本地 fragment 结束时发送 `end`，等 `ls=true`
+取得定稿。定稿文本与声纹结果进入同一个本地 TurnGate，只有 `pauseMs` / 换人 /
+`maxMs` flush 后才 `ingestFinalizedTurn`。
 
-## 为何 WebSocket 经 apps/api 中继（不浏览器直连）
+## 鉴权与音频边界
 
-与 ADR 0001 同一原则：key 不出浏览器；换 provider 只改服务端。LLM 仍用 SSE；**STT** 使用 WebSocket（双向：上行音频事件 + 下行 partial/completed）。
-
-整场会话一条长连接（开麦建连，停会话再 finish）；每轮 turn 只 `commit`，不停连。
+长期签名 Secret 只在服务端。讯飞的 WSS 鉴权位于查询参数，适合原生浏览器
+WebSocket；服务端为已登录且持有当前 relay session grant 的客户端签发带唯一
+UUID 和时间戳的 URL。客户端把讯飞最终结果和本轮样本数回报当前 KiboTalk 节点，
+节点再执行额度扣减。内测期该计费回报信任官方客户端，不作为防破解计费边界。
 
 ## 文本与教练契约
 
@@ -37,18 +51,20 @@ Realtime 断线：短退避重连同一 provider；仍失败则停止转写并�
 
 | 项 | 说明 |
 |----|------|
-| Provider id | `dashscope-realtime` |
-| 浏览器 | `WS /stt-realtime?provider=dashscope-realtime&language=ja` |
-| Env | `STT_ACTIVE=dashscope-realtime`；`STT_DASHSCOPE_API_KEY`；`STT_DASHSCOPE_WS_URL`；`STT_DASHSCOPE_REALTIME_MODEL`（默认 `qwen3-asr-flash-realtime`） |
-| 薄协议 | 客户端：`session.start` / `append` / `commit` / `finish`；服务端：`ready` / `partial` / `completed` / `error` |
-| 映射 | `packages/stt` 的 DashScope realtime 辅助函数；仅 `apps/api` 调用 |
+| Provider id | `dashscope-realtime` / `iflytek-realtime` |
+| 生产浏览器 | `POST /api/stt/direct/session` 取签名 URL，再直连讯飞 WSS |
+| 生产 Env | `STT_ACTIVE=iflytek-realtime`；`STT_IFLYTEK_APP_ID`；`STT_IFLYTEK_API_KEY`；`STT_IFLYTEK_API_SECRET` |
+| 讯飞音频 | 浏览器二进制 PCM 16 kHz / 16-bit mono，1280 bytes / 40 ms |
+| 讯飞定稿 | fragment 结束发送 `{"end":true,"sessionId":"..."}`，收到 `ls=true` 后完成 |
+| DashScope | 原同源薄协议和 server mapper 保留，生产不启用 |
 | TurnGate | `packages/audio` `createSegmentAggregator`：合并 fragment 定稿文本；使用单 `pauseMs`、无 gap 填零 |
 | Pipeline | 定稿经 TurnGate flush 后 `ingestFinalizedTurn` |
 | Playground | LiveSession 经 WS；草稿 UI；失败重连，无 batch 降级 |
 
 ## 后果
 
-- `apps/api` 持有长连接；开发期 Vite 须代理 WebSocket；Railway 须支持 WS upgrade
+- 讯飞音频不经过 KiboTalk 服务器；浏览器网络必须能直达讯飞 WSS
+- 讯飞日语使用 `autominor + recognized_language=ja`，需要账户开通多语种能力
 - 双 pause（user/other）产品旋钮取消；卡壳仍 = user 在统一 `pauseMs` 后入库的半句
 - M1 仅 playground + 一家 realtime；`apps/web` 与第二家厂商另开
 
@@ -56,3 +72,4 @@ Realtime 断线：短退避重连同一 provider；仍失败则停止转写并�
 
 - **2026-07-25**：初版标题为「Realtime STT 与 batch 并行」；生产约束见 ADR 0005。
 - **2026-07-27**：batch `POST /stt`、mlx-qwen3-asr、R4 降级到 batch 移除；STT 改为 realtime-only；TurnGate 保留（合并 realtime fragment 定稿文本）。
+- **2026-07-27**：新增讯飞浏览器直连 adapter，生产 active provider 切换为讯飞；DashScope adapter 并行保留。

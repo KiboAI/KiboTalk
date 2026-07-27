@@ -6,6 +6,7 @@ export type SttProvider = {
   model: string
   active: boolean
   mode: 'realtime'
+  transport: 'relay-websocket' | 'direct-websocket'
 }
 
 export function defaultSttProvider(providers: SttProvider[]): string | null {

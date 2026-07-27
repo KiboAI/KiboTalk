@@ -85,22 +85,40 @@ async function persistAccount(account: AccountSession): Promise<void> {
   }))
 }
 
-export async function requestLoginCode(email: string): Promise<{ developmentCode?: string }> {
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  INVITE_CODE_REQUIRED: 'KiboTalk 正在邀请内测，新用户注册需要填写邀请码。',
+  INVITE_CODE_UNAVAILABLE: '邀请码无效、已停用或已过期。',
+  INVITE_CODE_EXHAUSTED: '邀请码使用次数已耗尽。',
+  INVALID_OTP: '验证码无效或已过期。',
+}
+
+function accountError(body: { error?: string; message?: string }, fallback: string): Error {
+  return new Error(body.message ?? AUTH_ERROR_MESSAGES[body.error ?? ''] ?? body.error ?? fallback)
+}
+
+export async function requestLoginCode(
+  email: string,
+  inviteCode: string,
+): Promise<{ developmentCode?: string }> {
   const response = await authorizedFetch('/api/auth/request-code', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, inviteCode }),
   })
   const body = (await response.json().catch(() => ({}))) as {
     error?: string
     message?: string
     developmentCode?: string
   }
-  if (!response.ok) throw new Error(body.message ?? body.error ?? `OTP HTTP ${response.status}`)
+  if (!response.ok) throw accountError(body, `OTP HTTP ${response.status}`)
   return { developmentCode: body.developmentCode }
 }
 
-export async function verifyLoginCode(email: string, code: string): Promise<AccountSession> {
+export async function verifyLoginCode(
+  email: string,
+  code: string,
+  inviteCode: string,
+): Promise<AccountSession> {
   const response = await authorizedFetch('/api/auth/verify', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -110,6 +128,7 @@ export async function verifyLoginCode(email: string, code: string): Promise<Acco
       deviceName: runtimeDeviceName(),
       platform: runtimePlatform(),
       clientVersion: await runtimeClientVersion(),
+      inviteCode,
     }),
   })
   const body = (await response.json().catch(() => ({}))) as AccountSession & {
@@ -118,7 +137,7 @@ export async function verifyLoginCode(email: string, code: string): Promise<Acco
     message?: string
   }
   if (!response.ok || !body.accessToken) {
-    throw new Error(body.message ?? body.error ?? `OTP verify HTTP ${response.status}`)
+    throw accountError(body, `OTP verify HTTP ${response.status}`)
   }
   await saveAccessToken(body.accessToken)
   await persistAccount(body)

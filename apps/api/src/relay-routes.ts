@@ -24,6 +24,11 @@ import {
   touchRelaySession,
 } from './relay-session-state'
 import { providerHealthy } from './provider-health'
+import {
+  cancelIflytekDirectSession,
+  completeIflytekDirectSession,
+  issueIflytekDirectSession,
+} from './iflytek-direct'
 import { deductCompletedTurn, quotaSummary } from './quota'
 import { requireRequestAuth, type RequestAuth } from './auth'
 import { recordTelemetry, recordTelemetryLater } from './telemetry'
@@ -106,6 +111,10 @@ function registerCommonRelayRoutes(app: Hono): void {
     touchRelaySession(auth.claims)
     return context.json(issueRelayWebsocketTicket(auth.claims))
   })
+
+  app.post('/api/stt/direct/session', issueIflytekDirectSession)
+  app.post('/api/stt/direct/complete', completeIflytekDirectSession)
+  app.post('/api/stt/direct/cancel', cancelIflytekDirectSession)
 }
 
 function registerPrimaryRelayRoutes(app: Hono): void {

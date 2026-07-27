@@ -1,25 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import type { Context } from 'hono'
+import { normalizeAccessCode } from './access-code'
 import { requireRequestAuth } from './auth'
 import { getDatabase } from './db'
 import { grantCredit, quotaSummary } from './quota'
-
-function normalizeCode(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const code = value.trim().toUpperCase().replace(/\s+/g, '')
-  return /^[A-Z0-9-]{4,40}$/.test(code) ? code : null
-}
-
-export function generateVoucherCode(): string {
-  const raw = randomBytes(8).toString('hex').toUpperCase()
-  return `KIBO-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12)}`
-}
 
 export async function redeemVoucher(context: Context): Promise<Response> {
   const auth = await requireRequestAuth(context)
   if (auth instanceof Response) return auth
   const body = (await context.req.json().catch(() => null)) as { code?: unknown } | null
-  const code = normalizeCode(body?.code)
+  const code = normalizeAccessCode(body?.code)
   if (!code) return context.json({ error: 'INVALID_VOUCHER_CODE' }, 400)
   const sql = getDatabase()
 
@@ -125,4 +115,3 @@ export async function createAdminGrant(args: {
     actorUserId: args.adminUserId,
   })
 }
-

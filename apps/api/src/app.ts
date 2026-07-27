@@ -21,6 +21,11 @@ import {
   adminUserDetails,
 } from './admin'
 import {
+  adminCreateInviteCode,
+  adminListInviteCodes,
+  adminUpdateInviteCode,
+} from './invite-codes'
+import {
   authorizeAiUse,
   refundAiAllowance,
   type AiUseAuthorization,
@@ -115,6 +120,9 @@ const RELAY_DATA_PATHS = new Set([
   '/api/latency',
   '/api/relay/handshake',
   '/api/relay/ws-ticket',
+  '/api/stt/direct/session',
+  '/api/stt/direct/complete',
+  '/api/stt/direct/cancel',
   '/api/llm',
   '/llm',
 ])
@@ -216,13 +224,19 @@ app.delete('/api/admin/users/:userId/devices/:deviceId', adminRevokeDevice)
 app.get('/api/admin/vouchers', adminListVouchers)
 app.post('/api/admin/vouchers', adminCreateVoucher)
 app.patch('/api/admin/vouchers/:voucherId', adminUpdateVoucher)
+app.get('/api/admin/invite-codes', adminListInviteCodes)
+app.post('/api/admin/invite-codes', adminCreateInviteCode)
+app.patch('/api/admin/invite-codes/:inviteCodeId', adminUpdateInviteCode)
 app.get('/api/admin/ledger', adminLedger)
 
 app.get('/api/stt/providers', async (context) => {
   const auth = await requireRequestAuth(context)
   if (auth instanceof Response) return auth
   const providers = listSttProviders(process.env)
-    .filter((provider) => provider.configured && provider.mode === 'realtime')
+    .filter((provider) =>
+      provider.configured
+      && provider.mode === 'realtime'
+      && (process.env.APP_ENV !== 'production' || provider.active))
   return context.json({ providers })
 })
 

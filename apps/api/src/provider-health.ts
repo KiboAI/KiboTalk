@@ -3,7 +3,14 @@ const REQUIRED_UPSTREAM_COUNT = 2
 
 function configuredUpstreamUrls(env: NodeJS.ProcessEnv): string[] {
   const urls: string[] = []
-  if (env.STT_DASHSCOPE_WS_URL) urls.push(env.STT_DASHSCOPE_WS_URL)
+  if (env.STT_ACTIVE === 'iflytek-realtime') {
+    urls.push(
+      env.STT_IFLYTEK_WS_URL
+      ?? 'wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1',
+    )
+  } else if (env.STT_DASHSCOPE_WS_URL) {
+    urls.push(env.STT_DASHSCOPE_WS_URL)
+  }
   const llmProvider = env.LLM_ACTIVE
   if (llmProvider) {
     const llmUrl = env[`LLM_${llmProvider.toUpperCase()}_BASE_URL`]

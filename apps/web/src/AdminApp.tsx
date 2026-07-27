@@ -76,6 +76,16 @@ type Voucher = {
   valid_until: string | null
 }
 
+type InviteCode = {
+  id: string
+  code: string
+  name: string
+  max_uses: number
+  use_count: number
+  active: boolean
+  valid_until: string | null
+}
+
 type LedgerEntry = {
   id: number
   email: string
@@ -164,6 +174,7 @@ export default function AdminApp() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [vouchers, setVouchers] = useState<Voucher[]>([])
+  const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
@@ -178,6 +189,12 @@ export default function AdminApp() {
     durationDays: '30',
     maxRedemptions: '1',
     perUserLimit: '1',
+  })
+  const [inviteCodeForm, setInviteCodeForm] = useState({
+    code: '',
+    name: '内测邀请码',
+    maxUses: '100',
+    validUntil: '',
   })
 
   const refreshDashboard = useCallback(async () => {
@@ -201,6 +218,11 @@ export default function AdminApp() {
     setVouchers(body.vouchers)
   }, [])
 
+  const refreshInviteCodes = useCallback(async () => {
+    const body = await adminJson<{ inviteCodes: InviteCode[] }>('/api/admin/invite-codes')
+    setInviteCodes(body.inviteCodes)
+  }, [])
+
   const refreshLedger = useCallback(async () => {
     const body = await adminJson<{ ledger: LedgerEntry[] }>('/api/admin/ledger')
     setLedger(body.ledger)
@@ -222,10 +244,23 @@ export default function AdminApp() {
 
   useEffect(() => {
     if (!accountState.account?.user.isAdmin) return
-    void Promise.all([refreshDashboard(), refreshUsers(), refreshVouchers(), refreshLedger()])
+    void Promise.all([
+      refreshDashboard(),
+      refreshUsers(),
+      refreshVouchers(),
+      refreshInviteCodes(),
+      refreshLedger(),
+    ])
     const timer = window.setInterval(() => void refreshDashboard(), 5000)
     return () => window.clearInterval(timer)
-  }, [accountState.account?.user.isAdmin, refreshDashboard, refreshLedger, refreshUsers, refreshVouchers])
+  }, [
+    accountState.account?.user.isAdmin,
+    refreshDashboard,
+    refreshInviteCodes,
+    refreshLedger,
+    refreshUsers,
+    refreshVouchers,
+  ])
 
   if (accountState.loading || !accountState.account) {
     return (
@@ -276,6 +311,7 @@ export default function AdminApp() {
           <TabsList className="flex w-full justify-start overflow-x-auto">
             <TabsTrigger value="dashboard">实时看板</TabsTrigger>
             <TabsTrigger value="users">用户</TabsTrigger>
+            <TabsTrigger value="invite-codes">邀请码</TabsTrigger>
             <TabsTrigger value="vouchers">兑换码</TabsTrigger>
             <TabsTrigger value="ledger">额度流水</TabsTrigger>
           </TabsList>
@@ -351,6 +387,156 @@ export default function AdminApp() {
                 </table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="invite-codes" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>新建邀请码</CardTitle>
+                <CardDescription>
+                  新用户注册资格；留空自定义码时，生成规则与兑换码完全一致。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <Label>自定义码（可空）</Label>
+                  <Input
+                    value={inviteCodeForm.code}
+                    onChange={(event) =>
+                      setInviteCodeForm({ ...inviteCodeForm, code: event.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>名称</Label>
+                  <Input
+                    value={inviteCodeForm.name}
+                    onChange={(event) =>
+                      setInviteCodeForm({ ...inviteCodeForm, name: event.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>总可注册人数</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={inviteCodeForm.maxUses}
+                    onChange={(event) =>
+                      setInviteCodeForm({ ...inviteCodeForm, maxUses: event.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>失效时间（可空）</Label>
+                  <Input
+                    type="datetime-local"
+                    value={inviteCodeForm.validUntil}
+                    onChange={(event) =>
+                      setInviteCodeForm({ ...inviteCodeForm, validUntil: event.target.value })}
+                  />
+                </div>
+                <div className="flex items-end lg:col-start-4">
+                  <Button
+                    className="w-full"
+                    onClick={async () => {
+                      await adminJson('/api/admin/invite-codes', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                          code: inviteCodeForm.code || undefined,
+                          name: inviteCodeForm.name,
+                          maxUses: Number(inviteCodeForm.maxUses),
+                          validUntil: inviteCodeForm.validUntil
+                            ? new Date(inviteCodeForm.validUntil).toISOString()
+                            : undefined,
+                        }),
+                      })
+                      setInviteCodeForm({ ...inviteCodeForm, code: '' })
+                      await refreshInviteCodes()
+                    }}
+                  >
+                    创建
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            <div className="grid gap-3 md:grid-cols-2">
+              {inviteCodes.map((inviteCode) => (
+                <Card key={inviteCode.id}>
+                  <CardHeader>
+                    <div className="flex justify-between gap-2">
+                      <div>
+                        <CardTitle className="font-mono text-base">{inviteCode.code}</CardTitle>
+                        <CardDescription>{inviteCode.name}</CardDescription>
+                      </div>
+                      <Switch
+                        checked={inviteCode.active}
+                        onCheckedChange={async (active) => {
+                          await adminJson(`/api/admin/invite-codes/${inviteCode.id}`, {
+                            method: 'PATCH',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ active }),
+                          })
+                          await refreshInviteCodes()
+                        }}
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex gap-2 text-xs text-muted-foreground">
+                      <Badge variant="secondary">注册资格</Badge>
+                      <span>{inviteCode.use_count}/{inviteCode.max_uses} 已使用</span>
+                      <span>
+                        {inviteCode.valid_until
+                          ? `${new Date(inviteCode.valid_until).toLocaleString()} 失效`
+                          : '长期有效'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label>总次数</Label>
+                        <Input
+                          type="number"
+                          min={Math.max(1, inviteCode.use_count)}
+                          defaultValue={inviteCode.max_uses}
+                          onBlur={async (event) => {
+                            const maxUses = Number(event.target.value)
+                            if (maxUses === inviteCode.max_uses) return
+                            await adminJson(`/api/admin/invite-codes/${inviteCode.id}`, {
+                              method: 'PATCH',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({ maxUses }),
+                            })
+                            await refreshInviteCodes()
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label>失效时间</Label>
+                        <Input
+                          type="datetime-local"
+                          defaultValue={
+                            inviteCode.valid_until
+                              ? new Date(inviteCode.valid_until).toISOString().slice(0, 16)
+                              : ''
+                          }
+                          onBlur={async (event) => {
+                            await adminJson(`/api/admin/invite-codes/${inviteCode.id}`, {
+                              method: 'PATCH',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({
+                                validUntil: event.target.value
+                                  ? new Date(event.target.value).toISOString()
+                                  : null,
+                              }),
+                            })
+                            await refreshInviteCodes()
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
 
           <TabsContent value="vouchers" className="space-y-4">

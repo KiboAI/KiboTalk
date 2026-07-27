@@ -3,41 +3,21 @@
  * Speaks only the thin JSON protocol — never DashScope upstream events.
  */
 import type { QuotaSummary } from './account'
+import { connectIflytekRealtimeStt } from './iflytek-realtime-client'
 import { websocketApiUrl } from './api-runtime'
+import {
+  isTranscriptionFailed,
+  RealtimeSttError,
+  type RealtimeSttClient,
+  type RealtimeSttHandlers,
+} from './realtime-stt-types'
 
-export type RealtimeSttHandlers = {
-  onPartial?: (text: string) => void
-  onCompleted?: (text: string) => void
-  onError?: (message: string) => void
-  onReady?: () => void
-  onClose?: () => void
-  onQuotaExhausted?: (quota?: QuotaSummary) => void
-}
-
-export type RealtimeSttClient = {
-  append(pcm: Float32Array): void
-  commit(): void
-  finish(): void
-  close(): void
-  /** Resolves with the next completed transcript (or rejects on error/close). */
-  waitCompleted(timeoutMs?: number): Promise<string>
-}
-
-export class RealtimeSttError extends Error {
-  constructor(
-    message: string,
-    readonly code?: string,
-  ) {
-    super(message)
-    this.name = 'RealtimeSttError'
-  }
-}
-
-export function isTranscriptionFailed(
-  error: unknown,
-): error is RealtimeSttError & { code: 'TRANSCRIPTION_FAILED' } {
-  return error instanceof RealtimeSttError && error.code === 'TRANSCRIPTION_FAILED'
-}
+export {
+  isTranscriptionFailed,
+  RealtimeSttError,
+  type RealtimeSttClient,
+  type RealtimeSttHandlers,
+} from './realtime-stt-types'
 
 function floatToPcm16Base64(pcm: Float32Array): string {
   const bytes = new Uint8Array(pcm.length * 2)
@@ -76,6 +56,9 @@ export function connectRealtimeStt(opts: {
   handlers?: RealtimeSttHandlers
 }): Promise<RealtimeSttClient> {
   const { provider, language, sessionId, handlers = {} } = opts
+  if (provider === 'iflytek-realtime') {
+    return connectIflytekRealtimeStt({ language, handlers })
+  }
 
   return sttRealtimeUrl(provider, language, sessionId).then((url) => new Promise((resolve, reject) => {
     const ws = new WebSocket(url)
@@ -141,6 +124,10 @@ export function connectRealtimeStt(opts: {
           }
           handlers.onError?.(error.message)
           failWaiters(error)
+          if (!settled) {
+            settled = true
+            reject(error)
+          }
           break
         }
         case 'quota_exhausted':

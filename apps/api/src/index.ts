@@ -26,9 +26,6 @@ if (process.env.APP_ENV === 'production') {
     'RELAY_PRIMARY_ORIGIN',
     'RELAY_TOKEN_PUBLIC_KEY',
     'STT_ACTIVE',
-    'STT_DASHSCOPE_API_KEY',
-    'STT_DASHSCOPE_WS_URL',
-    'STT_DASHSCOPE_REALTIME_MODEL',
     'LLM_ACTIVE',
   ] as const
   const roleRequired = role === 'primary'
@@ -55,11 +52,17 @@ if (process.env.APP_ENV === 'production') {
   if (process.env.AUTH_DISABLED === 'true' || process.env.ALLOW_DEV_OTP === 'true') {
     throw new Error('Development authentication bypasses are forbidden in production')
   }
-  if (process.env.STT_ACTIVE !== 'dashscope-realtime') {
-    throw new Error('Production STT provider must be dashscope-realtime')
+  if (process.env.STT_ACTIVE !== 'iflytek-realtime') {
+    throw new Error('Production STT provider must be iflytek-realtime')
   }
-  if (process.env.STT_DASHSCOPE_REALTIME_MODEL !== 'qwen3-asr-flash-realtime') {
-    throw new Error('Production STT model must be qwen3-asr-flash-realtime')
+  const iflytekRequired = [
+    'STT_IFLYTEK_APP_ID',
+    'STT_IFLYTEK_API_KEY',
+    'STT_IFLYTEK_API_SECRET',
+  ] as const
+  const missingIflytek = iflytekRequired.filter((name) => !process.env[name])
+  if (missingIflytek.length > 0) {
+    throw new Error(`Missing production environment variables: ${missingIflytek.join(', ')}`)
   }
   const llmGroup = `LLM_${process.env.LLM_ACTIVE!.toUpperCase()}_`
   const llmRequired = [`${llmGroup}BASE_URL`, `${llmGroup}API_KEY`, `${llmGroup}MODEL`]

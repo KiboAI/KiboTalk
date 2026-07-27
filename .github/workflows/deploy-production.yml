@@ -23,12 +23,13 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
-          JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
+          STT_IFLYTEK_APP_ID: ${{ secrets.STT_IFLYTEK_APP_ID }}
+          STT_IFLYTEK_API_KEY: ${{ secrets.STT_IFLYTEK_API_KEY }}
+          STT_IFLYTEK_API_SECRET: ${{ secrets.STT_IFLYTEK_API_SECRET }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            JP_STT_DASHSCOPE_API_KEY JP_STT_DASHSCOPE_WS_URL; do
+            STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY STT_IFLYTEK_API_SECRET; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
               exit 1
@@ -47,20 +48,19 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
-          JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
+          STT_IFLYTEK_APP_ID: ${{ secrets.STT_IFLYTEK_APP_ID }}
+          STT_IFLYTEK_API_KEY: ${{ secrets.STT_IFLYTEK_API_KEY }}
+          STT_IFLYTEK_API_SECRET: ${{ secrets.STT_IFLYTEK_API_SECRET }}
         run: |
-          case "$JP_STT_DASHSCOPE_WS_URL" in
-            wss://*.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime) ;;
-            *) echo "::error::JP_STT_DASHSCOPE_WS_URL must use the Alibaba Cloud Tokyo realtime endpoint"; exit 1 ;;
-          esac
-          printf '%s\n%s\n' \
-            "$JP_STT_DASHSCOPE_API_KEY" \
-            "$JP_STT_DASHSCOPE_WS_URL" \
+          printf '%s\n%s\n%s\n' \
+            "$STT_IFLYTEK_APP_ID" \
+            "$STT_IFLYTEK_API_KEY" \
+            "$STT_IFLYTEK_API_SECRET" \
             | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
                 set -eu
-                IFS= read -r stt_key
-                IFS= read -r stt_url
+                IFS= read -r stt_app_id
+                IFS= read -r stt_api_key
+                IFS= read -r stt_api_secret
                 set_env() {
                   name=$1
                   value=$2
@@ -72,8 +72,11 @@ jobs:
                   fi
                 }
                 set_env RELAY_NODES_JSON "[]"
-                set_env STT_DASHSCOPE_API_KEY "$stt_key"
-                set_env STT_DASHSCOPE_WS_URL "$stt_url"
+                set_env STT_ACTIVE "iflytek-realtime"
+                set_env STT_IFLYTEK_APP_ID "$stt_app_id"
+                set_env STT_IFLYTEK_API_KEY "$stt_api_key"
+                set_env STT_IFLYTEK_API_SECRET "$stt_api_secret"
+                set_env STT_IFLYTEK_WS_URL "wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1"
                 chmod 600 /opt/kibotalk/.env
               '
       - name: Validate server environments
@@ -87,11 +90,23 @@ jobs:
             for name in \
               RELAY_PRIMARY_ORIGIN RELAY_NODES_JSON \
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              STT_ACTIVE STT_DASHSCOPE_API_KEY STT_DASHSCOPE_WS_URL \
+              STT_ACTIVE STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY \
+              STT_IFLYTEK_API_SECRET STT_IFLYTEK_WS_URL \
               LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
           '
+      - name: Detect reusable server images
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          if ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
+            "docker image inspect kibotalk-postgres:17 >/dev/null 2>&1"; then
+            echo "INCLUDE_POSTGRES_IMAGE=false" >> "$GITHUB_ENV"
+          else
+            echo "INCLUDE_POSTGRES_IMAGE=true" >> "$GITHUB_ENV"
+          fi
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
@@ -108,7 +123,9 @@ jobs:
         run: |
           docker build --platform linux/amd64 --tag "kibotalk-api:${GITHUB_SHA}" .
           docker build --platform linux/amd64 --tag kibotalk-caddy:2.10 --file infra/production/Caddy.Dockerfile .
-          docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
+          if [ "$INCLUDE_POSTGRES_IMAGE" = "true" ]; then
+            docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
+          fi
           touch infra/production/.env
           (
             cd infra/production
@@ -123,8 +140,10 @@ jobs:
           docker save \
             "kibotalk-api:${GITHUB_SHA}" \
             kibotalk-caddy:2.10 \
-            kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
+          if [ "$INCLUDE_POSTGRES_IMAGE" = "true" ]; then
+            docker save kibotalk-postgres:17 | gzip -1 > /tmp/kibotalk-postgres-image.tar.gz
+          fi
       - name: Stage on-device model mirror
         run: |
           pnpm --filter @kibotalk/desktop download-models
@@ -134,8 +153,13 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
+          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
+            "mkdir -p /opt/kibotalk/incoming && rm -f /opt/kibotalk/incoming/kibotalk-postgres-image.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
+          if [ -f /tmp/kibotalk-postgres-image.tar.gz ]; then
+            scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-postgres-image.tar.gz \
+              "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-postgres-image.tar.gz"
+          fi
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
       - name: Activate release
@@ -148,6 +172,10 @@ jobs:
           ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "
             set -eu
             gzip -dc /opt/kibotalk/incoming/kibotalk-images.tar.gz | docker load
+            if [ -f /opt/kibotalk/incoming/kibotalk-postgres-image.tar.gz ]; then
+              gzip -dc /opt/kibotalk/incoming/kibotalk-postgres-image.tar.gz | docker load
+              rm -f /opt/kibotalk/incoming/kibotalk-postgres-image.tar.gz
+            fi
             rm -rf /opt/kibotalk/models.next
             mkdir -p /opt/kibotalk/models.next
             tar -xzf /opt/kibotalk/incoming/kibotalk-models.tar.gz -C /opt/kibotalk/models.next

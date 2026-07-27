@@ -41,7 +41,8 @@ review 和偏好；密文按用户派生密钥，服务端只保留查询所需�
 
 ## 认证与客户端行为
 
-开放邮箱注册，只提供 OTP，不提供密码、手机号或社交登录。Web 使用
+邀请内测期间，新邮箱注册必须提供有效邀请码；已有账户不受影响。认证只提供
+邮箱 OTP，不提供密码、手机号或社交登录。Web 使用
 `HttpOnly; Secure; SameSite=Lax` cookie；桌面端使用随机 bearer token，并通过
 Electron `safeStorage` 保存。客户端必须先在本地完成 onboarding 与声纹录入，
 再登录。登录后同步自动启用且没有关闭开关。
@@ -67,12 +68,14 @@ ID，防止凭据切换竞态。客户端只缓存不含 token 的最小账户�
 
 比赛期只展示 Pro 与 ¥10/120、¥30/400、¥50/800 三档分钟包，不提供支付入口。
 兑换码支持总次数、单用户次数、有效期、启停和权益配置。
+邀请码与兑换码使用同一生成与规范化规则，但数据和用途分离；邀请码支持总注册
+次数、有效期和启停，只在验证码通过并原子创建新账户时扣次数，不赠送额度。
 
 ## 生产 provider
 
 产品默认使用：
 
-- STT：`STT_ACTIVE=dashscope-realtime`，DashScope `qwen3-asr-flash-realtime`（仅 realtime，无 batch 路径）；
+- STT：`STT_ACTIVE=iflytek-realtime`，讯飞实时语音转写大模型；浏览器使用服务端签发的 WSS URL 直连，DashScope adapter 保留但生产不启用；
 - LLM：DeepSeek `deepseek-v4-flash`，thinking disabled。
 
 Realtime 断线短退避重连；仍失败则停止转写并显示错误，不自动降级。

@@ -89,7 +89,7 @@
 | F09 | 历史与结束回顾 | 本地长期保留会话；停止后后台生成冻结 `uiLang` 的短标题与小结，失败可重试 | 列表 / 详情可回看转写和候选；不保存原始音频 |
 | F10 | 响应式 UI | iPhone Safari + Mac Chrome/Safari 同一 URL；宽屏 A+B 可折叠双栏，窄屏内容区对话层 | 无页面横向溢出；两栏等高并独立滚动 |
 | F11 | PWA（移动） | 可「添加到主屏幕」 | 全屏、少地址栏干扰 |
-| F12 | 账号与设备 | 开放邮箱 OTP 注册；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
+| F12 | 账号与设备 | 邀请码限制的新邮箱 OTP 注册；已有账户直接登录；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
 | F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 本地先持久化并后台补同步；同步故障不阻塞新会话；支持单会话和账户删除 |
 | F14 | 额度与兑换 | 免费 30 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
 | F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `app.kibotalk.app` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
@@ -582,9 +582,9 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 | `POST /api/llm` | **SSE 流式** | 接收对话上下文，转发 DeepSeek，流式回 3 条候选或 `[]` | 必须登录；key 只在服务端 env |
 | `POST /api/session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 必须登录；客户端负责重试 |
 | `WS /api/stt-realtime` | **WebSocket** | 中转短令牌换单次票据；speech PCM / commit；DashScope 中继；计时扣额度 | 唯一 STT 路径；不保存音频 |
-| `/api/auth/*` | REST | 邮箱 OTP、当前账户、设备撤销、WS 单次票据 | Resend + 安全 cookie / bearer |
+| `/api/auth/*` | REST | 邮箱 OTP、首次注册邀请码、当前账户、设备撤销、WS 单次票据 | Resend + 安全 cookie / bearer |
 | `/api/sync/*` | REST | 加密会话、删除 tombstone 与偏好同步 | AES-256-GCM；不含声纹 / 音频 |
-| `/api/admin/*` | REST | 用户、账本、赠送、兑换码、运行面板 | 管理邮箱白名单 |
+| `/api/admin/*` | REST | 用户、账本、赠送、邀请码、兑换码、运行面板 | 管理邮箱白名单 |
 
 **流式协议选型**：
 
@@ -650,11 +650,12 @@ app.use('/*', serveStatic({ root: '../web/dist' }))
 **与客户端的分工**：
 
 ```text
-浏览器（Renderer + Web Worker）        VPS（Caddy + Hono + PostgreSQL）
+浏览器（Renderer + Web Worker）        VPS（Caddy + Hono + PostgreSQL）    讯飞
 ─────────────────────────              ──────────────────────────────
 VAD → SpeakerGate → TurnGate
-  append/commit ──WS /stt-realtime──→  中继上游 realtime
-                  ↓                       ←── partial（草稿）/ completed（fragment 定稿）
+  申请签名 URL ─────────────────────→  鉴权、签名
+  PCM binary ─────────────────────────────────────────────────────────→ WSS
+                  ↓                                      ←── partial / final
             TurnGate flush → ingestFinalizedTurn
                   ↓
             conversation.appendTurn（仅定稿）
@@ -666,24 +667,22 @@ VAD → SpeakerGate → TurnGate
 
 ### 2.9 配置与环境变量
 
-**原则**：provider key / base URL / model name 仍只走服务端 env，不落 DB；
-账号、额度与密文同步数据进入 PostgreSQL。客户端永远拿不到 provider key。
+**原则**：provider 长期签名 secret / base URL / model name 仍只走服务端 env，
+不落 DB；账号、额度与密文同步数据进入 PostgreSQL。讯飞直连时客户端只得到带
+时间戳与唯一 UUID 的签名 URL，不得到 APISecret。
 
 **命名方案：前缀 + active 选择器**。加 provider 不改现有变量名，可同时配多组，一个变量切换当前使用的。
 
 **生产固定**：LLM 直连 DeepSeek `deepseek-v4-flash`（thinking disabled）；
-STT 以 `STT_ACTIVE=dashscope-realtime` 直连 DashScope
-`qwen3-asr-flash-realtime`。
+STT 使用 `STT_ACTIVE=iflytek-realtime`，浏览器直连讯飞实时语音转写大模型。
+DashScope adapter 与讯飞并行保留，但生产不启用。
 
 ```bash
-# 日本主节点 STT（realtime only；东京 Workspace + 东京 Key）
-STT_ACTIVE=dashscope-realtime
-STT_DASHSCOPE_API_KEY=sk-xxxxxxxx
-STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime
-STT_DASHSCOPE_REALTIME_MODEL=qwen3-asr-flash-realtime
-
-# 国内 relay 使用同名变量，但配置北京 Workspace + 北京 Key
-# STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime
+STT_ACTIVE=iflytek-realtime
+STT_IFLYTEK_APP_ID=xxxxxxxx
+STT_IFLYTEK_API_KEY=xxxxxxxx
+STT_IFLYTEK_API_SECRET=xxxxxxxx
+STT_IFLYTEK_WS_URL=wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1
 
 # 本地开发可选：LLM 走 OpenRouter
 LLM_ACTIVE=openrouter
@@ -700,7 +699,8 @@ LLM_OPENROUTER_MODEL=deepseek/deepseek-chat     # 或 anthropic/claude-...，随
 **与代码的接口（provider 无关，不写死 OpenRouter）**：
 
 - `packages/llm` 暴露 `createLlmClient({ provider, baseUrl, apiKey, model })`，启动时按 `LLM_ACTIVE` 选一组 env 注入
-- `packages/stt` 暴露 DashScope realtime 映射辅助函数；`apps/api` 的 `WS /stt-realtime` 中继上游
+- STT provider 工厂同时保留 DashScope server-relay 与讯飞 browser-direct；
+  `STT_ACTIVE` 决定生产发布的唯一 active provider
 - `apps/api` 的 `/llm` 路由接受可选 `provider` 字段做 per-request 覆盖（默认走 `LLM_ACTIVE`），将来按用户偏好路由就靠这个口子
 - **OpenRouter 只是 LLM `provider` 的一个取值，不是代码里的硬编码假设**。加新 provider = 加一个 adapter + 加一组 env，不动现有代码、不动其他 adapter
 

@@ -3,7 +3,7 @@
 Production currently runs on one Japanese primary server:
 
 - Web, API, authentication, PostgreSQL, quota, and sync;
-- realtime STT through Alibaba Cloud Japan (Tokyo);
+- browser-direct realtime STT through iFlytek;
 - LLM proxy;
 - the `jp-primary` data-plane node.
 
@@ -28,16 +28,17 @@ RELAY_NODES_JSON=[]
 workflow writes this value on every release so a retired node cannot
 accidentally return through stale server configuration.
 
-Tokyo realtime STT uses:
+iFlytek realtime STT uses:
 
 ```dotenv
-STT_ACTIVE=dashscope-realtime
-STT_DASHSCOPE_WS_URL=wss://<workspace>.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime
-STT_DASHSCOPE_REALTIME_MODEL=qwen3-asr-flash-realtime
+STT_ACTIVE=iflytek-realtime
+STT_IFLYTEK_WS_URL=wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1
 ```
 
-The API key and workspace URL are stored as GitHub Actions secrets
-`JP_STT_DASHSCOPE_API_KEY` and `JP_STT_DASHSCOPE_WS_URL`.
+The app id, API key, and signing secret are stored as GitHub Actions secrets
+`STT_IFLYTEK_APP_ID`, `STT_IFLYTEK_API_KEY`, and `STT_IFLYTEK_API_SECRET`.
+The browser requests a signed URL from the selected KiboTalk node, then sends
+PCM directly to iFlytek; the Japanese server never carries STT audio.
 
 ## Verification
 

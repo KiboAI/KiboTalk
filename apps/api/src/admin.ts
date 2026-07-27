@@ -1,8 +1,9 @@
 import type { Context } from 'hono'
+import { generateAccessCode, normalizeAccessCode } from './access-code'
 import { requireRequestAuth } from './auth'
 import { getDatabase } from './db'
 import { PRO_PLAN_DAYS, PRO_PLAN_SECONDS, quotaSummary } from './quota'
-import { createAdminGrant, generateVoucherCode } from './vouchers'
+import { createAdminGrant } from './vouchers'
 
 async function requireAdmin(context: Context) {
   const auth = await requireRequestAuth(context)
@@ -348,9 +349,9 @@ export async function adminCreateVoucher(context: Context): Promise<Response> {
   const benefitKind = body?.benefitKind === 'paid' ? 'paid' : 'pro'
   const code =
     typeof body?.code === 'string' && body.code.trim()
-      ? body.code.trim().toUpperCase().replace(/\s+/g, '')
-      : generateVoucherCode()
-  if (!/^[A-Z0-9-]{4,40}$/.test(code)) {
+      ? normalizeAccessCode(body.code)
+      : generateAccessCode()
+  if (!code) {
     return context.json({ error: 'INVALID_VOUCHER_CODE' }, 400)
   }
   const name =

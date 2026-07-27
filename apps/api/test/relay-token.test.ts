@@ -22,7 +22,7 @@ const input = {
   userId: 'user-1',
   deviceSessionId: 'device-1',
   conversationSessionId: 'conversation-1',
-  nodeId: 'cn-relay',
+  nodeId: 'sg-relay',
   scopes: ['llm'] as const,
   sttProvider: 'dashscope-realtime',
   llmProvider: 'openai',
@@ -37,7 +37,7 @@ describe('relay session token', () => {
     const issued = issueRelaySessionToken(input, { env, now })
     const claims = verifyRelaySessionToken(issued.token, {
       env,
-      nodeId: 'cn-relay',
+      nodeId: 'sg-relay',
       requiredScope: 'llm',
       now,
     })
@@ -59,7 +59,7 @@ describe('relay session token', () => {
     })).toBeNull()
     expect(verifyRelaySessionToken(token, {
       env,
-      nodeId: 'cn-relay',
+      nodeId: 'sg-relay',
       requiredScope: 'stt-realtime',
       now,
     })).toBeNull()
@@ -78,12 +78,12 @@ describe('relay session token', () => {
 
     expect(verifyRelaySessionToken(tampered, {
       env,
-      nodeId: 'cn-relay',
+      nodeId: 'sg-relay',
       now,
     })).toBeNull()
     expect(verifyRelaySessionToken(token, {
       env,
-      nodeId: 'cn-relay',
+      nodeId: 'sg-relay',
       now: new Date(now.getTime() + 31 * 60 * 1000),
     })).toBeNull()
   })

@@ -55,7 +55,7 @@ import {
   releaseRelayLlm,
 } from './relay-session-state'
 import { providerHealthy } from './provider-health'
-import { serverRole } from './server-role'
+import { relayNodeId, serverRole } from './server-role'
 
 export const app = new Hono()
 const role = serverRole()
@@ -135,7 +135,7 @@ app.get('/health', async (context) => {
     return context.json({
       ok: providerHealthy(),
       role,
-      nodeId: process.env.RELAY_NODE_ID ?? 'cn-relay',
+      nodeId: relayNodeId(),
       providers: providerHealthy() ? 'ok' : 'error',
       version: process.env.APP_VERSION ?? 'development',
     }, providerHealthy() ? 200 : 503)

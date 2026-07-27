@@ -17,8 +17,8 @@ const primary: RelayNode = {
   acceptingNewSessions: true,
 }
 const relay: RelayNode = {
-  id: 'cn-relay',
-  origin: 'http://123.99.200.156:8443',
+  id: 'sg-relay',
+  origin: 'https://sg-relay.kibotalk.app',
   role: 'relay',
   acceptingNewSessions: true,
 }
@@ -102,7 +102,7 @@ describe('relay API runtime', () => {
     const response = await relayFetch('/api/llm', { method: 'POST' })
     expect(response.ok).toBe(true)
     expect(calls).toContainEqual({
-      url: 'http://123.99.200.156:8443/api/llm',
+      url: 'https://sg-relay.kibotalk.app/api/llm',
       authorization: 'Bearer short-token',
     })
 

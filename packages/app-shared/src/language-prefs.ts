@@ -54,8 +54,8 @@ export function loadLanguagePrefs(): LanguagePrefs {
       audioSource: parsed.audioSource ?? fallback.audioSource,
       microphoneDeviceId: parsed.microphoneDeviceId ?? fallback.microphoneDeviceId,
       relayNodeId:
-        parsed.relayNodeId === 'cn-relay'
-          ? 'cn-relay'
+        typeof parsed.relayNodeId === 'string' && parsed.relayNodeId.trim()
+          ? parsed.relayNodeId
           : fallback.relayNodeId,
     }
   } catch {

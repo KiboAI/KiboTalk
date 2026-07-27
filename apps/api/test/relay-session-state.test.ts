@@ -19,7 +19,7 @@ const claims: RelaySessionClaims = {
   userId: 'user-1',
   deviceSessionId: 'device-1',
   conversationSessionId: 'session-1',
-  nodeId: 'cn-relay',
+  nodeId: 'sg-relay',
   scopes: ['llm', 'stt-realtime'],
   sttProvider: 'dashscope-realtime',
   llmProvider: 'openai',

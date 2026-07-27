@@ -19,7 +19,7 @@ export function isLocalRelayOrigin(origin: string): boolean {
   }
 }
 
-/** Display label key for a relay node: local vs primary vs china relay. */
+/** Display label key for a relay node: local vs primary vs secondary relay. */
 export function relayNodeLabelKind(
   node: Pick<RelayNode, 'origin' | 'role'>,
 ): 'local' | 'primary' | 'relay' {

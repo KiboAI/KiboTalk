@@ -4,8 +4,7 @@ import { FREE_MONTHLY_SECONDS } from '../src/quota'
 
 const previous = {
   RELAY_PRIMARY_ORIGIN: process.env.RELAY_PRIMARY_ORIGIN,
-  RELAY_CN_ORIGIN: process.env.RELAY_CN_ORIGIN,
-  RELAY_CN_ENABLED: process.env.RELAY_CN_ENABLED,
+  RELAY_NODES_JSON: process.env.RELAY_NODES_JSON,
   STT_ACTIVE: process.env.STT_ACTIVE,
   LLM_ACTIVE: process.env.LLM_ACTIVE,
   LLM_OPENROUTER_MODEL: process.env.LLM_OPENROUTER_MODEL,
@@ -19,10 +18,28 @@ afterEach(() => {
 })
 
 describe('relay control plane', () => {
+  it('publishes only the primary node when the relay is disabled', async () => {
+    process.env.RELAY_PRIMARY_ORIGIN = 'https://app.kibotalk.app'
+    process.env.RELAY_NODES_JSON = '[]'
+
+    const response = await app.request('/api/relay/nodes')
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      nodes: [
+        expect.objectContaining({
+          id: 'jp-primary',
+          origin: 'https://app.kibotalk.app',
+        }),
+      ],
+      primaryNodeId: 'jp-primary',
+    })
+  })
+
   it('publishes both configured nodes and signs a node-bound session grant', async () => {
     process.env.RELAY_PRIMARY_ORIGIN = 'https://app.kibotalk.app'
-    process.env.RELAY_CN_ORIGIN = 'http://123.99.200.156:8443'
-    process.env.RELAY_CN_ENABLED = 'true'
+    process.env.RELAY_NODES_JSON = JSON.stringify([
+      { id: 'sg-relay', origin: 'https://sg-relay.kibotalk.app' },
+    ])
     process.env.STT_ACTIVE = 'dashscope-realtime'
     process.env.LLM_ACTIVE = 'openrouter'
     process.env.LLM_OPENROUTER_MODEL = 'deepseek-v4-flash'
@@ -36,8 +53,8 @@ describe('relay control plane', () => {
     expect(nodes.nodes).toEqual([
       expect.objectContaining({ id: 'jp-primary', origin: 'https://app.kibotalk.app' }),
       expect.objectContaining({
-        id: 'cn-relay',
-        origin: 'http://123.99.200.156:8443',
+        id: 'sg-relay',
+        origin: 'https://sg-relay.kibotalk.app',
       }),
     ])
     expect(nodes.probe).toMatchObject({ attempts: 5 })
@@ -47,7 +64,7 @@ describe('relay control plane', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         conversationSessionId: 'session-1',
-        nodeId: 'cn-relay',
+        nodeId: 'sg-relay',
       }),
     })
     expect(grantResponse.status).toBe(200)
@@ -64,7 +81,7 @@ describe('relay control plane', () => {
     }
     expect(grant.token.split('.')).toHaveLength(2)
     expect(grant.claims).toMatchObject({
-      nodeId: 'cn-relay',
+      nodeId: 'sg-relay',
       conversationSessionId: 'session-1',
       quotaSeconds: 30 * 60,
     })

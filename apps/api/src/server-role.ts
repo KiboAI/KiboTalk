@@ -9,7 +9,7 @@ export function serverRole(env: NodeJS.ProcessEnv = process.env): ServerRole {
 export function relayNodeId(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.RELAY_NODE_ID?.trim()
   if (value) return value
-  return serverRole(env) === 'primary' ? 'jp-primary' : 'cn-relay'
+  return serverRole(env) === 'primary' ? 'jp-primary' : 'relay-node'
 }
 
 export function primaryRelayNodeId(env: NodeJS.ProcessEnv = process.env): string {

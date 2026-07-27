@@ -26,13 +26,12 @@ jobs:
           CN_DEPLOY_SSH_KEY: ${{ secrets.CN_DEPLOY_SSH_KEY }}
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
-          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
           JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
           JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN \
+            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER \
             JP_STT_DASHSCOPE_API_KEY JP_STT_DASHSCOPE_WS_URL; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
@@ -49,32 +48,26 @@ jobs:
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_primary
           printf '%s\n' "$CN_DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_cn
-          chmod 600 ~/.ssh/id_ed25519_primary ~/.ssh/id_ed25519_cn
+          chmod 600 ~/.ssh/id_ed25519_primary
+          chmod 600 ~/.ssh/id_ed25519_cn
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
           ssh-keyscan -H "$CN_SERVER_HOST" >> ~/.ssh/known_hosts
       - name: Configure primary routes and providers
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
           JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
           JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
         run: |
-          case "$CN_RELAY_ORIGIN" in
-            http://*|https://*) ;;
-            *) echo "::error::CN_RELAY_ORIGIN must be an absolute HTTP(S) origin"; exit 1 ;;
-          esac
           case "$JP_STT_DASHSCOPE_WS_URL" in
             wss://*.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime) ;;
             *) echo "::error::JP_STT_DASHSCOPE_WS_URL must use the Alibaba Cloud Tokyo realtime endpoint"; exit 1 ;;
           esac
-          printf '%s\n%s\n%s\n' \
-            "$CN_RELAY_ORIGIN" \
+          printf '%s\n%s\n' \
             "$JP_STT_DASHSCOPE_API_KEY" \
             "$JP_STT_DASHSCOPE_WS_URL" \
             | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
                 set -eu
-                IFS= read -r origin
                 IFS= read -r stt_key
                 IFS= read -r stt_url
                 set_env() {
@@ -87,7 +80,7 @@ jobs:
                     printf "%s=%s\n" "$name" "$value" >> /opt/kibotalk/.env
                   fi
                 }
-                set_env RELAY_CN_ORIGIN "$origin"
+                set_env RELAY_NODES_JSON "[]"
                 set_env STT_DASHSCOPE_API_KEY "$stt_key"
                 set_env STT_DASHSCOPE_WS_URL "$stt_url"
                 chmod 600 /opt/kibotalk/.env
@@ -96,35 +89,17 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
-          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
             set -eu
             test -s /opt/kibotalk/.env
             for name in \
-              RELAY_PRIMARY_ORIGIN RELAY_CN_ORIGIN RELAY_CN_ENABLED \
+              RELAY_PRIMARY_ORIGIN RELAY_NODES_JSON \
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
               STT_ACTIVE STT_DASHSCOPE_API_KEY STT_DASHSCOPE_WS_URL \
               LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
-          '
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
-            set -eu
-            test -s /opt/kibotalk-relay/.env
-            for name in \
-              RELAY_PRIMARY_ORIGIN RELAY_ACCEPT_NEW_SESSIONS \
-              RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              STT_ACTIVE LLM_ACTIVE; do
-              grep -q "^${name}=." /opt/kibotalk-relay/.env
-            done
-            relay_port=$(sed -n "s/^RELAY_HTTP_PORT=//p" /opt/kibotalk-relay/.env)
-            relay_port=${relay_port:-8443}
-            case "$relay_port" in
-              8443|9443) ;;
-              *) echo "RELAY_HTTP_PORT must be 8443 or 9443" >&2; exit 1 ;;
-            esac
           '
       - uses: pnpm/action-setup@v4
         with:
@@ -141,22 +116,15 @@ jobs:
       - name: Build API image
         run: |
           docker build --platform linux/amd64 --tag "kibotalk-api:${GITHUB_SHA}" .
-          docker build --platform linux/amd64 --target relay \
-            --tag "kibotalk-relay-api:${GITHUB_SHA}" .
           docker build --platform linux/amd64 --tag kibotalk-caddy:2.10 --file infra/production/Caddy.Dockerfile .
           docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
-          touch infra/production/.env infra/relay/.env
+          touch infra/production/.env
           (
             cd infra/production
             POSTGRES_PASSWORD=validation docker compose -f compose.yaml \
               config --quiet --no-env-resolution --no-path-resolution
           )
-          (
-            cd infra/relay
-            RELAY_HTTP_PORT=8443 docker compose -f compose.yaml \
-              config --quiet --no-env-resolution --no-path-resolution
-          )
-          rm infra/production/.env infra/relay/.env
+          rm infra/production/.env
           docker run --rm \
             --volume "$PWD/infra/production/Caddyfile:/etc/caddy/Caddyfile:ro" \
             kibotalk-caddy:2.10 \
@@ -166,9 +134,6 @@ jobs:
             kibotalk-caddy:2.10 \
             kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
-          docker save \
-            "kibotalk-relay-api:${GITHUB_SHA}" \
-            | gzip -1 > /tmp/kibotalk-relay-images.tar.gz
       - name: Stage on-device model mirror
         run: |
           pnpm --filter @kibotalk/desktop download-models
@@ -182,17 +147,6 @@ jobs:
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
-      - name: Upload relay payload
-        env:
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
-          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" \
-            "mkdir -p /opt/kibotalk-relay/incoming"
-          scp -i ~/.ssh/id_ed25519_cn /tmp/kibotalk-relay-images.tar.gz \
-            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
-          scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml \
-            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
       - name: Activate release
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -220,27 +174,19 @@ jobs:
             fi
             docker compose --env-file .env -f compose.yaml up -d --pull never
           "
-      - name: Activate relay release
+      - name: Deactivate legacy China relay
         env:
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
         run: |
-          # GITHUB_SHA must expand on the runner before this script reaches the server.
-          # shellcheck disable=SC2029
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" "
+          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
             set -eu
-            gzip -dc /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz | docker load
-            cd /opt/kibotalk-relay
-            if grep -q '^KIBOTALK_RELAY_IMAGE=' .env; then
-              sed -i 's|^KIBOTALK_RELAY_IMAGE=.*|KIBOTALK_RELAY_IMAGE=kibotalk-relay-api:${GITHUB_SHA}|' .env
-            else
-              printf '\nKIBOTALK_RELAY_IMAGE=kibotalk-relay-api:${GITHUB_SHA}\n' >> .env
+            if [ -f /opt/kibotalk-relay/compose.yaml ]; then
+              cd /opt/kibotalk-relay
+              docker compose --env-file .env -f compose.yaml down
             fi
-            docker compose --env-file .env -f compose.yaml up -d --pull never
-          "
+          '
       - name: Verify deployment
-        env:
-          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
         run: |
           for _attempt in $(seq 1 24); do
             if curl --fail --silent --show-error https://app.kibotalk.app/health \
@@ -253,11 +199,7 @@ jobs:
               && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
               && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/" \
               && curl --fail --silent --show-error https://advx.kibotalk.app/ \
-                | grep --quiet '正在清理旧版网页数据' \
-              && curl --fail --silent --show-error "${CN_RELAY_ORIGIN}/health" \
-                | grep --quiet '"ok":true' \
-              && curl --fail --silent --show-error "${CN_RELAY_ORIGIN}/api/latency" \
-                | grep --quiet '"nodeId":"cn-relay"'; then
+                | grep --quiet '正在清理旧版网页数据'; then
               exit 0
             fi
             sleep 5

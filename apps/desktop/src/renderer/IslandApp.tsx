@@ -71,7 +71,17 @@ function ReadyIsland({
       setContentSide(side)
     })
     return window.kibotalk.island.onMoveSettled(() => {
-      void window.kibotalk.island.settleContentSide(contentSideRef.current).then((next) => {
+      const bar = document.querySelector('.island-bar')
+      if (!(bar instanceof HTMLElement)) return
+      const bounds = bar.getBoundingClientRect()
+      const barOffset = {
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      }
+      void window.kibotalk.island.settleContentSide(
+        contentSideRef.current,
+        barOffset,
+      ).then((next) => {
         setContentSide(next)
       })
     })

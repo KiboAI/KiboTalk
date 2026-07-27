@@ -220,6 +220,7 @@ function DesktopWindowContent({
         <AccountPage
           account={accountState.account}
           loading={accountState.loading}
+          embedded
           showAdminLink={false}
           onAuthenticated={accountState.setAccount}
           onAccountChange={accountState.setAccount}
@@ -241,6 +242,7 @@ function DesktopWindowContent({
       return withSyncStatus(
         <HistoryPage
           storage={storage}
+          embedded
           activeSessionId={activeSessionId}
           onBack={() => void window.kibotalk.onboarding.close()}
           onRetryReview={async (sessionId) => {
@@ -265,6 +267,7 @@ function DesktopWindowContent({
     return withSyncStatus(
       <SettingsPage
         platform="desktop"
+        embedded
         prefs={prefs}
         sessionActive={sessionActive}
         storage={storage}

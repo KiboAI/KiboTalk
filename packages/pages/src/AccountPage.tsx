@@ -223,9 +223,9 @@ function AccountContent({
   }
 
   return (
-    <div className="min-h-dvh bg-background p-2 sm:p-5">
-      <div className="paper-sheet mx-auto grid min-h-[calc(100dvh-1rem)] max-w-6xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:min-h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
-        <aside className="border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
+    <div className="min-h-dvh bg-background p-2 pb-20 sm:p-5 sm:pb-5">
+      <div className="paper-sheet mx-auto grid h-[calc(100dvh-5.5rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-none">
+        <aside className="min-w-0 border-b border-border bg-muted/50 p-3 sm:border-b-0 sm:border-r">
           <div className="mb-3 flex items-center gap-2 px-1 sm:mb-6">
             {onBack ? (
               <Button variant="ghost" size="icon" onClick={onBack} aria-label="返回">
@@ -234,7 +234,7 @@ function AccountContent({
             ) : null}
             <strong>KiboTalk</strong>
           </div>
-          <nav className="flex gap-1 overflow-x-auto pb-1 sm:grid sm:overflow-visible">
+          <nav className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:overflow-visible sm:px-0">
             {sections.map((item) => {
               const Icon = item.icon
               return (
@@ -248,15 +248,15 @@ function AccountContent({
                       : 'text-muted-foreground hover:bg-foreground/5'
                   }`}
                 >
-                  <Icon className="size-4" />
-                  <span>{item.label}</span>
+                  <Icon className="size-4 shrink-0" />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               )
             })}
           </nav>
         </aside>
 
-        <main className="min-w-0 p-4 sm:p-8">
+        <main className="min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 pb-6 sm:p-8">
           <header className="mb-6">
             <h1 className="text-xl font-bold">
               {sections.find((item) => item.id === section)?.label}

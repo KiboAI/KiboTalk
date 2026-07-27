@@ -111,9 +111,9 @@ export function HistoryPage({
 
   return (
     <div className="min-h-dvh bg-background p-2 sm:p-5">
-      <div className="paper-sheet mx-auto grid h-[calc(100dvh-1rem)] max-w-6xl overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[19rem_minmax(0,1fr)]">
+      <div className="paper-sheet mx-auto grid h-[calc(100dvh-1rem)] w-full max-w-6xl grid-cols-[minmax(0,1fr)] overflow-hidden sm:h-[calc(100dvh-2.5rem)] sm:grid-cols-[19rem_minmax(0,1fr)]">
         <aside
-          className={`min-h-0 border-border bg-muted/45 sm:flex sm:flex-col sm:border-r ${
+          className={`min-h-0 min-w-0 border-border bg-muted/45 sm:flex sm:flex-col sm:border-r ${
             selected ? 'hidden sm:flex' : 'flex flex-col'
           }`}
         >

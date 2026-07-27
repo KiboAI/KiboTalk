@@ -44,7 +44,9 @@ export {
   type RelaySessionSelection,
 } from './api-runtime'
 export {
+  isLocalRelayOrigin,
   probeRelayNodes,
+  relayNodeLabelKind,
   type RelayProbeResult,
 } from './relay-routing'
 export { useRelayNodeProbes } from './use-relay-node-probes'
@@ -68,10 +70,8 @@ export {
 } from './cloud-conversation-storage'
 export { extractCandidates, extractCompleteObjects } from './partial-json'
 export {
-  sttUrl,
   defaultSttProvider,
   defaultRealtimeFirstProvider,
-  providerMode,
   fetchSttProviders,
 } from './stt-providers'
 export type { SttProvider } from './stt-providers'
@@ -84,7 +84,7 @@ export {
 export type { RealtimeSttClient, RealtimeSttHandlers } from './realtime-stt-client'
 export { finalizedTurnFromRealtimeSegments } from './session/realtime-turn'
 export type { TranscribedAudioSegment } from './session/realtime-turn'
-export { ProxySttClient, ProxyLlmClient } from './proxy-clients'
+export { ProxyLlmClient } from './proxy-clients'
 export type { SessionLanguageSnapshot } from './proxy-clients'
 export type { RelayNode } from '@kibotalk/shared'
 

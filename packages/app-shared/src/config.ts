@@ -49,7 +49,7 @@ export const defaultLanguagePrefs: {
 }
 
 export type ProductTheme = 'system' | 'light' | 'dark'
-export type RelayNodePreference = 'jp-primary' | 'cn-relay'
+export type RelayNodePreference = string
 
 export const defaultProductPrefs: {
   conversationLang: AppLanguage

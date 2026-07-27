@@ -239,7 +239,7 @@ export function RelayNodeSelect({ disabled }: { disabled?: boolean }) {
           {results.map(({ node, latencyMs }) => {
             const kind = relayNodeLabelKind(node)
             const title =
-              kind === 'local' ? '本地节点' : kind === 'primary' ? '日本主节点' : '国内中转'
+              kind === 'local' ? '本地节点' : kind === 'primary' ? '日本主节点' : '中转节点'
             return (
               <SelectItem key={node.id} value={node.id} disabled={latencyMs === null}>
                 {title}

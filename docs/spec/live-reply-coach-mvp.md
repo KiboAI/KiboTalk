@@ -132,7 +132,7 @@ type LanguagePrefs = {
   launchAtLogin: boolean
   audioSource: 'microphone' | 'system' | 'both'
   microphoneDeviceId: string
-  relayNodeId: 'jp-primary' | 'cn-relay' // 下次会话节点选择器的默认项
+  relayNodeId: string // 下次会话节点选择器的默认项
 }
 
 /** Frozen when a session starts; drives UI history, audio, STT + LLM. */

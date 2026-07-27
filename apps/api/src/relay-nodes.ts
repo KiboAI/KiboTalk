@@ -14,6 +14,11 @@ const DEFAULT_PROBE = {
 } as const
 const HEARTBEAT_MAX_AGE_SECONDS = 45
 
+type ConfiguredRelay = {
+  id: string
+  origin: string
+}
+
 function normalizeOrigin(value: string, name: string): string {
   let url: URL
   try {
@@ -27,30 +32,60 @@ function normalizeOrigin(value: string, name: string): string {
   return url.origin
 }
 
+function configuredSecondaryRelays(
+  value: string | undefined,
+  primaryNodeId: string,
+): RelayNode[] {
+  if (!value?.trim()) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('RELAY_NODES_JSON must be valid JSON')
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('RELAY_NODES_JSON must be an array')
+  }
+  const seen = new Set([primaryNodeId])
+  return parsed.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`RELAY_NODES_JSON[${index}] must be an object`)
+    }
+    const relay = entry as Partial<ConfiguredRelay>
+    const id = typeof relay.id === 'string' ? relay.id.trim() : ''
+    const origin = typeof relay.origin === 'string' ? relay.origin.trim() : ''
+    if (!id || !origin) {
+      throw new Error(`RELAY_NODES_JSON[${index}] must contain id and origin`)
+    }
+    if (seen.has(id)) {
+      throw new Error(`RELAY_NODES_JSON contains duplicate node id: ${id}`)
+    }
+    seen.add(id)
+    return {
+      id,
+      origin: normalizeOrigin(origin, `RELAY_NODES_JSON[${index}].origin`),
+      role: 'relay' as const,
+      acceptingNewSessions: true,
+    }
+  })
+}
+
 export function configuredRelayNodes(
   env: NodeJS.ProcessEnv = process.env,
 ): RelayNode[] {
+  const primaryNodeId = primaryRelayNodeId(env)
   const primaryOrigin = normalizeOrigin(
     env.RELAY_PRIMARY_ORIGIN
       ?? env.PUBLIC_APP_URL
       ?? `http://localhost:${env.PORT ?? 8787}`,
     'RELAY_PRIMARY_ORIGIN',
   )
-  const nodes: RelayNode[] = [{
-    id: primaryRelayNodeId(env),
+  return [{
+    id: primaryNodeId,
     origin: primaryOrigin,
     role: 'primary',
     acceptingNewSessions: relayAcceptingNewSessions(env),
-  }]
-  if (env.RELAY_CN_ENABLED !== 'false' && env.RELAY_CN_ORIGIN) {
-    nodes.push({
-      id: env.RELAY_CN_NODE_ID?.trim() || 'cn-relay',
-      origin: normalizeOrigin(env.RELAY_CN_ORIGIN, 'RELAY_CN_ORIGIN'),
-      role: 'relay',
-      acceptingNewSessions: true,
-    })
-  }
-  return nodes
+  }, ...configuredSecondaryRelays(env.RELAY_NODES_JSON, primaryNodeId)]
 }
 
 export async function availableRelayNodeList(

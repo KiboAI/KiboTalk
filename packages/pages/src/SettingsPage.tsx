@@ -84,7 +84,6 @@ const LANGUAGES: AppLanguage[] = ['ja', 'en', 'zh']
 const LEVELS: LearnerLevel[] = ['beginner', 'intermediate', 'advanced']
 const THEMES: ProductTheme[] = ['system', 'light', 'dark']
 const AUDIO_SOURCES: SessionAudioSource[] = ['microphone', 'system', 'both']
-const RELAY_NODES: RelayNodePreference[] = ['jp-primary', 'cn-relay']
 
 function SettingRow({
   title,
@@ -157,6 +156,22 @@ export function SettingsPage({
       .then((devices) => setMicrophones(devices.filter((device) => device.kind === 'audioinput')))
       .catch(() => setMicrophones([]))
   }, [microphonePermission, platform])
+
+  useEffect(() => {
+    if (relayProbes.loading || relayProbes.results.length === 0) return
+    if (relayProbes.results.some(({ node }) => node.id === prefs.relayNodeId)) return
+    const primary = relayProbes.results.find(({ node }) => node.role === 'primary')
+    if (!primary) return
+    onPrefsChange({
+      ...prefs,
+      relayNodeId: primary.node.id as RelayNodePreference,
+    })
+  }, [
+    onPrefsChange,
+    prefs,
+    relayProbes.loading,
+    relayProbes.results,
+  ])
 
   const sections = useMemo(
     () =>
@@ -393,31 +408,26 @@ export function SettingsPage({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {RELAY_NODES.map((nodeId) => {
-                            const result = relayProbes.results.find(
-                              ({ node }) => node.id === nodeId,
-                            )
+                          {relayProbes.results.map((result) => {
+                            const nodeId = result.node.id as RelayNodePreference
                             let latencyLabel = t('checkingLatency')
-                            if (result?.latencyMs === null) {
+                            if (result.latencyMs === null) {
                               latencyLabel = t('nodeUnreachable')
-                            } else if (result) {
+                            } else {
                               latencyLabel = `${Math.round(result.latencyMs)} ms`
                             }
-                            let title = nodeId === 'jp-primary' ? t('japanNode') : t('chinaNode')
-                            if (result?.node) {
-                              const kind = relayNodeLabelKind(result.node)
-                              title =
-                                kind === 'local'
-                                  ? t('localNode')
-                                  : kind === 'primary'
-                                    ? t('japanNode')
-                                    : t('chinaNode')
-                            }
+                            const kind = relayNodeLabelKind(result.node)
+                            const title =
+                              kind === 'local'
+                                ? t('localNode')
+                                : kind === 'primary'
+                                  ? t('japanNode')
+                                  : t('relayNode')
                             return (
                               <SelectItem
                                 key={nodeId}
                                 value={nodeId}
-                                disabled={result?.latencyMs === null}
+                                disabled={result.latencyMs === null}
                               >
                                 {title}
                                 {' · '}
@@ -430,7 +440,11 @@ export function SettingsPage({
                     </div>
                   </div>
                 </SettingRow>
-                {prefs.relayNodeId === 'cn-relay' ? (
+                {relayProbes.results.some(
+                  ({ node }) =>
+                    node.id === prefs.relayNodeId
+                    && node.origin.startsWith('http:'),
+                ) ? (
                   <div className="flex items-start gap-2 bg-destructive/10 px-4 py-3 text-xs leading-relaxed text-destructive">
                     <CircleAlert className="mt-0.5 size-4 shrink-0" />
                     {t('insecureRelayWarning')}

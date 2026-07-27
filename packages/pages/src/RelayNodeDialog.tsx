@@ -14,7 +14,7 @@ import { CircleAlert, RefreshCw, ShieldCheck, Wifi } from 'lucide-react'
 
 function relayNodeTitle(
   node: Pick<RelayNode, 'origin' | 'role'>,
-  t: (key: 'localNode' | 'japanNode' | 'chinaNode') => string,
+  t: (key: 'localNode' | 'japanNode' | 'relayNode') => string,
 ): string {
   const kind = relayNodeLabelKind(node)
   switch (kind) {
@@ -23,7 +23,7 @@ function relayNodeTitle(
     case 'primary':
       return t('japanNode')
     case 'relay':
-      return t('chinaNode')
+      return t('relayNode')
     default: {
       const _exhaustive: never = kind
       return _exhaustive

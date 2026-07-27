@@ -60,7 +60,7 @@ describe('conversation session lifecycle storage', () => {
     await storage.stopActiveSession(2000)
     await storage.startSession({
       id: 'active',
-      relayNodeId: 'cn-relay',
+      relayNodeId: 'sg-relay',
       startedAt: 3000,
       snapshot,
       title: 'active',

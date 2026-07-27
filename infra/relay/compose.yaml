@@ -10,7 +10,6 @@ services:
       PORT: 8787
       APP_ENV: production
       SERVER_ROLE: relay
-      RELAY_NODE_ID: cn-relay
       RELAY_OUTBOX_PATH: /app/data/usage-outbox.json
     ports:
       - "${RELAY_HTTP_PORT:-8443}:8787"

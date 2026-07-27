@@ -146,7 +146,7 @@ describe('CloudConversationStorage recovery', () => {
 
     await expect(cloud.startSession({
       id: 'new-session',
-      relayNodeId: 'cn-relay',
+      relayNodeId: 'sg-relay',
       startedAt: 10,
       snapshot: session('snapshot').snapshot,
       title: 'local first',

@@ -9,8 +9,8 @@ const primary: RelayNode = {
   acceptingNewSessions: true,
 }
 const relay: RelayNode = {
-  id: 'cn-relay',
-  origin: 'http://123.99.200.156:8443',
+  id: 'sg-relay',
+  origin: 'https://sg-relay.kibotalk.app',
   role: 'relay',
   acceptingNewSessions: true,
 }

@@ -23,15 +23,11 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          CN_DEPLOY_SSH_KEY: ${{ secrets.CN_DEPLOY_SSH_KEY }}
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
-          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
           JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
           JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER \
             JP_STT_DASHSCOPE_API_KEY JP_STT_DASHSCOPE_WS_URL; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
@@ -42,16 +38,11 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          CN_DEPLOY_SSH_KEY: ${{ secrets.CN_DEPLOY_SSH_KEY }}
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_primary
-          printf '%s\n' "$CN_DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519_cn
           chmod 600 ~/.ssh/id_ed25519_primary
-          chmod 600 ~/.ssh/id_ed25519_cn
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
-          ssh-keyscan -H "$CN_SERVER_HOST" >> ~/.ssh/known_hosts
       - name: Configure primary routes and providers
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -174,18 +165,6 @@ jobs:
             fi
             docker compose --env-file .env -f compose.yaml up -d --pull never
           "
-      - name: Deactivate legacy China relay
-        env:
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
-          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
-            set -eu
-            if [ -f /opt/kibotalk-relay/compose.yaml ]; then
-              cd /opt/kibotalk-relay
-              docker compose --env-file .env -f compose.yaml down
-            fi
-          '
       - name: Verify deployment
         run: |
           for _attempt in $(seq 1 24); do

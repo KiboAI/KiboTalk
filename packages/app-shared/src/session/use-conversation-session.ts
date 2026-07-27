@@ -22,13 +22,13 @@ import { AudioSource } from '../audio/audio-source'
 import { createSileroInfer, SILERO_VARIANTS } from '../audio/silero-vad'
 import { createWorkerEmbedAudio } from '../audio/speaker-embed'
 import { createCurrentSpeakerEmbeddingStorage } from '../speaker-embedding-storage'
-import { ProxySttClient, ProxyLlmClient, type SessionLanguageSnapshot } from '../proxy-clients'
+import { ProxyLlmClient, type SessionLanguageSnapshot } from '../proxy-clients'
 import {
   connectRealtimeSttWithRetry,
   isTranscriptionFailed,
   type RealtimeSttClient,
 } from '../realtime-stt-client'
-import { providerMode, type SttProvider } from '../stt-providers'
+import type { SttProvider } from '../stt-providers'
 import {
   finalizedTurnFromRealtimeSegments,
   type TranscribedAudioSegment,
@@ -60,19 +60,16 @@ export type ConversationSessionParams = {
   minSilenceDurationMs: number
   minSpeechDurationMs: number
   vadVariantId: string
-  prePadMs: number
-  postPadMs: number
   pauseMs: number
   mergeMaxMs: number
   speakerThreshold: number
-  transcribeMode: 'aggregated' | 'perSegment'
   candidateRoundsMax: number
   sttEnabled: boolean
   replyEnabled: boolean
   languageSnapshot: SessionLanguageSnapshot
-  /** STT providers the `/stt` proxy has configured (batch + realtime). */
+  /** Realtime STT providers from `/api/stt/providers`. */
   providers: SttProvider[]
-  /** Preferred provider id; realtime if its mode is `realtime`, else batch. */
+  /** Preferred realtime provider id. */
   selectedProvider: string | null
   /** Defaults to a fresh `InMemoryConversationStorage` (playground behavior). */
   storage?: ConversationStorage
@@ -89,14 +86,10 @@ export type ConversationSessionParams = {
 
 /**
  * The full live-session orchestration: mic capture → VAD → speaker
- * verification → segment aggregation → STT (realtime WS with Manual commit,
- * session-only degrade to batch on failure, per ADR 0004) → LLM reply
- * candidates via `Pipeline`. One hook, two presentations: the playground's
- * `LiveSession` (dev toolbar + debug panel) and `packages/pages`'
- * `SessionPage` (product UI) both drive it — only the JSX differs.
+ * verification → realtime STT (Manual commit) → TurnGate merge →
+ * `ingestFinalizedTurn` → LLM reply candidates via `Pipeline`.
  */
 export function useConversationSession(params: ConversationSessionParams) {
-  const [speaker, setSpeaker] = useState<'user' | 'other'>('other')
   const [running, setRunning] = useState(false)
   const [loading, setLoading] = useState('')
   const [error, setError] = useState('')
@@ -106,10 +99,9 @@ export function useConversationSession(params: ConversationSessionParams) {
   const [draft, setDraft] = useState<SessionDraft | null>(null)
   const [candidateRounds, setCandidateRounds] = useState<CandidateRound[]>([])
   const [vadStatus, setVadStatus] = useState<'idle' | 'speech' | 'silence'>('idle')
-  const [mode, setMode] = useState<'auto' | 'manual' | 'checking'>('checking')
+  const [mode, setMode] = useState<'auto' | 'checking'>('checking')
   const [confidence, setConfidence] = useState<number | null>(null)
-  /** Actual STT path for the running session (may differ from the selected provider after R4 degrade). */
-  const [activeSttPath, setActiveSttPath] = useState<'idle' | 'realtime' | 'batch'>('idle')
+  const [activeSttPath, setActiveSttPath] = useState<'idle' | 'realtime'>('idle')
   const [lifecycle, setLifecycle] = useState<ProductSessionLifecycle>(
     params.persistSessionLifecycle ? 'restoring' : 'stopped',
   )
@@ -119,9 +111,7 @@ export function useConversationSession(params: ConversationSessionParams) {
   const [relayNodeId, setRelayNodeId] = useState<string | null>(null)
   const [relayLatencyMs, setRelayLatencyMs] = useState<number | null>(null)
 
-  const speakerRef = useRef(speaker)
-  speakerRef.current = speaker
-  const stableSpeakerRef = useRef(speaker)
+  const stableSpeakerRef = useRef<'user' | 'other'>('other')
   const paramsRef = useRef(params)
   paramsRef.current = params
 
@@ -133,20 +123,14 @@ export function useConversationSession(params: ConversationSessionParams) {
   const storageRef = useRef<ConversationStorage>(params.storage ?? new InMemoryConversationStorage())
   const verifierRef = useRef<EmbeddingSpeakerVerifier | null>(null)
   const embeddingRef = useRef<Embedding | null>(null)
-  const autoRef = useRef(false)
   const vadRef = useRef<VAD | null>(null)
   const systemVadRef = useRef<VAD | null>(null)
-  const sttRef = useRef<ProxySttClient | null>(null)
-  const aggregatorRef = useRef<SegmentAggregator | null>(null)
-  const systemAggregatorRef = useRef<SegmentAggregator | null>(null)
   const realtimeAggregatorRef =
     useRef<SegmentAggregator<TranscribedAudioSegment> | null>(null)
   const systemRealtimeAggregatorRef =
     useRef<SegmentAggregator<TranscribedAudioSegment> | null>(null)
   const realtimeRef = useRef<RealtimeSttClient | null>(null)
   const systemRealtimeRef = useRef<RealtimeSttClient | null>(null)
-  const realtimeModeRef = useRef(false)
-  const systemRealtimeModeRef = useRef(false)
   const realtimeBusyRef = useRef(Promise.resolve())
   const pipelineBusyRef = useRef(Promise.resolve())
   const startInFlightRef = useRef(false)
@@ -221,48 +205,21 @@ export function useConversationSession(params: ConversationSessionParams) {
     verifierRef.current?.setThreshold(params.speakerThreshold)
   }, [params.speakerThreshold])
   useEffect(() => {
-    sttRef.current?.configurePadding(params.prePadMs, params.postPadMs)
-  }, [params.prePadMs, params.postPadMs])
-  useEffect(() => {
     const config = { pauseMs: params.pauseMs, maxMs: params.mergeMaxMs }
-    aggregatorRef.current?.updateConfig(config)
-    systemAggregatorRef.current?.updateConfig(config)
     realtimeAggregatorRef.current?.updateConfig(config)
     systemRealtimeAggregatorRef.current?.updateConfig(config)
   }, [params.pauseMs, params.mergeMaxMs])
-  useEffect(() => {
-    if (params.transcribeMode !== 'aggregated') aggregatorRef.current?.flush()
-  }, [params.transcribeMode])
 
   function reportError(message: string) {
     setError(message)
-  }
-
-  function degradeToBatch(reason: string) {
-    const batch = paramsRef.current.providers.find((p) => p.mode !== 'realtime' && p.id)
-    if (!batch) {
-      reportError(`实时转写失败：${reason}（无可用 batch provider 可降级）`)
-      return false
-    }
-    // Session-only: keep the caller's provider selection, but STT POSTs must use a batch id.
-    realtimeRef.current?.close()
-    realtimeRef.current = null
-    realtimeModeRef.current = false
-    sttRef.current?.setProviderOverride(batch.id)
-    setActiveSttPath('batch')
-    setStatusNote(`本会话实时转写已降级为 batch（${batch.label}）：${reason}。停止后重新开始可再试实时。`)
-    setDraft(null)
-    draftMetaRef.current = null
-    return true
   }
 
   async function verifySpeaker(buffer: ArrayBuffer): Promise<'user' | 'other'> {
     const audioSource = paramsRef.current.sessionSnapshot?.audioSource
     if (audioSource === 'both') return 'user'
     if (audioSource === 'system') return 'other'
-    if (!autoRef.current || !embeddingRef.current || !verifierRef.current) {
-      stableSpeakerRef.current = speakerRef.current
-      return speakerRef.current
+    if (!embeddingRef.current || !verifierRef.current) {
+      throw new Error('VOICEPRINT_REQUIRED')
     }
     try {
       const r = await verifierRef.current.verify(buffer, embeddingRef.current)
@@ -286,12 +243,11 @@ export function useConversationSession(params: ConversationSessionParams) {
   } = {}) {
     if (startInFlightRef.current || lifecycle === 'starting' || running) return
     startInFlightRef.current = true
-    stableSpeakerRef.current = speakerRef.current
-    const resuming = options.resume === true
     setError('')
     setStatusNote('')
     setLoading('正在检查声纹录入…')
     setLifecycle('starting')
+    const resuming = options.resume === true
     if (!resuming) setTurns([])
     setDraft(null)
     if (!resuming) setCandidateRounds([])
@@ -315,11 +271,8 @@ export function useConversationSession(params: ConversationSessionParams) {
       }
       const embedding = await verifierRef.current.loadEmbedding()
       embeddingRef.current = embedding
-      autoRef.current = !!embedding
-      setMode(embedding ? 'auto' : 'manual')
-      if (paramsRef.current.persistSessionLifecycle && !embedding) {
-        throw new Error('VOICEPRINT_REQUIRED')
-      }
+      if (!embedding) throw new Error('VOICEPRINT_REQUIRED')
+      setMode('auto')
 
       if (paramsRef.current.persistSessionLifecycle) {
         if (resuming) {
@@ -347,6 +300,8 @@ export function useConversationSession(params: ConversationSessionParams) {
       }
 
       const p = paramsRef.current
+      const selectedProvider = p.selectedProvider
+      if (!selectedProvider) throw new Error('STT_PROVIDER_REQUIRED')
       const selectedRelayNodeId = frozenRelayNodeId ?? options.relayNodeId
       if (!selectedRelayNodeId) throw new Error('RELAY_NODE_SELECTION_REQUIRED')
       setLoading('正在连接所选网络节点…')
@@ -368,10 +323,7 @@ export function useConversationSession(params: ConversationSessionParams) {
         })
         setActiveSession(created)
       }
-      const selectedProvider = p.selectedProvider
       const audioSourceMode = p.sessionSnapshot?.audioSource ?? 'microphone'
-      const isRealtime =
-        providerMode(p.providers, selectedProvider) === 'realtime'
 
       setLoading('正在启动麦克风…')
       const primaryStream =
@@ -401,15 +353,6 @@ export function useConversationSession(params: ConversationSessionParams) {
       })
       vadRef.current = vad
 
-      const stt = new ProxySttClient(
-        audio.sampleRate,
-        p.languageSnapshot.conversationLang,
-        () => paramsRef.current.sttEnabled,
-        () => paramsRef.current.selectedProvider,
-      )
-      stt.configurePadding(p.prePadMs, p.postPadMs)
-      stt.setProviderOverride(null)
-      sttRef.current = stt
       const llm = new ProxyLlmClient(
         p.languageSnapshot,
         () => paramsRef.current.replyEnabled,
@@ -417,91 +360,54 @@ export function useConversationSession(params: ConversationSessionParams) {
       )
       llmRef.current = llm
       const storage = storageRef.current
-      const pipeline = new Pipeline({ stt, llm, conversation: storage })
+      const pipeline = new Pipeline({ llm, conversation: storage })
       pipelineRef.current = pipeline
 
-      realtimeModeRef.current = isRealtime
-      setActiveSttPath(isRealtime ? 'realtime' : 'batch')
-      if (!isRealtime) {
-        setStatusNote(
-          `${relayStatus}；当前为 batch STT：无实时草稿，停顿后整段上传。`,
-        )
-      }
-      if (isRealtime && selectedProvider) {
-        setLoading('正在连接实时转写…')
-        try {
-          const rt = await connectRealtimeSttWithRetry({
-            provider: selectedProvider,
-            language: p.languageSnapshot.conversationLang,
-            sessionId: conversationSessionId,
-            handlers: {
-              onPartial: (text) => {
-                const meta = draftMetaRef.current
-                if (!meta) return
-                setDraft({ speaker: meta.speaker, text, startedAt: meta.startedAt, endedAt: Date.now() })
-              },
-              onError: (message) => {
-                reportError(`实时转写：${message}`)
-              },
-              onQuotaExhausted: () => {
-                setQuotaExhausted(true)
-                setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
-                globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
-                void (async () => {
-                  await pipeline.idle().catch(() => {})
-                  await stop()
-                })()
-              },
-            },
-          })
-          realtimeRef.current = rt
-          setStatusNote(`${relayStatus}；实时转写已连接。`)
-          setActiveSttPath('realtime')
-        } catch (e) {
-          if (!degradeToBatch((e as Error).message)) {
-            throw e
-          }
-          realtimeModeRef.current = false
-        }
-      }
+      setActiveSttPath('realtime')
+      setLoading('正在连接实时转写…')
+      const rt = await connectRealtimeSttWithRetry({
+        provider: selectedProvider,
+        language: p.languageSnapshot.conversationLang,
+        sessionId: conversationSessionId,
+        handlers: {
+          onPartial: (text) => {
+            const meta = draftMetaRef.current
+            if (!meta) return
+            setDraft({ speaker: meta.speaker, text, startedAt: meta.startedAt, endedAt: Date.now() })
+          },
+          onError: (message) => {
+            reportError(`实时转写：${message}`)
+          },
+          onQuotaExhausted: () => {
+            setQuotaExhausted(true)
+            setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
+            globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
+            void (async () => {
+              await pipeline.idle().catch(() => {})
+              await stop()
+            })()
+          },
+        },
+      })
+      realtimeRef.current = rt
+      setStatusNote(`${relayStatus}；实时转写已连接。`)
 
-      const aggregator = createSegmentAggregator({
+      const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
         sampleRate: audio.sampleRate,
         pauseMs: p.pauseMs,
         maxMs: p.mergeMaxMs,
       })
-      aggregator.onFlush((merged) => {
+      realtimeAggregator.onFlush((merged) => {
+        const turn = finalizedTurnFromRealtimeSegments(
+          merged,
+          p.languageSnapshot.conversationLang,
+        )
+        if (!turn) return
         pipelineBusyRef.current = pipelineBusyRef.current
-          .then(() =>
-            pipeline.ingestSegment({
-              pcm: merged.pcm,
-              speaker: merged.speaker,
-              startedAt: merged.startedAt,
-              endedAt: merged.endedAt,
-            }),
-          )
+          .then(() => pipeline.ingestFinalizedTurn(turn))
           .catch(() => {})
       })
-      aggregatorRef.current = aggregator
-
-      if (realtimeModeRef.current) {
-        const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
-          sampleRate: audio.sampleRate,
-          pauseMs: p.pauseMs,
-          maxMs: p.mergeMaxMs,
-        })
-        realtimeAggregator.onFlush((merged) => {
-          const turn = finalizedTurnFromRealtimeSegments(
-            merged,
-            p.languageSnapshot.conversationLang,
-          )
-          if (!turn) return
-          pipelineBusyRef.current = pipelineBusyRef.current
-            .then(() => pipeline.ingestFinalizedTurn(turn))
-            .catch(() => {})
-        })
-        realtimeAggregatorRef.current = realtimeAggregator
-      }
+      realtimeAggregatorRef.current = realtimeAggregator
 
       if (audioSourceMode === 'both') {
         const systemStream = await p.getSystemAudioStream?.()
@@ -523,74 +429,51 @@ export function useConversationSession(params: ConversationSessionParams) {
           sampleRate: systemAudio.sampleRate,
         })
         systemVadRef.current = systemVad
-        if (isRealtime && selectedProvider) {
-          systemRealtimeRef.current = await connectRealtimeSttWithRetry({
-            provider: selectedProvider,
-            language: p.languageSnapshot.conversationLang,
-            sessionId: conversationSessionId,
-            handlers: {
-              onPartial: (text) => {
-                setDraft((current) =>
-                  current?.speaker === 'user'
-                    ? current
-                    : {
-                        speaker: 'other',
-                        text,
-                        startedAt: current?.startedAt ?? Date.now(),
-                        endedAt: Date.now(),
-                      },
-                )
-              },
-              onError: (message) => reportError(`系统音频实时转写：${message}`),
-              onQuotaExhausted: () => {
-                setQuotaExhausted(true)
-                setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
-                globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
-                void (async () => {
-                  await pipeline.idle().catch(() => {})
-                  await stop()
-                })()
-              },
+        systemRealtimeRef.current = await connectRealtimeSttWithRetry({
+          provider: selectedProvider,
+          language: p.languageSnapshot.conversationLang,
+          sessionId: conversationSessionId,
+          handlers: {
+            onPartial: (text) => {
+              setDraft((current) =>
+                current?.speaker === 'user'
+                  ? current
+                  : {
+                      speaker: 'other',
+                      text,
+                      startedAt: current?.startedAt ?? Date.now(),
+                      endedAt: Date.now(),
+                    },
+              )
             },
-          })
-          systemRealtimeModeRef.current = true
-        }
-        const systemAggregator = createSegmentAggregator({
+            onError: (message) => reportError(`系统音频实时转写：${message}`),
+            onQuotaExhausted: () => {
+              setQuotaExhausted(true)
+              setStatusNote('本轮已完成；本月可用分钟数已用完，会话将在最终建议生成后停止。')
+              globalThis.dispatchEvent?.(new CustomEvent('kibotalk:quota-changed'))
+              void (async () => {
+                await pipeline.idle().catch(() => {})
+                await stop()
+              })()
+            },
+          },
+        })
+        const systemRealtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
           sampleRate: systemAudio.sampleRate,
           pauseMs: p.pauseMs,
           maxMs: p.mergeMaxMs,
         })
-        systemAggregator.onFlush((merged) => {
+        systemRealtimeAggregator.onFlush((merged) => {
+          const turn = finalizedTurnFromRealtimeSegments(
+            merged,
+            p.languageSnapshot.conversationLang,
+          )
+          if (!turn) return
           pipelineBusyRef.current = pipelineBusyRef.current
-            .then(() =>
-              pipeline.ingestSegment({
-                pcm: merged.pcm,
-                speaker: 'other',
-                startedAt: merged.startedAt,
-                endedAt: merged.endedAt,
-              }),
-            )
+            .then(() => pipeline.ingestFinalizedTurn(turn))
             .catch(() => {})
         })
-        systemAggregatorRef.current = systemAggregator
-        if (systemRealtimeModeRef.current) {
-          const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
-            sampleRate: systemAudio.sampleRate,
-            pauseMs: p.pauseMs,
-            maxMs: p.mergeMaxMs,
-          })
-          realtimeAggregator.onFlush((merged) => {
-            const turn = finalizedTurnFromRealtimeSegments(
-              merged,
-              p.languageSnapshot.conversationLang,
-            )
-            if (!turn) return
-            pipelineBusyRef.current = pipelineBusyRef.current
-              .then(() => pipeline.ingestFinalizedTurn(turn))
-              .catch(() => {})
-          })
-          systemRealtimeAggregatorRef.current = realtimeAggregator
-        }
+        systemRealtimeAggregatorRef.current = systemRealtimeAggregator
         systemVad.on('speech-start', () => {
           systemInSpeechRef.current = true
           systemRealtimeAggregatorRef.current?.hold()
@@ -607,59 +490,46 @@ export function useConversationSession(params: ConversationSessionParams) {
         })
         systemVad.on('speech-ready', (event) => {
           const endedAt = Date.now()
-          if (systemRealtimeModeRef.current) {
-            const realtime = systemRealtimeRef.current
-            if (!realtime || !systemUncommittedRef.current) return
-            systemUncommittedRef.current = false
-            realtime.commit()
-            const startedAt = endedAt - event.duration * 1000
-            const completed = realtime.waitCompleted()
-            realtimeBusyRef.current = realtimeBusyRef.current
-              .then(async () => {
-                try {
-                  const text = await completed
-                  setDraft((current) =>
-                    current?.startedAt === startedAt ? null : current,
-                  )
+          const realtime = systemRealtimeRef.current
+          if (!realtime || !systemUncommittedRef.current) return
+          systemUncommittedRef.current = false
+          realtime.commit()
+          const startedAt = endedAt - event.duration * 1000
+          const completed = realtime.waitCompleted()
+          realtimeBusyRef.current = realtimeBusyRef.current
+            .then(async () => {
+              try {
+                const text = await completed
+                setDraft((current) =>
+                  current?.startedAt === startedAt ? null : current,
+                )
+                systemRealtimeAggregatorRef.current?.feed({
+                  buffer: event.buffer,
+                  speaker: 'other',
+                  text,
+                  startedAt,
+                  endedAt,
+                })
+              } catch (cause) {
+                if (isTranscriptionFailed(cause)) {
                   systemRealtimeAggregatorRef.current?.feed({
                     buffer: event.buffer,
                     speaker: 'other',
-                    text,
+                    text: '',
+                    sttFailed: true,
                     startedAt,
                     endedAt,
                   })
-                } catch (cause) {
-                  if (isTranscriptionFailed(cause)) {
-                    systemRealtimeAggregatorRef.current?.feed({
-                      buffer: event.buffer,
-                      speaker: 'other',
-                      text: '',
-                      sttFailed: true,
-                      startedAt,
-                      endedAt,
-                    })
-                    return
-                  }
-                  reportError(`系统音频实时转写：${String(cause)}`)
+                  return
                 }
-              })
-              .catch(() => {})
-            return
-          }
-          systemAggregator?.feed({
-            buffer: event.buffer,
-            speaker: 'other',
-            startedAt: endedAt - event.duration * 1000,
-            endedAt,
-          })
+                reportError(`系统音频实时转写：${String(cause)}`)
+              }
+            })
+            .catch(() => {})
         })
         await systemAudio.start(async (chunk) => {
           await systemVad.processAudio(chunk)
-          if (
-            systemRealtimeModeRef.current
-            && systemInSpeechRef.current
-            && systemRealtimeRef.current
-          ) {
+          if (systemInSpeechRef.current && systemRealtimeRef.current) {
             systemUncommittedRef.current = true
             systemRealtimeRef.current.append(chunk)
           }
@@ -682,14 +552,19 @@ export function useConversationSession(params: ConversationSessionParams) {
             setTurns((prev) => prev.map((t) => (t.id === e.turnId ? { ...t, candidates: e.candidates } : t)))
             void storageRef.current.updateTurnSuggestions(e.turnId, e.candidates)
             break
+          case 'candidatesStreaming':
+          case 'candidateDelta':
           case 'llmAborted':
           case 'llmFailed':
             break
           case 'sttFailed':
             setTurns((prev) => prev.map((t) => (t.id === e.turnId ? { ...t, sttFailed: true } as SessionTurn : t)))
             break
-          default:
+          default: {
+            const _exhaustive: never = e
+            void _exhaustive
             break
+          }
         }
       })
 
@@ -700,12 +575,10 @@ export function useConversationSession(params: ConversationSessionParams) {
           return
         }
         const startedAt = Date.now()
-        if (realtimeModeRef.current) {
-          realtimeAggregatorRef.current?.hold()
-          const who = draftMetaRef.current?.speaker ?? speakerRef.current
-          draftMetaRef.current = { speaker: who, startedAt }
-          setDraft({ speaker: who, text: '', startedAt, endedAt: startedAt })
-        }
+        realtimeAggregatorRef.current?.hold()
+        const who = draftMetaRef.current?.speaker ?? stableSpeakerRef.current
+        draftMetaRef.current = { speaker: who, startedAt }
+        setDraft({ speaker: who, text: '', startedAt, endedAt: startedAt })
         inSpeechRef.current = true
       })
       vad.on('speech-end', () => {
@@ -719,111 +592,73 @@ export function useConversationSession(params: ConversationSessionParams) {
         const startedAt = draftMetaRef.current?.startedAt ?? now - e.duration * 1000
         const endedAt = now
 
-        if (realtimeModeRef.current) {
-          const rt = realtimeRef.current
-          if (!rt || !uncommittedRef.current) return
+        const rt = realtimeRef.current
+        if (!rt || !uncommittedRef.current) return
 
-          rt.commit()
-          uncommittedRef.current = false
-          const buffer = e.buffer
-          const provisional = draftMetaRef.current?.speaker ?? speakerRef.current
-          const transcription = rt.waitCompleted().then(
-            (text) => ({ ok: true as const, text }),
-            (error: unknown) => ({ ok: false as const, error }),
-          )
-          const verifiedSpeaker = verifySpeaker(buffer.buffer as ArrayBuffer)
-          realtimeBusyRef.current = realtimeBusyRef.current
-            .then(async () => {
-              const [outcome, who] = await Promise.all([
-                transcription,
-                verifiedSpeaker,
-              ])
-              if (outcome.ok) {
-                draftMetaRef.current = { speaker: who, startedAt }
-                setDraft((current) =>
-                  current?.startedAt === startedAt ? null : current,
-                )
-                realtimeAggregatorRef.current?.feed({
-                  buffer,
-                  speaker: who,
-                  text: outcome.text,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
-              if (isTranscriptionFailed(outcome.error)) {
-                setDraft((current) =>
-                  current?.startedAt === startedAt ? null : current,
-                )
-                realtimeAggregatorRef.current?.feed({
-                  buffer,
-                  speaker: provisional,
-                  text: '',
-                  sttFailed: true,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
-              if (degradeToBatch(String(outcome.error))) {
-                await pipeline.ingestSegment({
-                  pcm: buffer,
-                  speaker: who,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
+        rt.commit()
+        uncommittedRef.current = false
+        const buffer = e.buffer
+        const provisional = draftMetaRef.current?.speaker ?? stableSpeakerRef.current
+        const transcription = rt.waitCompleted().then(
+          (text) => ({ ok: true as const, text }),
+          (error: unknown) => ({ ok: false as const, error }),
+        )
+        const verifiedSpeaker = verifySpeaker(buffer.buffer as ArrayBuffer)
+        realtimeBusyRef.current = realtimeBusyRef.current
+          .then(async () => {
+            const [outcome, who] = await Promise.all([
+              transcription,
+              verifiedSpeaker,
+            ])
+            if (outcome.ok) {
+              draftMetaRef.current = { speaker: who, startedAt }
+              setDraft((current) =>
+                current?.startedAt === startedAt ? null : current,
+              )
               realtimeAggregatorRef.current?.feed({
                 buffer,
                 speaker: who,
+                text: outcome.text,
+                startedAt,
+                endedAt,
+              })
+              return
+            }
+            if (isTranscriptionFailed(outcome.error)) {
+              setDraft((current) =>
+                current?.startedAt === startedAt ? null : current,
+              )
+              realtimeAggregatorRef.current?.feed({
+                buffer,
+                speaker: provisional,
                 text: '',
                 sttFailed: true,
                 startedAt,
                 endedAt,
               })
+              return
+            }
+            reportError(`实时转写：${String(outcome.error)}`)
+            realtimeAggregatorRef.current?.feed({
+              buffer,
+              speaker: who,
+              text: '',
+              sttFailed: true,
+              startedAt,
+              endedAt,
             })
-            .catch(() => {})
-          return
-        }
-
-        // Batch: verify || STT in parallel, then ingest finalized text.
-        const buffer = e.buffer
-        void (async () => {
-          try {
-            const verifyPromise = verifySpeaker(buffer.buffer as ArrayBuffer)
-
-            if (paramsRef.current.transcribeMode === 'aggregated') {
-              const who = await verifyPromise
-              aggregatorRef.current?.feed({ buffer, speaker: who, startedAt, endedAt })
-              return
-            }
-
-            const stt = sttRef.current
-            if (!stt) {
-              const who = await verifyPromise
-              void pipeline.ingestSegment({ pcm: buffer, speaker: who, startedAt, endedAt })
-              return
-            }
-            const [who, text] = await Promise.all([verifyPromise, stt.transcribe(buffer, new AbortController().signal)])
-            await pipeline.ingestFinalizedTurn({ speaker: who, text, startedAt, endedAt })
-          } catch (err) {
-            reportError(`转写失败：${String(err)}`)
-            const who = speakerRef.current
-            await pipeline.ingestFinalizedTurn({ speaker: who, text: '', startedAt, endedAt, sttFailed: true })
-          }
-        })()
+          })
+          .catch(() => {})
       })
 
       await audio.start(async (chunk) => {
         await vad.processAudio(chunk)
         if (!paramsRef.current.sttEnabled) return
-        if (!realtimeModeRef.current || !inSpeechRef.current) return
-        const rt = realtimeRef.current
-        if (!rt) return
+        if (!inSpeechRef.current) return
+        const rtConn = realtimeRef.current
+        if (!rtConn) return
         uncommittedRef.current = true
-        rt.append(chunk)
+        rtConn.append(chunk)
       })
       setRunning(true)
       setLifecycle('running')
@@ -850,26 +685,24 @@ export function useConversationSession(params: ConversationSessionParams) {
   }
 
   function releaseCapture() {
-    systemAggregatorRef.current?.flush()
-    systemAggregatorRef.current?.dispose()
-    systemAggregatorRef.current = null
+    systemRealtimeAggregatorRef.current?.flush()
+    systemRealtimeAggregatorRef.current?.dispose()
+    systemRealtimeAggregatorRef.current = null
     systemAudioRef.current?.stop()
     systemAudioRef.current = null
     systemVadRef.current = null
     systemRealtimeRef.current?.finish()
     systemRealtimeRef.current?.close()
     systemRealtimeRef.current = null
-    systemRealtimeModeRef.current = false
     systemInSpeechRef.current = false
     systemUncommittedRef.current = false
     void paramsRef.current.stopSystemAudioStream?.()
-    aggregatorRef.current?.flush()
-    aggregatorRef.current?.dispose()
-    aggregatorRef.current = null
+    realtimeAggregatorRef.current?.flush()
+    realtimeAggregatorRef.current?.dispose()
+    realtimeAggregatorRef.current = null
     realtimeRef.current?.finish()
     realtimeRef.current?.close()
     realtimeRef.current = null
-    realtimeModeRef.current = false
     uncommittedRef.current = false
     inSpeechRef.current = false
     audioRef.current?.stop()
@@ -878,7 +711,6 @@ export function useConversationSession(params: ConversationSessionParams) {
     pipelineRef.current = null
     llmRef.current = null
     vadRef.current = null
-    sttRef.current = null
     draftMetaRef.current = null
     setDraft(null)
     setRunning(false)
@@ -980,8 +812,6 @@ export function useConversationSession(params: ConversationSessionParams) {
   }
 
   return {
-    speaker,
-    setSpeaker,
     running,
     loading,
     error,

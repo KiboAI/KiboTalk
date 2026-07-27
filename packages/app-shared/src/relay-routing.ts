@@ -9,6 +9,24 @@ export type RelayProbeResult = {
   successfulAttempts: number
 }
 
+/** True when the data-plane origin is this machine (dev / local primary). */
+export function isLocalRelayOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+/** Display label key for a relay node: local vs primary vs china relay. */
+export function relayNodeLabelKind(
+  node: Pick<RelayNode, 'origin' | 'role'>,
+): 'local' | 'primary' | 'relay' {
+  if (isLocalRelayOrigin(node.origin)) return 'local'
+  return node.role === 'primary' ? 'primary' : 'relay'
+}
+
 type ProbeOptions = RelayNodeList['probe'] & {
   fetch?: typeof globalThis.fetch
   now?: () => number

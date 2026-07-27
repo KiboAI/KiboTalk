@@ -61,8 +61,8 @@ const config: Configuration = {
   // Populated by `pnpm download-models` — bundled models, not runtime-fetched (see `src/main/model-protocol.ts`).
   extraResources: [
     { from: 'resources/bundle-models', to: 'models' },
-    { from: 'build/tray/kibotalk.png', to: 'tray/kibotalk.png' },
-    { from: 'build/tray/kibotalk@2x.png', to: 'tray/kibotalk@2x.png' },
+    { from: 'build/tray/kibotalkTemplate.png', to: 'tray/kibotalkTemplate.png' },
+    { from: 'build/tray/kibotalkTemplate@2x.png', to: 'tray/kibotalkTemplate@2x.png' },
   ],
   mac: {
     category: 'public.app-category.productivity',

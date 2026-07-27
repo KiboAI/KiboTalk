@@ -22,6 +22,9 @@ import {
   IslandStatus,
   IslandToggleButton,
   StickyNoteStack,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@kibotalk/ui'
 import {
   Ellipsis,
@@ -175,15 +178,25 @@ export function IslandPage({
       <IslandSeparator />
       <IslandDragHandle label={t('moveWindow')} />
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IslandNavButton label={t('more')}>
-            <Ellipsis className="size-4" />
-          </IslandNavButton>
-        </DropdownMenuTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger
+              aria-label={t('more')}
+              className="flex size-8 items-center justify-center rounded-sm bg-white/8 text-island-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-white/12 disabled:opacity-40"
+            >
+              <Ellipsis className="size-4" />
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top">{t('more')}</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent
           align="end"
+          // Match content flip: content above → menu opens up; content below → down.
           side={contentSide === 'above' ? 'top' : 'bottom'}
           sideOffset={8}
+          collisionPadding={12}
+          avoidCollisions={false}
+          onCloseAutoFocus={(event) => event.preventDefault()}
         >
           {onGoHistory ? (
             <DropdownMenuItem onSelect={onGoHistory}>
@@ -228,7 +241,12 @@ export function IslandPage({
 
   return (
     <>
-      <div ref={rootRef} className="island-window-shell h-dvh w-full p-2">
+      <div
+        ref={rootRef}
+        className="island-window-shell h-dvh w-full p-2"
+        data-island-content-side={contentSide}
+        data-island-menu-side={contentSide === 'above' ? 'top' : 'bottom'}
+      >
         <div className="flex h-full w-full flex-col gap-2.5">
           {contentSide === 'above' ? content : island}
           {contentSide === 'above' ? island : content}

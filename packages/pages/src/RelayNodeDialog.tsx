@@ -1,5 +1,5 @@
-import type { ProductSessionController } from '@kibotalk/app-shared'
-import { useI18n } from '@kibotalk/app-shared'
+import type { ProductSessionController, RelayNode } from '@kibotalk/app-shared'
+import { relayNodeLabelKind, useI18n } from '@kibotalk/app-shared'
 import {
   Badge,
   Button,
@@ -11,6 +11,25 @@ import {
   DialogTitle,
 } from '@kibotalk/ui'
 import { CircleAlert, RefreshCw, ShieldCheck, Wifi } from 'lucide-react'
+
+function relayNodeTitle(
+  node: Pick<RelayNode, 'origin' | 'role'>,
+  t: (key: 'localNode' | 'japanNode' | 'chinaNode') => string,
+): string {
+  const kind = relayNodeLabelKind(node)
+  switch (kind) {
+    case 'local':
+      return t('localNode')
+    case 'primary':
+      return t('japanNode')
+    case 'relay':
+      return t('chinaNode')
+    default: {
+      const _exhaustive: never = kind
+      return _exhaustive
+    }
+  }
+}
 
 export function RelayNodeDialog({
   controller,
@@ -69,7 +88,7 @@ export function RelayNodeDialog({
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">
-                        {result.node.role === 'primary' ? t('japanNode') : t('chinaNode')}
+                        {relayNodeTitle(result.node, t)}
                         {result.node.id === preferredRelayNodeId ? (
                           <Badge variant="secondary" className="ml-2">
                             {t('defaultNode')}

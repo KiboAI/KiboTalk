@@ -27,10 +27,13 @@ jobs:
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
           CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
+          JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
+          JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN; do
+            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN \
+            JP_STT_DASHSCOPE_API_KEY JP_STT_DASHSCOPE_WS_URL; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
               exit 1
@@ -49,26 +52,44 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519_primary ~/.ssh/id_ed25519_cn
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
           ssh-keyscan -H "$CN_SERVER_HOST" >> ~/.ssh/known_hosts
-      - name: Configure relay origin on primary
+      - name: Configure primary routes and providers
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
+          JP_STT_DASHSCOPE_API_KEY: ${{ secrets.JP_STT_DASHSCOPE_API_KEY }}
+          JP_STT_DASHSCOPE_WS_URL: ${{ secrets.JP_STT_DASHSCOPE_WS_URL }}
         run: |
           case "$CN_RELAY_ORIGIN" in
             http://*|https://*) ;;
             *) echo "::error::CN_RELAY_ORIGIN must be an absolute HTTP(S) origin"; exit 1 ;;
           esac
-          printf '%s\n' "$CN_RELAY_ORIGIN" \
+          case "$JP_STT_DASHSCOPE_WS_URL" in
+            wss://*.ap-northeast-1.maas.aliyuncs.com/api-ws/v1/realtime) ;;
+            *) echo "::error::JP_STT_DASHSCOPE_WS_URL must use the Alibaba Cloud Tokyo realtime endpoint"; exit 1 ;;
+          esac
+          printf '%s\n%s\n%s\n' \
+            "$CN_RELAY_ORIGIN" \
+            "$JP_STT_DASHSCOPE_API_KEY" \
+            "$JP_STT_DASHSCOPE_WS_URL" \
             | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
                 set -eu
                 IFS= read -r origin
-                escaped=$(printf "%s" "$origin" | sed "s/[|&]/\\\\&/g")
-                if grep -q "^RELAY_CN_ORIGIN=" /opt/kibotalk/.env; then
-                  sed -i "s|^RELAY_CN_ORIGIN=.*|RELAY_CN_ORIGIN=${escaped}|" /opt/kibotalk/.env
-                else
-                  printf "RELAY_CN_ORIGIN=%s\n" "$origin" >> /opt/kibotalk/.env
-                fi
+                IFS= read -r stt_key
+                IFS= read -r stt_url
+                set_env() {
+                  name=$1
+                  value=$2
+                  escaped=$(printf "%s" "$value" | sed "s/[|&]/\\\\&/g")
+                  if grep -q "^${name}=" /opt/kibotalk/.env; then
+                    sed -i "s|^${name}=.*|${name}=${escaped}|" /opt/kibotalk/.env
+                  else
+                    printf "%s=%s\n" "$name" "$value" >> /opt/kibotalk/.env
+                  fi
+                }
+                set_env RELAY_CN_ORIGIN "$origin"
+                set_env STT_DASHSCOPE_API_KEY "$stt_key"
+                set_env STT_DASHSCOPE_WS_URL "$stt_url"
                 chmod 600 /opt/kibotalk/.env
               '
       - name: Validate server environments
@@ -84,7 +105,8 @@ jobs:
             for name in \
               RELAY_PRIMARY_ORIGIN RELAY_CN_ORIGIN RELAY_CN_ENABLED \
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              STT_ACTIVE LLM_ACTIVE; do
+              STT_ACTIVE STT_DASHSCOPE_API_KEY STT_DASHSCOPE_WS_URL \
+              LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
           '

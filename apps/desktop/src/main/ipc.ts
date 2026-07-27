@@ -27,6 +27,8 @@ import {
   openOnboardingWindow,
   resizeOnboardingWindow,
 } from './windows/onboarding'
+import { settleIslandContentSide } from './windows/island'
+import type { IslandContentSide } from '../shared/ipc'
 
 function broadcastAuthChanged(sourceWebContentsId: number): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -82,6 +84,16 @@ export function registerIpcHandlers(params: {
   ipcMain.handle(IPC_CHANNEL.systemAudioStop, () => stopSystemAudioCapture())
 
   ipcMain.handle(IPC_CHANNEL.islandGetContentSide, () => readConfig().islandContentSide)
+  ipcMain.handle(
+    IPC_CHANNEL.islandSettleContentSide,
+    (_event, current: IslandContentSide) => {
+      const window = params.getIslandWindow()
+      if (!window || (current !== 'above' && current !== 'below')) {
+        return readConfig().islandContentSide
+      }
+      return settleIslandContentSide(window, current)
+    },
+  )
   ipcMain.handle(IPC_CHANNEL.islandHide, () => params.getIslandWindow()?.hide())
   ipcMain.handle(IPC_CHANNEL.islandShow, () => {
     params.getIslandWindow()?.show()
@@ -89,6 +101,19 @@ export function registerIpcHandlers(params: {
   })
   ipcMain.handle(IPC_CHANNEL.islandSetPointerThrough, (_event, ignored: boolean) => {
     params.getIslandWindow()?.setIgnoreMouseEvents(ignored, { forward: true })
+  })
+  ipcMain.handle(IPC_CHANNEL.islandGetBounds, () => {
+    const window = params.getIslandWindow()
+    if (!window) return { x: 0, y: 0, width: 0, height: 0 }
+    return window.getBounds()
+  })
+  ipcMain.handle(IPC_CHANNEL.islandSetPosition, (_event, x: number, y: number) => {
+    const window = params.getIslandWindow() as
+      | (BrowserWindow & { __scheduleMoveSettled?: () => void })
+      | null
+    if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return
+    window.setPosition(Math.round(x), Math.round(y))
+    window.__scheduleMoveSettled?.()
   })
 
   ipcMain.handle(IPC_CHANNEL.sessionUpdateState, (_event, state: DesktopSessionState) => {

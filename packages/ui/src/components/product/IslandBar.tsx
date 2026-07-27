@@ -10,7 +10,7 @@ export type IslandBarProps = React.HTMLAttributes<HTMLDivElement>
  * holding a status readout, state toggles, and one-shot nav buttons.
  *
  * The bar itself is not draggable: movement is intentionally limited to the
- * explicit four-way-arrow handle.
+ * explicit four-way-arrow handle (`IslandDragHandle`).
  */
 export function IslandBar({ className, children, ...props }: IslandBarProps) {
   return (
@@ -70,23 +70,62 @@ export function IslandSeparator() {
 }
 
 /**
- * Dedicated native window drag region, matching AIRI's four-way-arrow
- * movement affordance.
+ * Dedicated move affordance (four-way arrow). Desktop uses pointer-capture +
+ * IPC window positioning because `-webkit-app-region: drag` is unreliable on
+ * the blurred Island bar and conflicts with click-through / tooltips.
  */
 export function IslandDragHandle({ label = '拖动可移动悬浮窗' }: { label?: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          role="presentation"
-          aria-hidden
-          className="flex size-8 shrink-0 cursor-move items-center justify-center rounded-sm bg-white/8 text-island-foreground/70 [-webkit-app-region:drag]"
-        >
-          <Move className="size-4" />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      title={label}
+      data-island-drag-handle
+      className="flex size-8 shrink-0 cursor-move items-center justify-center rounded-sm bg-white/8 text-island-foreground/70 [-webkit-app-region:no-drag]"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        const el = event.currentTarget
+        const startScreenX = event.screenX
+        const startScreenY = event.screenY
+        const desktop = (
+          window as unknown as {
+            kibotalk?: {
+              island?: {
+                getBounds?: () => Promise<{ x: number; y: number; width: number; height: number }>
+                setPosition?: (x: number, y: number) => Promise<void>
+                setPointerThrough?: (ignored: boolean) => Promise<void>
+              }
+            }
+          }
+        ).kibotalk?.island
+        if (!desktop?.getBounds || !desktop?.setPosition) return
+        event.preventDefault()
+        void desktop.setPointerThrough?.(false)
+        void desktop.getBounds().then((bounds) => {
+          const originX = bounds.x
+          const originY = bounds.y
+          const onMove = (moveEvent: PointerEvent) => {
+            void desktop.setPosition?.(
+              originX + moveEvent.screenX - startScreenX,
+              originY + moveEvent.screenY - startScreenY,
+            )
+          }
+          const onUp = () => {
+            el.releasePointerCapture(event.pointerId)
+            el.removeEventListener('pointermove', onMove)
+            el.removeEventListener('pointerup', onUp)
+            el.removeEventListener('pointercancel', onUp)
+          }
+          el.setPointerCapture(event.pointerId)
+          el.addEventListener('pointermove', onMove)
+          el.addEventListener('pointerup', onUp)
+          el.addEventListener('pointercancel', onUp)
+        })
+      }}
+    >
+      <Move className="size-4 pointer-events-none" />
+    </div>
   )
 }
 

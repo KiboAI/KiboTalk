@@ -1,10 +1,11 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, screen, type Display, type Rectangle } from 'electron'
-import { IPC_CHANNEL } from '../../shared/ipc'
+import { IPC_CHANNEL, type IslandContentSide } from '../../shared/ipc'
 import { loadRendererEntry } from '../location'
 import { readConfig, updateConfig } from '../config'
 import { protectPrivilegedWindowNavigation, transparentWindowConfig } from './shared'
+import { decideIslandContentSide } from './island-content-side'
 
 const isMacOS = process.platform === 'darwin'
 const mainDirname = dirname(fileURLToPath(import.meta.url))
@@ -15,8 +16,11 @@ const MIN_WIDTH = 360
 const MIN_HEIGHT = 420
 const MAX_WIDTH = 680
 const MARGIN = 24
-const ISLAND_CENTER_OFFSET = 29
-const FLIP_HYSTERESIS = 32
+
+type IslandBrowserWindow = BrowserWindow & {
+  __scheduleMoveSettled?: () => void
+  __suppressMoveSettle?: boolean
+}
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum)
@@ -49,6 +53,29 @@ function boundsInsideDisplay(bounds: Rectangle, display: Display): Rectangle {
   }
 }
 
+/**
+ * Compute content side from the renderer's current value + window geometry.
+ * The renderer owns the live value; main only persists.
+ */
+export function settleIslandContentSide(
+  window: BrowserWindow,
+  currentSide: IslandContentSide,
+): IslandContentSide {
+  const boundsNow = window.getBounds()
+  const displays = screen.getAllDisplays().map((item) => ({
+    id: item.id,
+    workArea: item.workArea,
+  }))
+  const { desired } = decideIslandContentSide({
+    bounds: boundsNow,
+    currentSide,
+    displays,
+  })
+  if (desired === currentSide) return currentSide
+  updateConfig({ islandContentSide: desired })
+  return desired
+}
+
 /** AIRI-style transparent, always-on-top, edge-resizable floating window. */
 export async function createIslandWindow(): Promise<BrowserWindow> {
   const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
@@ -70,9 +97,8 @@ export async function createIslandWindow(): Promise<BrowserWindow> {
       sandbox: false,
     },
     ...transparentWindowConfig(),
-  })
+  }) as IslandBrowserWindow
 
-  let contentSide = config.islandContentSide
   let moveSettledTimer: ReturnType<typeof setTimeout> | null = null
 
   function persistBounds() {
@@ -87,47 +113,24 @@ export async function createIslandWindow(): Promise<BrowserWindow> {
     })
   }
 
-  function settleVerticalFlip() {
-    const boundsNow = window.getBounds()
-    const display = screen.getDisplayMatching(boundsNow)
-    const midpoint = display.workArea.y + display.workArea.height / 2
-    const islandCenter =
-      contentSide === 'above'
-        ? boundsNow.y + boundsNow.height - ISLAND_CENTER_OFFSET
-        : boundsNow.y + ISLAND_CENTER_OFFSET
-    const desired =
-      islandCenter < midpoint - FLIP_HYSTERESIS
-        ? 'below'
-        : islandCenter > midpoint + FLIP_HYSTERESIS
-          ? 'above'
-          : contentSide
-    if (desired === contentSide) return
-
-    const nextY =
-      desired === 'below'
-        ? islandCenter - ISLAND_CENTER_OFFSET
-        : islandCenter - boundsNow.height + ISLAND_CENTER_OFFSET
-    const clampedY = clamp(
-      Math.round(nextY),
-      display.workArea.y,
-      display.workArea.y + display.workArea.height - boundsNow.height,
-    )
-    contentSide = desired
-    updateConfig({ islandContentSide: desired })
-    window.setPosition(boundsNow.x, clampedY)
-    window.webContents.send(IPC_CHANNEL.islandContentSideChanged, desired)
-  }
-
   function scheduleMoveSettled() {
+    if (window.__suppressMoveSettle) return
     persistBounds()
     if (moveSettledTimer) clearTimeout(moveSettledTimer)
-    moveSettledTimer = setTimeout(settleVerticalFlip, 140)
+    // Renderer owns contentSide — notify it to settle with its single value.
+    moveSettledTimer = setTimeout(() => {
+      if (window.isDestroyed()) return
+      window.webContents.send(IPC_CHANNEL.islandMoveSettledEvent)
+    }, 140)
   }
+  window.__scheduleMoveSettled = scheduleMoveSettled
 
   window.on('move', scheduleMoveSettled)
+  window.on('moved', scheduleMoveSettled)
   window.on('resize', persistBounds)
   window.on('closed', () => {
     if (moveSettledTimer) clearTimeout(moveSettledTimer)
+    delete window.__scheduleMoveSettled
   })
 
   window.setAlwaysOnTop(true, 'screen-saver', 1)

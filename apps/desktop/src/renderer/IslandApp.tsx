@@ -46,6 +46,8 @@ function ReadyIsland({
 }) {
   const { language } = useI18n()
   const [contentSide, setContentSide] = useState<IslandContentSide>('above')
+  const contentSideRef = useRef(contentSide)
+  contentSideRef.current = contentSide
   const snapshot = createSessionSnapshot(prefs)
   const controller = useProductSession({
     languageSnapshot: snapshot,
@@ -65,8 +67,14 @@ function ReadyIsland({
   }, [])
 
   useEffect(() => {
-    void window.kibotalk.island.getContentSide().then(setContentSide)
-    return window.kibotalk.island.onContentSideChanged(setContentSide)
+    void window.kibotalk.island.getContentSide().then((side) => {
+      setContentSide(side)
+    })
+    return window.kibotalk.island.onMoveSettled(() => {
+      void window.kibotalk.island.settleContentSide(contentSideRef.current).then((next) => {
+        setContentSide(next)
+      })
+    })
   }, [])
 
   useEffect(() => {
@@ -122,6 +130,8 @@ function ReadyIsland({
 
   useEffect(() => {
     let ignored = false
+    let resizing = false
+    let resizeIdleTimer: number | null = null
     const setOutlineActive = (active: boolean) => {
       document
         .querySelector('.island-window-shell')
@@ -129,32 +139,57 @@ function ReadyIsland({
     }
     const handlePointerMove = (event: MouseEvent) => {
       const edge =
-        event.clientX <= 8 ||
-        event.clientY <= 8 ||
-        event.clientX >= window.innerWidth - 8 ||
-        event.clientY >= window.innerHeight - 8
+        event.clientX <= 12 ||
+        event.clientY <= 12 ||
+        event.clientX >= window.innerWidth - 12 ||
+        event.clientY >= window.innerHeight - 12
       const target = document.elementFromPoint(event.clientX, event.clientY)
+      const overlayOpen = !!(
+        document.querySelector('[role="dialog"]')
+        || document.querySelector('[role="menu"]')
+      )
       const interactive =
-        !!document.querySelector('[role="dialog"]') ||
-        (target instanceof Element &&
-          !!target.closest('.desktop-interactive, [role="dialog"], [role="menu"]'))
-      setOutlineActive(edge || interactive)
+        overlayOpen
+        || (target instanceof Element
+          && !!target.closest(
+            '.desktop-interactive, [role="dialog"], [role="menu"], [role="tooltip"], [data-radix-popper-content-wrapper], [data-island-drag-handle]',
+          ))
+      // Keep yellow outline sticky while resizing so it does not flicker off
+      // when the OS briefly leaves the edge hit zone.
+      setOutlineActive(edge || interactive || overlayOpen || resizing)
       const nextIgnored = !edge && !interactive
       if (nextIgnored === ignored) return
       ignored = nextIgnored
       void window.kibotalk.island.setPointerThrough(ignored)
     }
     const handlePointerLeave = () => {
+      if (resizing) return
       setOutlineActive(false)
       if (ignored) return
       ignored = true
       void window.kibotalk.island.setPointerThrough(true)
     }
+    const handleResize = () => {
+      resizing = true
+      setOutlineActive(true)
+      if (ignored) {
+        ignored = false
+        void window.kibotalk.island.setPointerThrough(false)
+      }
+      if (resizeIdleTimer !== null) window.clearTimeout(resizeIdleTimer)
+      resizeIdleTimer = window.setTimeout(() => {
+        resizing = false
+        resizeIdleTimer = null
+      }, 250)
+    }
     window.addEventListener('mousemove', handlePointerMove)
+    window.addEventListener('resize', handleResize)
     document.documentElement.addEventListener('mouseleave', handlePointerLeave)
     return () => {
       window.removeEventListener('mousemove', handlePointerMove)
+      window.removeEventListener('resize', handleResize)
       document.documentElement.removeEventListener('mouseleave', handlePointerLeave)
+      if (resizeIdleTimer !== null) window.clearTimeout(resizeIdleTimer)
       setOutlineActive(false)
       void window.kibotalk.island.setPointerThrough(false)
     }

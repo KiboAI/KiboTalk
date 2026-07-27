@@ -16,11 +16,6 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
-      '/stt': {
-        target: apiOrigin,
-        changeOrigin: true,
-        ws: true,
-      },
       '/llm': {
         target: apiOrigin,
         changeOrigin: true,

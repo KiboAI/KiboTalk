@@ -19,19 +19,16 @@ import {
   SILERO_VARIANTS,
   createWorkerEmbedAudio,
   createCurrentSpeakerEmbeddingStorage,
-  ProxySttClient,
   ProxyLlmClient,
   connectRealtimeSttWithRetry,
   finalizedTurnFromRealtimeSegments,
   isTranscriptionFailed,
   type RealtimeSttClient,
   type TranscribedAudioSegment,
-  providerMode,
   fetchRelayNodes,
   openRelaySession,
   probeRelayNodes,
   releaseRelaySession,
-  type SttProvider,
 } from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
 import {
@@ -51,7 +48,6 @@ import {
   startSpan,
 } from '@kibotalk/observability'
 import { useIoTracerStore } from './io-tracer/store'
-import { useTranscribeProvider } from './SttProviderSelect'
 
 type TurnView = ConversationTurn & { candidates?: ReplyCandidate[] }
 
@@ -69,7 +65,6 @@ export default function LiveSession({
   hasEmbedding: boolean
   onGoEnroll: () => void
 }) {
-  const [speaker, setSpeaker] = useState<'user' | 'other'>('other')
   const [running, setRunning] = useState(false)
   const [loading, setLoading] = useState('')
   const [error, setError] = useState('')
@@ -79,17 +74,14 @@ export default function LiveSession({
   const [draft, setDraft] = useState<DraftTurn | null>(null)
   const [candidateRounds, setCandidateRounds] = useState<CandidateRound[]>([])
   const [vadStatus, setVadStatus] = useState<'idle' | 'speech' | 'silence'>('idle')
-  const [mode, setMode] = useState<'auto' | 'manual' | 'checking'>('checking')
+  const [mode, setMode] = useState<'auto' | 'checking'>('checking')
   const [confidence, setConfidence] = useState<number | null>(null)
-  /** Actual STT path for the running session (may differ from UI after session-only R4 degrade). */
-  const [activeSttPath, setActiveSttPath] = useState<'idle' | 'realtime' | 'batch'>('idle')
+  const [activeSttPath, setActiveSttPath] = useState<'idle' | 'realtime'>('idle')
 
   const speechThreshold = useConfig((s) => s.speechThreshold)
   const exitThreshold = useConfig((s) => s.exitThreshold)
   const minSilenceDurationMs = useConfig((s) => s.minSilenceDurationMs)
   const minSpeechDurationMs = useConfig((s) => s.minSpeechDurationMs)
-  const prePadMs = useConfig((s) => s.prePadMs)
-  const postPadMs = useConfig((s) => s.postPadMs)
   const pauseMs = useConfig((s) => s.pauseMs)
   const mergeMaxMs = useConfig((s) => s.mergeMaxMs)
   const speakerThreshold = useConfig((s) => s.speakerThreshold)
@@ -99,33 +91,22 @@ export default function LiveSession({
   const productSurfaceMode = useConfig((s) => s.productSurfaceMode)
   const patch = useConfig((s) => s.patch)
   const setLiveSessionRunning = useConfig((s) => s.setLiveSessionRunning)
-  const { providers } = useTranscribeProvider()
 
-  const speakerRef = useRef(speaker)
-  speakerRef.current = speaker
-  const stableSpeakerRef = useRef(speaker)
+  const stableSpeakerRef = useRef<'user' | 'other'>('other')
   const llmRef = useRef<ProxyLlmClient | null>(null)
   const audioRef = useRef<AudioSource | null>(null)
   const pipelineRef = useRef<Pipeline | null>(null)
   const storageRef = useRef(new InMemoryConversationStorage())
   const verifierRef = useRef<EmbeddingSpeakerVerifier | null>(null)
   const embeddingRef = useRef<Embedding | null>(null)
-  const autoRef = useRef(false)
   const vadRef = useRef<VAD | null>(null)
-  const sttRef = useRef<ProxySttClient | null>(null)
-  const aggregatorRef = useRef<SegmentAggregator | null>(null)
   const realtimeAggregatorRef =
     useRef<SegmentAggregator<TranscribedAudioSegment> | null>(null)
   const realtimeRef = useRef<RealtimeSttClient | null>(null)
-  const realtimeModeRef = useRef(false)
   const realtimeBusyRef = useRef(Promise.resolve())
   const pipelineBusyRef = useRef(Promise.resolve())
-  const providersRef = useRef<SttProvider[]>(providers)
-  providersRef.current = providers
   const draftMetaRef = useRef<{ speaker: 'user' | 'other'; startedAt: number } | null>(null)
-  /** Realtime: stream mic while Silero says in-speech (not wait for speech-ready). */
   const inSpeechRef = useRef(false)
-  /** True after append until commit completes — blocks next speech stream from mixing. */
   const uncommittedRef = useRef(false)
   const relaySessionIdRef = useRef<string | null>(null)
 
@@ -142,22 +123,11 @@ export default function LiveSession({
     verifierRef.current?.setThreshold(speakerThreshold)
   }, [speakerThreshold])
   useEffect(() => {
-    sttRef.current?.configurePadding(prePadMs, postPadMs)
-  }, [prePadMs, postPadMs])
-  useEffect(() => {
-    aggregatorRef.current?.updateConfig({
-      pauseMs,
-      maxMs: mergeMaxMs,
-    })
     realtimeAggregatorRef.current?.updateConfig({
       pauseMs,
       maxMs: mergeMaxMs,
     })
   }, [pauseMs, mergeMaxMs])
-  const transcribeMode = useConfig((s) => s.transcribeMode)
-  useEffect(() => {
-    if (transcribeMode !== 'aggregated') aggregatorRef.current?.flush()
-  }, [transcribeMode])
 
   useEffect(() => {
     return () => {
@@ -171,34 +141,6 @@ export default function LiveSession({
     toast.error(message)
   }
 
-  function degradeToBatch(reason: string) {
-    const batch = providersRef.current.find((p) => p.mode !== 'realtime' && p.id)
-    if (!batch) {
-      reportError(`实时转写失败：${reason}（无可用 batch provider 可降级）`)
-      return false
-    }
-    // Session-only: keep UI on realtime selection, but STT POSTs must use a batch id.
-    realtimeRef.current?.close()
-    realtimeRef.current = null
-    realtimeModeRef.current = false
-    sttRef.current?.setProviderOverride(batch.id)
-    setActiveSttPath('batch')
-    const degradeSpan = startSpan(IOSpanNames.SpeechRecognition, {
-      attrs: {
-        [IOAttributes.Subsystem]: IOSubsystems.STT,
-        [IOAttributes.SttPath]: 'realtime',
-        [IOAttributes.SttDegraded]: true,
-      },
-    })
-    degradeSpan.end()
-    setStatusNote(
-      `本会话实时转写已降级为 batch（${batch.label}）：${reason}。停止后重新开始可再试实时。`,
-    )
-    setDraft(null)
-    draftMetaRef.current = null
-    return true
-  }
-
   async function verifyWithSpan(
     buffer: ArrayBuffer,
   ): Promise<'user' | 'other'> {
@@ -209,11 +151,8 @@ export default function LiveSession({
       },
     })
     try {
-      if (!autoRef.current || !embeddingRef.current || !verifierRef.current) {
-        stableSpeakerRef.current = speakerRef.current
-        span.setAttribute(IOAttributes.SpeakerResult, speakerRef.current)
-        span.end()
-        return speakerRef.current
+      if (!embeddingRef.current || !verifierRef.current) {
+        throw new Error('VOICEPRINT_REQUIRED')
       }
       const r = await verifierRef.current.verify(buffer, embeddingRef.current)
       setConfidence(r.confidence)
@@ -256,7 +195,10 @@ export default function LiveSession({
   }
 
   async function start() {
-    stableSpeakerRef.current = speakerRef.current
+    if (!hasEmbedding) {
+      reportError('VOICEPRINT_REQUIRED')
+      return
+    }
     setError('')
     setStatusNote('')
     setLoading('正在检查声纹录入…')
@@ -277,12 +219,12 @@ export default function LiveSession({
       }
       const embedding = await verifierRef.current.loadEmbedding()
       embeddingRef.current = embedding
-      autoRef.current = !!embedding
-      setMode(embedding ? 'auto' : 'manual')
+      if (!embedding) throw new Error('VOICEPRINT_REQUIRED')
+      setMode('auto')
 
       const cfg = useConfig.getState()
       const selectedProvider = cfg.transcribeProvider
-      const isRealtime = providerMode(providers, selectedProvider) === 'realtime'
+      if (!selectedProvider) throw new Error('STT_PROVIDER_REQUIRED')
       const relaySessionId =
         globalThis.crypto?.randomUUID?.()
         ?? `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -310,104 +252,59 @@ export default function LiveSession({
         exitThreshold,
         minSilenceDurationMs,
         minSpeechDurationMs,
+        maxSpeechDurationMs: cfg.mergeMaxMs,
         speechPadMs: 0,
         sampleRate: audio.sampleRate,
       })
       vadRef.current = vad
 
-      const stt = new ProxySttClient(
-        audio.sampleRate,
-        cfg.conversationLang,
-        () => useConfig.getState().islandSttEnabled,
-        () => useConfig.getState().transcribeProvider,
-      )
-      stt.configurePadding(prePadMs, postPadMs)
-      stt.setProviderOverride(null)
-      sttRef.current = stt
       const llm = new ProxyLlmClient(readLanguageSnapshot(), () => useConfig.getState().islandReplyEnabled)
       llmRef.current = llm
       const storage = storageRef.current
-      const pipeline = new Pipeline({ stt, llm, conversation: storage })
+      const pipeline = new Pipeline({ llm, conversation: storage })
       pipelineRef.current = pipeline
 
-      realtimeModeRef.current = isRealtime
-      setActiveSttPath(isRealtime ? 'realtime' : 'batch')
-      if (!isRealtime) {
-        setStatusNote(
-          '当前为 batch STT：无实时草稿，停顿后整段上传。要边说边出字请把 STT 选成带「· 实时」的项（如 dashscope-realtime）。',
-        )
-      }
-      if (isRealtime && selectedProvider) {
-        setLoading('正在连接实时转写…')
-        try {
-          const rt = await connectRealtimeSttWithRetry({
-            provider: selectedProvider,
-            language: cfg.conversationLang,
-            sessionId: relaySessionId,
-            handlers: {
-              onPartial: (text) => {
-                const meta = draftMetaRef.current
-                if (!meta) return
-                setDraft({
-                  speaker: meta.speaker,
-                  text,
-                  startedAt: meta.startedAt,
-                  endedAt: Date.now(),
-                })
-              },
-              onError: (message) => {
-                reportError(`实时转写：${message}`)
-              },
-            },
-          })
-          realtimeRef.current = rt
-          setStatusNote(`实时转写已连接 · ${relayStatus}`)
-          setActiveSttPath('realtime')
-        } catch (e) {
-          if (!degradeToBatch((e as Error).message)) {
-            throw e
-          }
-          realtimeModeRef.current = false
-        }
-      }
+      setActiveSttPath('realtime')
+      setLoading('正在连接实时转写…')
+      const rt = await connectRealtimeSttWithRetry({
+        provider: selectedProvider,
+        language: cfg.conversationLang,
+        sessionId: relaySessionId,
+        handlers: {
+          onPartial: (text) => {
+            const meta = draftMetaRef.current
+            if (!meta) return
+            setDraft({
+              speaker: meta.speaker,
+              text,
+              startedAt: meta.startedAt,
+              endedAt: Date.now(),
+            })
+          },
+          onError: (message) => {
+            reportError(`实时转写：${message}`)
+          },
+        },
+      })
+      realtimeRef.current = rt
+      setStatusNote(`实时转写已连接 · ${relayStatus}`)
 
-      const aggregator = createSegmentAggregator({
+      const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
         sampleRate: audio.sampleRate,
         pauseMs: cfg.pauseMs,
         maxMs: cfg.mergeMaxMs,
       })
-      aggregator.onFlush((merged) => {
+      realtimeAggregator.onFlush((merged) => {
+        const turn = finalizedTurnFromRealtimeSegments(
+          merged,
+          cfg.conversationLang,
+        )
+        if (!turn) return
         pipelineBusyRef.current = pipelineBusyRef.current
-          .then(() =>
-            pipeline.ingestSegment({
-              pcm: merged.pcm,
-              speaker: merged.speaker,
-              startedAt: merged.startedAt,
-              endedAt: merged.endedAt,
-            }),
-          )
+          .then(() => pipeline.ingestFinalizedTurn(turn))
           .catch(() => {})
       })
-      aggregatorRef.current = aggregator
-
-      if (realtimeModeRef.current) {
-        const realtimeAggregator = createSegmentAggregator<TranscribedAudioSegment>({
-          sampleRate: audio.sampleRate,
-          pauseMs: cfg.pauseMs,
-          maxMs: cfg.mergeMaxMs,
-        })
-        realtimeAggregator.onFlush((merged) => {
-          const turn = finalizedTurnFromRealtimeSegments(
-            merged,
-            cfg.conversationLang,
-          )
-          if (!turn) return
-          pipelineBusyRef.current = pipelineBusyRef.current
-            .then(() => pipeline.ingestFinalizedTurn(turn))
-            .catch(() => {})
-        })
-        realtimeAggregatorRef.current = realtimeAggregator
-      }
+      realtimeAggregatorRef.current = realtimeAggregator
 
       pipeline.on((e: PipelineEvent) => {
         switch (e.type) {
@@ -429,6 +326,8 @@ export default function LiveSession({
               prev.map((t) => (t.id === e.turnId ? { ...t, candidates: e.candidates } : t)),
             )
             break
+          case 'candidatesStreaming':
+          case 'candidateDelta':
           case 'llmAborted':
           case 'llmFailed':
             break
@@ -437,8 +336,11 @@ export default function LiveSession({
               prev.map((t) => (t.id === e.turnId ? { ...t, sttFailed: true } as TurnView : t)),
             )
             break
-          default:
+          default: {
+            const _exhaustive: never = e
+            void _exhaustive
             break
+          }
         }
       })
 
@@ -449,12 +351,10 @@ export default function LiveSession({
           return
         }
         const startedAt = Date.now()
-        if (realtimeModeRef.current) {
-          realtimeAggregatorRef.current?.hold()
-          const who = draftMetaRef.current?.speaker ?? speakerRef.current
-          draftMetaRef.current = { speaker: who, startedAt }
-          setDraft({ speaker: who, text: '', startedAt, endedAt: startedAt })
-        }
+        realtimeAggregatorRef.current?.hold()
+        const who = draftMetaRef.current?.speaker ?? stableSpeakerRef.current
+        draftMetaRef.current = { speaker: who, startedAt }
+        setDraft({ speaker: who, text: '', startedAt, endedAt: startedAt })
         inSpeechRef.current = true
       })
       vad.on('speech-end', () => {
@@ -469,122 +369,70 @@ export default function LiveSession({
           draftMetaRef.current?.startedAt ?? now - e.duration * 1000
         const endedAt = now
 
-        if (realtimeModeRef.current) {
-          const rt = realtimeRef.current
-          if (!rt || !uncommittedRef.current) return
+        const rtConn = realtimeRef.current
+        if (!rtConn || !uncommittedRef.current) return
 
-          rt.commit()
-          uncommittedRef.current = false
-          const buffer = e.buffer
-          const provisional = draftMetaRef.current?.speaker ?? speakerRef.current
-          const transcription = waitRealtimeCompletedWithSpan(rt).then(
-            (text) => ({ ok: true as const, text }),
-            (error: unknown) => ({ ok: false as const, error }),
-          )
-          const verifiedSpeaker = verifyWithSpan(buffer.buffer as ArrayBuffer)
-          realtimeBusyRef.current = realtimeBusyRef.current
-            .then(async () => {
-              const [outcome, who] = await Promise.all([
-                transcription,
-                verifiedSpeaker,
-              ])
-              if (outcome.ok) {
-                draftMetaRef.current = { speaker: who, startedAt }
-                setDraft((current) =>
-                  current?.startedAt === startedAt ? null : current,
-                )
-                realtimeAggregatorRef.current?.feed({
-                  buffer,
-                  speaker: who,
-                  text: outcome.text,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
-              if (isTranscriptionFailed(outcome.error)) {
-                realtimeAggregatorRef.current?.feed({
-                  buffer,
-                  speaker: provisional,
-                  text: '',
-                  sttFailed: true,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
-              if (degradeToBatch(String(outcome.error))) {
-                await pipeline.ingestSegment({
-                  pcm: buffer,
-                  speaker: who,
-                  startedAt,
-                  endedAt,
-                })
-                return
-              }
+        rtConn.commit()
+        uncommittedRef.current = false
+        const buffer = e.buffer
+        const provisional = draftMetaRef.current?.speaker ?? stableSpeakerRef.current
+        const transcription = waitRealtimeCompletedWithSpan(rtConn).then(
+          (text) => ({ ok: true as const, text }),
+          (error: unknown) => ({ ok: false as const, error }),
+        )
+        const verifiedSpeaker = verifyWithSpan(buffer.buffer as ArrayBuffer)
+        realtimeBusyRef.current = realtimeBusyRef.current
+          .then(async () => {
+            const [outcome, who] = await Promise.all([
+              transcription,
+              verifiedSpeaker,
+            ])
+            if (outcome.ok) {
+              draftMetaRef.current = { speaker: who, startedAt }
+              setDraft((current) =>
+                current?.startedAt === startedAt ? null : current,
+              )
               realtimeAggregatorRef.current?.feed({
                 buffer,
                 speaker: who,
+                text: outcome.text,
+                startedAt,
+                endedAt,
+              })
+              return
+            }
+            if (isTranscriptionFailed(outcome.error)) {
+              realtimeAggregatorRef.current?.feed({
+                buffer,
+                speaker: provisional,
                 text: '',
                 sttFailed: true,
                 startedAt,
                 endedAt,
               })
-            })
-            .catch(() => {})
-          return
-        }
-
-        // Batch: verify || STT in parallel, then ingest finalized text.
-        const buffer = e.buffer
-        void (async () => {
-          try {
-            const verifyPromise = verifyWithSpan(buffer.buffer as ArrayBuffer)
-
-            if (useConfig.getState().transcribeMode === 'aggregated') {
-              const who = await verifyPromise
-              aggregatorRef.current?.feed({ buffer, speaker: who, startedAt, endedAt })
               return
             }
-
-            const stt = sttRef.current
-            if (!stt) {
-              const who = await verifyPromise
-              void pipeline.ingestSegment({ pcm: buffer, speaker: who, startedAt, endedAt })
-              return
-            }
-            const [who, text] = await Promise.all([
-              verifyPromise,
-              stt.transcribe(buffer, new AbortController().signal),
-            ])
-            await pipeline.ingestFinalizedTurn({
-              speaker: who,
-              text,
-              startedAt,
-              endedAt,
-            })
-          } catch (err) {
-            reportError(`转写失败：${String(err)}`)
-            const who = speakerRef.current
-            await pipeline.ingestFinalizedTurn({
+            reportError(`实时转写：${String(outcome.error)}`)
+            realtimeAggregatorRef.current?.feed({
+              buffer,
               speaker: who,
               text: '',
+              sttFailed: true,
               startedAt,
               endedAt,
-              sttFailed: true,
             })
-          }
-        })()
+          })
+          .catch(() => {})
       })
 
       await audio.start(async (chunk) => {
         await vad.processAudio(chunk)
         if (!useConfig.getState().islandSttEnabled) return
-        if (!realtimeModeRef.current || !inSpeechRef.current) return
-        const rt = realtimeRef.current
-        if (!rt) return
+        if (!inSpeechRef.current) return
+        const rtConn = realtimeRef.current
+        if (!rtConn) return
         uncommittedRef.current = true
-        rt.append(chunk)
+        rtConn.append(chunk)
       })
       setRunning(true)
       setLiveSessionRunning(true)
@@ -600,13 +448,9 @@ export default function LiveSession({
     realtimeAggregatorRef.current?.flush()
     realtimeAggregatorRef.current?.dispose()
     realtimeAggregatorRef.current = null
-    aggregatorRef.current?.flush()
-    aggregatorRef.current?.dispose()
-    aggregatorRef.current = null
     realtimeRef.current?.finish()
     realtimeRef.current?.close()
     realtimeRef.current = null
-    realtimeModeRef.current = false
     inSpeechRef.current = false
     uncommittedRef.current = false
     audioRef.current?.stop()
@@ -614,7 +458,6 @@ export default function LiveSession({
     pipelineRef.current = null
     llmRef.current = null
     vadRef.current = null
-    sttRef.current = null
     draftMetaRef.current = null
     setDraft(null)
     setRunning(false)
@@ -650,8 +493,6 @@ export default function LiveSession({
             activeSttPath={activeSttPath}
             mode={mode}
             confidence={confidence}
-            speaker={speaker}
-            onSpeakerChange={setSpeaker}
             hasEmbedding={hasEmbedding}
             statusNote={statusNote}
             error={error}
@@ -703,7 +544,7 @@ export default function LiveSession({
                 <p className="text-xs text-muted-foreground">窗口模式 · 应用内卡片</p>
               </div>
               {!running ? (
-                <Button size="sm" onClick={() => void start()} disabled={!!loading}>
+                <Button size="sm" onClick={() => void start()} disabled={!!loading || !hasEmbedding}>
                   {loading || '开始会话'}
                 </Button>
               ) : (

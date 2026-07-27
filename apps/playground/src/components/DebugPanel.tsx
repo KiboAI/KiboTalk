@@ -1,23 +1,28 @@
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
   Label,
   ScrollArea,
   Separator,
 } from '@kibotalk/ui'
-import { RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { Activity, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useConfig } from '../config-store'
 import {
   VadParamsFields,
-  AsrPadFields,
   MergeParamsFields,
   RelayNodeSelect,
   VadModelSelect,
-  TranscribeModeSelect,
   NumberField,
   ThresholdSlider,
 } from './ConfigFields'
-import { SttProviderSelect, useTranscribeProvider, providerMode } from '../SttProviderSelect'
+import { SttProviderSelect, useTranscribeProvider } from '../SttProviderSelect'
 import { IoTracer } from '../io-tracer/IoTracer'
+import { useIoTracerStore } from '../io-tracer/store'
 
 export type DebugPanelProps = {
   running: boolean
@@ -26,11 +31,10 @@ export type DebugPanelProps = {
 export function DebugPanel({ running }: DebugPanelProps) {
   const speakerThreshold = useConfig((s) => s.speakerThreshold)
   const candidateRoundsMax = useConfig((s) => s.candidateRoundsMax)
-  const transcribeMode = useConfig((s) => s.transcribeMode)
-  const mergeEnabled = transcribeMode === 'aggregated'
   const patch = useConfig((s) => s.patch)
   const { providers, provider } = useTranscribeProvider()
-  const sttIsRealtime = providerMode(providers, provider) === 'realtime'
+  const isRecording = useIoTracerStore((s) => s.isRecording)
+  const turnCount = useIoTracerStore((s) => s.turns.length)
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -46,7 +50,6 @@ export function DebugPanel({ running }: DebugPanelProps) {
           <div className="space-y-3">
             <RelayNodeSelect disabled={running} />
             <VadModelSelect disabled={running} />
-            {!sttIsRealtime && <TranscribeModeSelect disabled={running} />}
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs text-muted-foreground">STT</Label>
               <SttProviderSelect
@@ -63,14 +66,13 @@ export function DebugPanel({ running }: DebugPanelProps) {
 
           <div className="grid gap-3">
             <VadParamsFields />
-            <AsrPadFields />
             <ThresholdSlider
               label="说话人阈值"
               hint="与声纹相似度高于此值判为我（默认 0.49）"
               value={speakerThreshold}
               onChange={(v) => patch({ speakerThreshold: v })}
             />
-            <MergeParamsFields disabled={!mergeEnabled && !sttIsRealtime} />
+            <MergeParamsFields />
             <NumberField
               label="可见候选轮数 N"
               value={candidateRoundsMax}
@@ -91,10 +93,29 @@ export function DebugPanel({ running }: DebugPanelProps) {
 
           <Separator />
 
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">时间流 · IO 追踪</p>
-            <IoTracer />
-          </div>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="w-full justify-start gap-1.5">
+                <Activity className="size-3.5" />
+                时间流 · IO 追踪
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {isRecording ? '录制中' : '已停止'}
+                  {turnCount > 0 ? ` · ${turnCount} 轮` : ''}
+                </span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-4 overflow-hidden sm:max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>时间流 · IO 追踪</DialogTitle>
+                <DialogDescription>
+                  查看会话期间的子系统时序与 IO 跨度；不影响产品主舞台布局。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <IoTracer />
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </ScrollArea>
     </div>

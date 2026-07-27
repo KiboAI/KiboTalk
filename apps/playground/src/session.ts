@@ -1,30 +1,14 @@
 import { Pipeline } from '@kibotalk/pipeline'
-import type { CandidateStreamEvent, LlmClient, SttClient } from '@kibotalk/pipeline'
+import type { CandidateStreamEvent, LlmClient } from '@kibotalk/pipeline'
 import { InMemoryConversationStorage } from '@kibotalk/conversation'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 import { StubSpeakerVerifier } from '@kibotalk/speaker'
 
 /**
  * In-browser mock providers for the playground session simulator. T4 ships no
- * real STT/LLM/WASM speaker — these stand in so the state machine can be driven
- * visually. Swap for real clients (T2/T3/T6) without touching this wiring.
+ * real LLM/WASM speaker — these stand in so the state machine can be driven
+ * visually. Swap for real clients without touching this wiring.
  */
-
-export class PlaygroundStt implements SttClient {
-  constructor(private getText: () => string, private failNext = false) {}
-
-  setFailNext(value: boolean): void {
-    this.failNext = value
-  }
-
-  async transcribe(_pcm: Float32Array, _signal: AbortSignal): Promise<string> {
-    if (this.failNext) {
-      this.failNext = false
-      throw new Error('mock stt failure')
-    }
-    return this.getText()
-  }
-}
 
 export class PlaygroundLlm implements LlmClient {
   async *streamCandidates(
@@ -49,15 +33,13 @@ export class PlaygroundLlm implements LlmClient {
 export type SessionHandle = {
   pipeline: Pipeline
   storage: InMemoryConversationStorage
-  stt: PlaygroundStt
   speaker: StubSpeakerVerifier
 }
 
-export function createSession(getText: () => string): SessionHandle {
+export function createSession(): SessionHandle {
   const storage = new InMemoryConversationStorage()
-  const stt = new PlaygroundStt(getText)
   const llm = new PlaygroundLlm()
   const speaker = new StubSpeakerVerifier('other')
-  const pipeline = new Pipeline({ stt, llm, conversation: storage })
-  return { pipeline, storage, stt, speaker }
+  const pipeline = new Pipeline({ llm, conversation: storage })
+  return { pipeline, storage, speaker }
 }

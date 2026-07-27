@@ -8,21 +8,18 @@ import {
 import { useEffect, useState } from 'react'
 import { useConfig } from './config-store'
 import type { SttProvider } from '@kibotalk/app-shared'
-import { defaultSttProvider, providerMode, sttUrl } from '@kibotalk/app-shared'
+import { defaultRealtimeFirstProvider, fetchSttProviders } from '@kibotalk/app-shared'
 
 export type { SttProvider }
-export { defaultSttProvider, providerMode, sttUrl }
+export { defaultRealtimeFirstProvider as defaultSttProvider }
 
 export function useSttProviders(): SttProvider[] {
   const [providers, setProviders] = useState<SttProvider[]>([])
   useEffect(() => {
     let cancelled = false
-    fetch('/stt/providers')
-      .then((r) => (r.ok ? r.json() : { providers: [] }))
-      .then((d: { providers?: SttProvider[] }) => {
-        if (!cancelled) setProviders(d.providers ?? [])
-      })
-      .catch(() => {})
+    void fetchSttProviders().then((list) => {
+      if (!cancelled) setProviders(list)
+    })
     return () => {
       cancelled = true
     }
@@ -50,7 +47,7 @@ type SttProviderSelectProps = {
   id?: string
 }
 
-/** Shared STT provider selector (shadcn Select). */
+/** Shared realtime STT provider selector (shadcn Select). */
 export function SttProviderSelect({
   providers,
   value,
@@ -76,14 +73,13 @@ export function SttProviderSelect({
           {providers.map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.label}
-              {p.mode === 'realtime' ? ' · 实时' : ' · batch'}
               {p.active ? ' · 默认' : ''}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       {providers.length === 0 ? (
-        <p className="text-xs text-muted-foreground">服务端未配置 STT provider</p>
+        <p className="text-xs text-muted-foreground">服务端未配置实时 STT provider</p>
       ) : null}
     </div>
   )

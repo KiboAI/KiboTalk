@@ -1,18 +1,15 @@
 import { useRef, useState } from 'react'
-import { encodeWav } from '@kibotalk/audio'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 import {
   Button,
-  Label,
   ScrollArea,
   StickyNoteCard,
   StickyNoteCardPlaceholder,
   Textarea,
   toast,
 } from '@kibotalk/ui'
-import { Cable, Loader2, Mic, Sparkles, Square, StopCircle } from 'lucide-react'
-import { extractCandidates, parseSseStream, AudioSource, sttUrl } from '@kibotalk/app-shared'
-import { SttProviderSelect, useTranscribeProvider } from './SttProviderSelect'
+import { Cable, Loader2, Sparkles, StopCircle } from 'lucide-react'
+import { extractCandidates, parseSseStream } from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
 import { WindowRoundCard, WindowRoundPlaceholder } from './components/WindowRoundCard'
 import { StageShell } from './components/StageShell'
@@ -64,16 +61,7 @@ const STATUS_LABEL: Record<LlmRunStatus, string> = {
 }
 
 export default function DirectApi() {
-  const { providers, provider } = useTranscribeProvider()
-  const patch = useConfig((s) => s.patch)
   const productSurfaceMode = useConfig((s) => s.productSurfaceMode)
-
-  const [transcription, setTranscription] = useState('')
-  const [sttError, setSttError] = useState('')
-  const [sttBusy, setSttBusy] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const audioRef = useRef<AudioSource | null>(null)
-  const chunksRef = useRef<Float32Array[]>([])
 
   const [contextText, setContextText] = useState(
     'other: 本日はお忙しい中お越しいただきありがとうございます。まずは簡単に自己紹介をお願いします。\nuser: 〇〇大学で情報工学を専攻しております、田中と申します。\nother: では、数ある企業の中で、なぜ弊社を志望されたのでしょうか。',
@@ -95,73 +83,9 @@ export default function DirectApi() {
   const abortRef = useRef<AbortController | null>(null)
   const batchRef = useRef({ chars: 0, lastFlush: 0 })
 
-  function failStt(message: string) {
-    setSttError(message)
-    toast.error(message)
-  }
-
   function failLlm(message: string) {
     setLlmError(message)
     toast.error(message)
-  }
-
-  async function sendWav(wav: ArrayBuffer) {
-    setSttBusy(true)
-    setSttError('')
-    setTranscription('')
-    try {
-      const res = await fetch(
-        sttUrl(
-          useConfig.getState().transcribeProvider,
-          useConfig.getState().conversationLang,
-        ),
-        { method: 'POST', body: wav },
-      )
-      const json = (await res.json()) as { text?: string; error?: string }
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
-      setTranscription(json.text ?? '')
-    } catch (e) {
-      failStt((e as Error).message)
-    } finally {
-      setSttBusy(false)
-    }
-  }
-
-  async function startRecording() {
-    setSttError('')
-    setTranscription('')
-    try {
-      const audio = new AudioSource()
-      audioRef.current = audio
-      chunksRef.current = []
-      await audio.start((chunk) => {
-        chunksRef.current.push(new Float32Array(chunk))
-      })
-      setRecording(true)
-    } catch (e) {
-      failStt((e as Error).message)
-      audioRef.current?.stop()
-      audioRef.current = null
-    }
-  }
-
-  async function stopAndTranscribe() {
-    const audio = audioRef.current
-    const sampleRate = audio?.sampleRate ?? 16000
-    audio?.stop()
-    audioRef.current = null
-    setRecording(false)
-    const chunks = chunksRef.current
-    chunksRef.current = []
-    if (chunks.length === 0) return
-    const total = chunks.reduce((n, c) => n + c.length, 0)
-    const pcm = new Float32Array(total)
-    let off = 0
-    for (const c of chunks) {
-      pcm.set(c, off)
-      off += c.length
-    }
-    await sendWav(encodeWav(pcm, sampleRate))
   }
 
   function parseContext(text: string): ConversationTurn[] {
@@ -354,50 +278,6 @@ export default function DirectApi() {
       debug={
         <ScrollArea className="h-full pr-2">
           <div className="space-y-5 pb-6">
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">/stt 探针</p>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs text-muted-foreground">STT 来源</Label>
-                <SttProviderSelect
-                  providers={providers.filter((p) => (p.mode ?? 'batch') === 'batch')}
-                  value={
-                    provider && providers.some((p) => p.id === provider && (p.mode ?? 'batch') === 'batch')
-                      ? provider
-                      : null
-                  }
-                  onChange={(p) => patch({ transcribeProvider: p })}
-                  allowOff={false}
-                  offLabel=""
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {!recording ? (
-                  <Button size="sm" onClick={() => void startRecording()} disabled={sttBusy}>
-                    <Mic className="size-3.5" />
-                    开始录音
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="destructive" onClick={() => void stopAndTranscribe()}>
-                    <Square className="size-3.5" />
-                    停止并转写
-                  </Button>
-                )}
-              </div>
-              {sttBusy ? (
-                <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="size-3 animate-spin" />
-                  转写中…
-                </p>
-              ) : null}
-              {sttError ? <p className="text-xs text-destructive">{sttError}</p> : null}
-              {transcription ? (
-                <p className="rounded-md bg-muted/60 p-2 text-xs">
-                  <b>文本：</b>
-                  {transcription}
-                </p>
-              ) : null}
-            </div>
-
             {metrics.status !== 'idle' ? (
               <div className="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-2 text-[11px]">
                 <div>

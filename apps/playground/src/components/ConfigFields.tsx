@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   Input,
   Label,
@@ -20,12 +21,12 @@ import {
 import {
   fetchRelayNodes,
   probeRelayNodes,
+  relayNodeLabelKind,
   SILERO_VARIANTS,
   type RelayProbeResult,
 } from '@kibotalk/app-shared'
 import { SttProviderSelect } from '../SttProviderSelect'
 import { useTranscribeProvider } from '../SttProviderSelect'
-import type { TranscribeMode } from '../config-store'
 
 /** Shared numeric field. Reads/writes nothing itself — fully controlled. */
 export function NumberField({
@@ -122,35 +123,20 @@ export function VadParamsFields() {
     <>
       <ThresholdSlider
         label="进入阈值"
-        hint="语音概率超过此值视为开始说话（默认 0.5）"
+        hint="语音概率超过此值视为开始说话（默认 0.2）"
         value={speechThreshold}
         onChange={(v) => patch({ speechThreshold: v })}
       />
       <ThresholdSlider
         label="退出阈值"
-        hint="语音概率低于此值并持续静音后结束本段（默认 0.3）"
+        hint="语音概率低于此值并持续静音后结束本段（默认 0.1）"
         value={exitThreshold}
         onChange={(v) => patch({ exitThreshold: v })}
       />
-      <NumberField label="静音结束 ms（200）" value={minSilenceDurationMs} step={50} min={0}
+      <NumberField label="静音结束 ms（400）" value={minSilenceDurationMs} step={50} min={0}
         onChange={(v) => patch({ minSilenceDurationMs: v })} />
       <NumberField label="最短语音 ms（200）" value={minSpeechDurationMs} step={50} min={0}
         onChange={(v) => patch({ minSpeechDurationMs: v })} />
-    </>
-  )
-}
-
-/** ASR-send padding (applied at ASR send; VAD cuts stay tight). */
-export function AsrPadFields() {
-  const prePadMs = useConfig((s) => s.prePadMs)
-  const postPadMs = useConfig((s) => s.postPadMs)
-  const patch = useConfig((s) => s.patch)
-  return (
-    <>
-      <NumberField label="前填充 ms（80）·ASR" value={prePadMs} step={10} min={0}
-        onChange={(v) => patch({ prePadMs: v })} />
-      <NumberField label="后填充 ms（80）·ASR" value={postPadMs} step={10} min={0}
-        onChange={(v) => patch({ postPadMs: v })} />
     </>
   )
 }
@@ -195,64 +181,20 @@ export function VadModelSelect({ disabled }: { disabled?: boolean }) {
   )
 }
 
-/** Transcribe mode: aggregate (merge) vs per-segment. */
-export function TranscribeModeSelect({ disabled }: { disabled?: boolean }) {
-  const transcribeMode = useConfig((s) => s.transcribeMode)
-  const patch = useConfig((s) => s.patch)
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label className="text-xs text-muted-foreground">转写模式</Label>
-      <Select
-        value={transcribeMode}
-        onValueChange={(v) => patch({ transcribeMode: v as TranscribeMode })}
-        disabled={disabled}
-      >
-        <SelectTrigger className="h-9">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="aggregated">聚合（合并多段）</SelectItem>
-          <SelectItem value="perSegment">逐段</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
-/** STT provider selector wired to the shared store (auto-bootstraps to active). */
-export function TranscribeProviderSelect({
-  allowOff = true,
-  modeFilter,
-}: {
-  allowOff?: boolean
-  modeFilter?: 'batch' | 'realtime'
-}) {
+/** Realtime STT provider selector wired to the shared store. */
+export function TranscribeProviderSelect({ allowOff = true }: { allowOff?: boolean }) {
   const { providers, provider } = useTranscribeProvider()
   const patch = useConfig((s) => s.patch)
-  const filtered = modeFilter
-    ? providers.filter((p) => (p.mode ?? 'batch') === modeFilter)
-    : providers
-  const value =
-    provider && filtered.some((p) => p.id === provider) ? provider : null
-  const warnRealtimeOnBatchPage =
-    modeFilter === 'batch'
-    && provider
-    && providers.find((p) => p.id === provider)?.mode === 'realtime'
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-xs text-muted-foreground">自动转写</Label>
+      <Label className="text-xs text-muted-foreground">实时转写</Label>
       <SttProviderSelect
-        providers={filtered}
-        value={value}
+        providers={providers}
+        value={provider}
         onChange={(p) => patch({ transcribeProvider: p })}
         allowOff={allowOff}
       />
-      {warnRealtimeOnBatchPage ? (
-        <p className="text-xs text-amber-700 dark:text-amber-300">
-          当前为实时 provider，本页仅 batch；请另选 batch，或到「实时会话」使用
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -294,14 +236,19 @@ export function RelayNodeSelect({ disabled }: { disabled?: boolean }) {
           <SelectValue placeholder="请选择节点" />
         </SelectTrigger>
         <SelectContent>
-          {results.map(({ node, latencyMs }) => (
-            <SelectItem key={node.id} value={node.id} disabled={latencyMs === null}>
-              {node.role === 'primary' ? '日本主节点' : '国内中转'}
-              {' · '}
-              {latencyMs === null ? '不可达' : `${Math.round(latencyMs)} ms`}
-              {node.origin.startsWith('http:') ? ' · HTTP 未加密' : ''}
-            </SelectItem>
-          ))}
+          {results.map(({ node, latencyMs }) => {
+            const kind = relayNodeLabelKind(node)
+            const title =
+              kind === 'local' ? '本地节点' : kind === 'primary' ? '日本主节点' : '国内中转'
+            return (
+              <SelectItem key={node.id} value={node.id} disabled={latencyMs === null}>
+                {title}
+                {' · '}
+                {latencyMs === null ? '不可达' : `${Math.round(latencyMs)} ms`}
+                {node.origin.startsWith('http:') ? ' · HTTP 未加密' : ''}
+              </SelectItem>
+            )
+          })}
         </SelectContent>
       </Select>
     </div>
@@ -372,4 +319,3 @@ export function LanguagePrefsFields({ disabled }: { disabled?: boolean }) {
     </div>
   )
 }
-import { useEffect, useState } from 'react'

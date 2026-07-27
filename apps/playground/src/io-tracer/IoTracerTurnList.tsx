@@ -38,7 +38,7 @@ export function IoTracerTurnList({
   onSelectTurn,
 }: IoTracerTurnListProps) {
   return (
-    <div className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-r border-border/60">
+    <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-r border-border/60">
       <div className="border-b border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground">
         轮次
       </div>

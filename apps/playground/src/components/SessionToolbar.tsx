@@ -1,11 +1,6 @@
 import {
   Badge,
   Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -17,8 +12,6 @@ import {
   Mic,
   Play,
   Square,
-  User,
-  Users,
 } from 'lucide-react'
 
 const STATE_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -33,11 +26,9 @@ export type SessionToolbarProps = {
   loading: string
   state: string
   vadStatus: string
-  activeSttPath: 'idle' | 'realtime' | 'batch'
-  mode: 'auto' | 'manual' | 'checking'
+  activeSttPath: 'idle' | 'realtime'
+  mode: 'auto' | 'checking'
   confidence: number | null
-  speaker: 'user' | 'other'
-  onSpeakerChange: (s: 'user' | 'other') => void
   hasEmbedding: boolean
   statusNote: string
   error: string
@@ -55,8 +46,6 @@ export function SessionToolbar({
   activeSttPath,
   mode,
   confidence,
-  speaker,
-  onSpeakerChange,
   hasEmbedding,
   statusNote,
   error,
@@ -65,22 +54,20 @@ export function SessionToolbar({
   onClear,
   onGoEnroll,
 }: SessionToolbarProps) {
-  const sttLabel =
-    activeSttPath === 'realtime' ? '实时' : activeSttPath === 'batch' ? 'batch' : null
+  const sttLabel = activeSttPath === 'realtime' ? '实时' : null
   const vadLabel =
     vadStatus === 'speech' ? '说话中' : vadStatus === 'silence' ? '静音' : null
   const speakerLabel =
     mode === 'auto'
-      ? `自动${confidence !== null ? ` ${confidence.toFixed(2)}` : ''}`
-      : mode === 'manual'
-        ? '手动'
-        : null
+      ? `声纹${confidence !== null ? ` ${confidence.toFixed(2)}` : ''}`
+      : null
+  const startBlocked = !hasEmbedding
 
   return (
     <div className="paper-sheet space-y-2.5 px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         {!running ? (
-          <Button size="sm" onClick={onStart} disabled={!!loading}>
+          <Button size="sm" onClick={onStart} disabled={!!loading || startBlocked}>
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             {loading || '开始会话'}
           </Button>
@@ -94,29 +81,6 @@ export function SessionToolbar({
           <Eraser className="size-3.5" />
           清空
         </Button>
-        <Select
-          value={speaker}
-          onValueChange={(v) => onSpeakerChange(v as 'user' | 'other')}
-          disabled={mode === 'auto' || running}
-        >
-          <SelectTrigger className="h-8 w-[7.5rem]">
-            <SelectValue placeholder="说话人" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="other">
-              <span className="inline-flex items-center gap-1.5">
-                <Users className="size-3.5" />
-                对方
-              </span>
-            </SelectItem>
-            <SelectItem value="user">
-              <span className="inline-flex items-center gap-1.5">
-                <User className="size-3.5" />
-                我
-              </span>
-            </SelectItem>
-          </SelectContent>
-        </Select>
         {!hasEmbedding ? (
           <Button size="sm" variant="secondary" onClick={onGoEnroll}>
             <Fingerprint className="size-3.5" />
@@ -156,11 +120,14 @@ export function SessionToolbar({
             <TooltipTrigger asChild>
               <Badge variant="outline">{speakerLabel}</Badge>
             </TooltipTrigger>
-            <TooltipContent>说话人判定</TooltipContent>
+            <TooltipContent>声纹自动判定说话人</TooltipContent>
           </Tooltip>
         ) : null}
       </div>
 
+      {startBlocked && !running ? (
+        <p className="text-xs text-muted-foreground">请先录入声纹后再开始会话。</p>
+      ) : null}
       {statusNote ? (
         <p className="text-xs text-muted-foreground">{statusNote}</p>
       ) : null}

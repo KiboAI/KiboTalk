@@ -4,7 +4,7 @@ import { defaultVadConfig } from '@kibotalk/audio/vad'
 import {
   SILERO_VARIANTS,
   defaultAppConfig,
-  defaultSttProvider,
+  defaultRealtimeFirstProvider,
   defaultProductPrefs,
   isLearnerLevel,
   systemUiLanguage,
@@ -14,8 +14,6 @@ import {
 import type { SttProvider } from '@kibotalk/app-shared'
 
 export { APP_LANGUAGE_OPTIONS, LEARNER_LEVEL_OPTIONS }
-
-export type TranscribeMode = 'perSegment' | 'aggregated'
 
 /** Product preview surface: window app vs simulated floating Island+stickies. */
 export type ProductSurfaceMode = 'window' | 'floating'
@@ -70,7 +68,7 @@ function persistLanguagePrefs(prefs: LanguagePrefs): void {
  *
  * One store, two consumers (VAD panel + live session): change a knob on one
  * tab and it is already aligned on the other. Fields are grouped by pipeline
- * stage: VAD cut → ASR padding → merge/scheduling → selectors → speaker → language.
+ * stage: VAD cut → merge/scheduling → selectors → speaker → language.
  * Language prefs are the only fields persisted to localStorage.
  */
 type ConfigState = {
@@ -79,16 +77,12 @@ type ConfigState = {
   exitThreshold: number
   minSilenceDurationMs: number
   minSpeechDurationMs: number
-  // ASR-send padding (VAD cuts stay tight; padding applied at ASR send)
-  prePadMs: number
-  postPadMs: number
   // Merge / scheduling (segment aggregator flush triggers)
   pauseMs: number
   mergeMaxMs: number
   // Selectors
   vadVariantId: string
   transcribeProvider: string | null
-  transcribeMode: TranscribeMode
   /** Data-plane node selected before a playground session starts. */
   relayNodeId: string | null
   // Speaker verification (live session only, but shared for consistency)
@@ -130,13 +124,10 @@ const audioDefaults = {
   exitThreshold: defaultVadConfig.exitThreshold,
   minSilenceDurationMs: defaultVadConfig.minSilenceDurationMs,
   minSpeechDurationMs: defaultVadConfig.minSpeechDurationMs,
-  prePadMs: 80,
-  postPadMs: 80,
   pauseMs: 500,
   mergeMaxMs: 30000,
   vadVariantId: SILERO_VARIANTS[0].id,
   transcribeProvider: null as string | null,
-  transcribeMode: 'aggregated' as TranscribeMode,
   relayNodeId: null as string | null,
   speakerThreshold: defaultAppConfig.speakerThreshold,
   candidateRoundsMax: 2,
@@ -205,16 +196,24 @@ export const useConfig = create<ConfigState>((set, get) => ({
     set({
       ...audioDefaults,
       ...languageSlice(lang),
-      providerBootstrapped: true,
+      providerBootstrapped: false,
       liveSessionRunning: false,
     })
   },
   bootstrapProvider: (providers) =>
-    set((s) =>
-      s.providerBootstrapped
-        ? s
-        : { transcribeProvider: defaultSttProvider(providers), providerBootstrapped: true },
-    ),
+    set((s) => {
+      // Don't mark bootstrapped on the empty first paint — wait for /api/stt/providers.
+      if (providers.length === 0) return s
+      if (s.providerBootstrapped) {
+        if (!s.transcribeProvider) return s
+        if (providers.some((provider) => provider.id === s.transcribeProvider)) return s
+        const next = defaultRealtimeFirstProvider(providers)
+        return next ? { transcribeProvider: next } : s
+      }
+      const next = defaultRealtimeFirstProvider(providers)
+      if (!next) return s
+      return { transcribeProvider: next, providerBootstrapped: true }
+    }),
 }))
 
 /** Session snapshot of language prefs (frozen at session start). */

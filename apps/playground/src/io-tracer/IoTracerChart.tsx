@@ -104,7 +104,8 @@ export const IoTracerChart = forwardRef<IoTracerChartHandle, IoTracerChartProps>
       return { min: min - pad, max: max + pad }
     }, [visibleSpans, timeOrigin])
 
-    const chartWidth = Math.max(1, containerWidth - LABEL_COL_WIDTH)
+    const labelColWidth = visibleSpans.length > 0 ? LABEL_COL_WIDTH : 0
+    const chartWidth = Math.max(1, containerWidth - labelColWidth)
     const minViewDuration = globalRange.max - globalRange.min
     const maxViewDuration = Math.max(minViewDuration, 10)
     const minZoomDuration = 1
@@ -146,7 +147,12 @@ export const IoTracerChart = forwardRef<IoTracerChartHandle, IoTracerChartProps>
     useImperativeHandle(ref, () => ({ autoFit }), [autoFit])
 
     useEffect(() => {
-      if (visibleSpans.length > 0 && !hasUserInteracted.current) {
+      if (visibleSpans.length === 0) {
+        hasUserInteracted.current = false
+        setViewport(globalRange.min, globalRange.max)
+        return
+      }
+      if (!hasUserInteracted.current) {
         setViewport(globalRange.min, globalRange.max)
       }
     }, [visibleSpans.length, globalRange, setViewport])
@@ -464,14 +470,14 @@ export const IoTracerChart = forwardRef<IoTracerChartHandle, IoTracerChartProps>
       : undefined
 
     return (
-      <div ref={containerRef} className="flex flex-1 flex-col overflow-hidden select-none">
+      <div ref={containerRef} className="flex min-h-0 min-w-0 flex-col overflow-hidden select-none">
         {/* Minimap */}
         <div
           ref={minimapRef}
           className="relative flex-shrink-0 border-b border-border/60 bg-muted/30"
           style={{
             height: MINIMAP_HEIGHT,
-            marginLeft: LABEL_COL_WIDTH,
+            marginLeft: labelColWidth,
             cursor: minimapCursor,
           }}
           onMouseDown={onMinimapMouseDown}
@@ -491,40 +497,44 @@ export const IoTracerChart = forwardRef<IoTracerChartHandle, IoTracerChartProps>
               }}
             />
           ))}
-          <div
-            className="pointer-events-none absolute top-0 bottom-0 bg-blue-400/10"
-            style={{ left: minimapViewportX, width: Math.max(minimapViewportW, 2) }}
-          />
-          <div
-            className="pointer-events-none absolute top-0 bottom-0 w-1 bg-blue-400"
-            style={{ left: minimapViewportX }}
-          >
-            <div className="absolute top-1/2 -left-0.5 h-4 w-2 -translate-y-1/2 rounded-sm bg-blue-400" />
-          </div>
-          <div
-            className="pointer-events-none absolute top-0 bottom-0 w-1 bg-blue-400"
-            style={{ left: minimapViewportX + Math.max(minimapViewportW, 2) }}
-          >
-            <div className="absolute top-1/2 -left-0.5 h-4 w-2 -translate-y-1/2 rounded-sm bg-blue-400" />
-          </div>
-          {viewStart !== globalRange.min || viewEnd !== globalRange.max ? (
-            <button
-              type="button"
-              className="absolute right-1 top-1 z-10 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/80"
-              onClick={(e) => {
-                e.stopPropagation()
-                autoFit()
-              }}
-            >
-              重置缩放
-            </button>
+          {visibleSpans.length > 0 ? (
+            <>
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 bg-blue-400/10"
+                style={{ left: minimapViewportX, width: Math.max(minimapViewportW, 2) }}
+              />
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 w-1 bg-blue-400"
+                style={{ left: minimapViewportX }}
+              >
+                <div className="absolute top-1/2 -left-0.5 h-4 w-2 -translate-y-1/2 rounded-sm bg-blue-400" />
+              </div>
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 w-1 bg-blue-400"
+                style={{ left: minimapViewportX + Math.max(minimapViewportW, 2) }}
+              >
+                <div className="absolute top-1/2 -left-0.5 h-4 w-2 -translate-y-1/2 rounded-sm bg-blue-400" />
+              </div>
+              {viewStart !== globalRange.min || viewEnd !== globalRange.max ? (
+                <button
+                  type="button"
+                  className="absolute right-1 top-1 z-10 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/80"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    autoFit()
+                  }}
+                >
+                  重置缩放
+                </button>
+              ) : null}
+            </>
           ) : null}
         </div>
 
         {/* Time axis */}
         <div
           className="relative flex-shrink-0 border-b border-border/60"
-          style={{ height: TIME_AXIS_HEIGHT, marginLeft: LABEL_COL_WIDTH }}
+          style={{ height: TIME_AXIS_HEIGHT, marginLeft: labelColWidth }}
         >
           {ticks.map((tick, i) => (
             <div

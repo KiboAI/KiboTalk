@@ -71,7 +71,7 @@ export function IoTracerDetail({ span, turn, onClose, onSelectSpan }: IoTracerDe
 
   if (!span || !turn) {
     return (
-      <div className="flex w-72 flex-shrink-0 flex-col items-center justify-center border-l border-border/60 bg-background text-muted-foreground">
+      <div className="flex min-h-0 min-w-0 flex-col items-center justify-center border-l border-border/60 bg-background text-muted-foreground">
         <span className="text-xs">点击 span 查看详情</span>
       </div>
     )
@@ -80,7 +80,7 @@ export function IoTracerDetail({ span, turn, onClose, onSelectSpan }: IoTracerDe
   const color = SUBSYSTEM_CONFIG_MAP.get(span.subsystem)?.color
 
   return (
-    <div className="w-72 flex-shrink-0 overflow-y-auto border-l border-border/60 bg-background">
+    <div className="min-h-0 min-w-0 overflow-y-auto border-l border-border/60 bg-background">
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <div className="size-2.5 flex-shrink-0 rounded-sm" style={{ backgroundColor: color }} />

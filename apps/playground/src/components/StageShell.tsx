@@ -101,8 +101,8 @@ export function StageShell({
     )
   }
 
-  const leftCol = hasLeft ? (leftOpen ? '15rem' : '2.5rem') : null
-  const debugCol = debugOpen ? '17rem' : '2.5rem'
+  const leftCol = hasLeft ? (leftOpen ? '14rem' : '2.5rem') : null
+  const debugCol = debugOpen ? '22rem' : '2.5rem'
 
   return (
     <div

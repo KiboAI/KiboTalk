@@ -6,7 +6,7 @@
 - **作者**：路路（与神奈子需求对齐后整理）
 
 > **比赛生产补充（2026-07-25）**：本文件中早期的 Railway、Supabase、
-> “MVP 无账号”和生产 batch fallback 描述已被
+> “MVP 无账号”描述已被
 > [ADR 0005](../adr/0005-competition-production-platform.md) 覆盖。正式入口为
 > `https://app.kibotalk.app`，账号、强制加密同步、额度和发布要求以 ADR 0005
 > 及本文新增 F12–F15 为准。
@@ -112,7 +112,7 @@
 | TTS / AI 代说 | 产品定位是用户自己开口 |
 | iPhone 通话监听 | Web / PWA 做不到 |
 | 登录账号 | 本地会话即可 |
-| 离线 LLM | LLM 走在线 API。本地 ASR 可选（低延迟，见 §2.9 本地 STT） |
+| 离线 LLM | LLM 走在线 API；STT 走 realtime 云端代理（§2.9） |
 | 会话中热切换语言 | 时间轴与 STT hint 会混乱；仅会话外改、新会话快照 |
 | 对方说异于对话语言的语 | 同场双方都用 `conversationLang`；异语为后续愿景 |
 
@@ -249,7 +249,7 @@ type ReplyCandidate = {
 | 语音 Pipeline | `packages/pipeline` | [webai-example-realtime-voice-chat](https://github.com/proj-airi/webai-example-realtime-voice-chat)（VAD + STT，无 TTS） |
 | 提示词 | **Velin** `@velin-dev/core-react`（TSX） | [moeru-ai/velin](https://github.com/moeru-ai/velin) |
 | LLM | **xsai** | AIRI 生态 |
-| STT | 统一走代理；生产仅 DashScope `qwen3-asr-flash-realtime`，开发保留 batch / mlx-qwen3-asr | 见 §2.9、ADR 0005 |
+| STT | 统一走代理 `WS /stt-realtime`；DashScope `qwen3-asr-flash-realtime` | 见 §2.9、ADR 0004、ADR 0005 |
 | 服务端 | **Hono** 薄代理（转发 LLM + STT，藏 key，streaming） | — |
 | 部署 | **日本 VPS**：Docker Compose + Caddy + Hono + PostgreSQL | ADR 0005 |
 | Prompt 评估 | **vieval**（根目录 config + `evals/`） | [vieval-dev/vieval](https://github.com/vieval-dev/vieval) |
@@ -381,7 +381,7 @@ Velin(repliesPrompt) → xsAI → JSON: 3 candidates | []
 3. **多轮无用户**：可连续多个 other turn——每次 other 停顿达标都触发 LLM；若返回 3 条则刷新候选，若 `[]` 则保留原展示
 4. **完整对话进下一轮**：被打断后新一轮 LLM 的 context = **所有已完成的 ConversationTurn**。半截候选与 realtime partial **不进 context**（§1.4「以 STT 为准」）
 5. **抢说 / 连说**：对方或用户停说后的阈值倒计时中若另一方（或同方）又开口 → **取消待触发或在途的 LLM**，先完成新 turn 的 STT/入库，再按规则 1 **重新请求教练**（user 入库后同样触发，不再「只入库不出 LLM」）
-6. **STT 失败**：batch（仅开发）自动重试 1 次（1s 退避）→ 仍失败 → `appendTurn({ text: '', sttFailed: true })`，UI 标红（**不可补字**）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**。生产 realtime 短退避重连，仍失败则停止转写并明示错误，不降级到 batch（ADR 0005）
+6. **STT 失败**：realtime 短退避重连 → 仍失败 → `appendTurn({ text: '', sttFailed: true })` 或停转写并明示错误（生产不降级）→ **仍可触发 LLM**（上下文带 `sttFailed`，由模型决定是否给提示）→ 循环继续，**不杀会话**（ADR 0005）
 7. **LLM 失败**：自动重试 1 次（1s 退避）→ 仍失败 → 候选区可提示「出候选失败，重试」，但**不清空**上一轮已提交候选；turn 已入库不动 → 循环继续听下一轮，**不杀会话**
 8. **不做**：熔断、多轮指数退避、离线缓存重放、客户端预过滤闸门、双模型、中途 partial 触发 LLM——MVP 过度
 
@@ -395,8 +395,7 @@ Velin(repliesPrompt) → xsAI → JSON: 3 candidates | []
 - 说话人切换（先 flush 旧 turn，再开始新 turn）
 - 累计**语音**时长 ≥ `VAD_MERGE_MAX_MS`
 
-**Batch**：flush 时把组成段 **直接拼接** PCM（**不**按时间轴填静音 gap）→ 一次 `POST /stt` / `ingestSegment`。  
-**Realtime**：每段 VAD speech fragment 上行 `append` 并 Manual `commit` → 等该 fragment 的 `completed`；定稿文本 + 声纹结果再进入 TurnGate，flush 后才 `ingestFinalizedTurn`（不传合并 WAV）。`completed` 与 commit 严格 FIFO 一一对应；单个 `TRANSCRIPTION_FAILED` 只失败对应 fragment，不得清空其他等待项或杀死连接。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
+**Realtime（唯一路径）**：每段 VAD speech fragment 上行 `append` 并 Manual `commit` → 等该 fragment 的 `completed`；定稿文本 + 声纹结果再进入 TurnGate，flush 后才 `ingestFinalizedTurn`。`completed` 与 commit 严格 FIFO 一一对应；单个 `TRANSCRIPTION_FAILED` 只失败对应 fragment，不得清空其他等待项或杀死连接。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
 
 **配置**：
 
@@ -434,7 +433,7 @@ VAD 停顿阈值与说话人判定阈值为**频繁调试参数**，在 playgrou
 
 - 完整 diarization（多人、重叠）往往比 ASR 更脆。
 - 你们这种 **1 人 enroll + 二分类** 比多语种 STT **更简单**（固定向量 + 阈值，不依赖语言）。
-- 产品风险更大：ASR 错字可改；speaker 判错会乱触候选 / 漏出候选。**不**用 LLM 纠 speaker（成本翻倍且自身会错），**不**做事后纠错；误判对策 = 修 gate 本身（enrollment / 阈值 / 模型 / 安静 demo）。开发期测下游 pipeline 用 Playground 注入 mock speaker 标签，**不**在生产 pipeline 开 manual 分支。
+- 产品风险更大：ASR 错字可改；speaker 判错会乱触候选 / 漏出候选。**不**用 LLM 纠 speaker（成本翻倍且自身会错），**不**做事后纠错；误判对策 = 修 gate 本身（enrollment / 阈值 / 模型 / 安静 demo）。生产 pipeline 仅走声纹 verification，**不**开 manual speaker 分支；Playground 声纹页用于 enrollment 与阈值调参。
 
 **Demo 减误判**：安静环境、两人音色有差、enrollment 念够约 5–10 秒。
 
@@ -492,8 +491,8 @@ clearHistory(): Promise<void>
 - running / paused 在刷新、崩溃或设备中断后恢复为 `pauseReason: 'unexpected'`，可继续或停止。
 - 时长不计暂停区间。
 
-Realtime 连续语音也必须在 30 秒切成正式 turn（不能只依赖 batch
-`SegmentAggregator.maxMs`）；服务端按 PCM 样本数再做同样上限。余额耗尽时，
+Realtime 连续语音也必须在 30 秒切成正式 turn（`SegmentAggregator.maxMs`）；
+服务端按 PCM 样本数再做同样上限。余额耗尽时，
 服务端只给该 session 一次最终建议和一次复盘 allowance，其余零余额 LLM 请求
 直接拒绝；上游失败不消费 allowance。
 
@@ -582,17 +581,15 @@ packages/pipeline、speaker、llm、conversation  （真实实现）
 |------|------|------|------|
 | `POST /api/llm` | **SSE 流式** | 接收对话上下文，转发 DeepSeek，流式回 3 条候选或 `[]` | 必须登录；key 只在服务端 env |
 | `POST /api/session-review` | 普通 POST | 用停止会话的冻结语言与 turn 文本生成短标题和总结 | 必须登录；客户端负责重试 |
-| `WS /api/stt-realtime` | **WebSocket** | 中转短令牌换单次票据；speech PCM / commit；DashScope 中继；计时扣额度 | 产品默认 STT；不保存音频 |
+| `WS /api/stt-realtime` | **WebSocket** | 中转短令牌换单次票据；speech PCM / commit；DashScope 中继；计时扣额度 | 唯一 STT 路径；不保存音频 |
 | `/api/auth/*` | REST | 邮箱 OTP、当前账户、设备撤销、WS 单次票据 | Resend + 安全 cookie / bearer |
 | `/api/sync/*` | REST | 加密会话、删除 tombstone 与偏好同步 | AES-256-GCM；不含声纹 / 音频 |
 | `/api/admin/*` | REST | 用户、账本、赠送、兑换码、运行面板 | 管理邮箱白名单 |
-| `POST /api/stt` | 普通 POST | provider-agnostic batch STT | 生产由 `STT_BATCH_ACTIVE` 冻结 |
 
 **流式协议选型**：
 
 - **LLM 用 SSE**（Server-Sent Events）：单向服务端→客户端，Hono `streamSSE` 原生支持，是 LLM 流式的事实标准。代理透传 provider 的原始 token 流，浏览器用 `fetch` + `ReadableStream` 读，边收边增量解析结构化输出（3 候选的 JSON，用 partial-json 类库增量 parse）——第一个候选生成时用户就能开始读
-- **Batch STT**：本地 TurnGate 切段后 `POST /stt`（音频 → JSON 转写）
-- **Realtime STT 用 WebSocket**：说话中持续上行、下行 partial；LLM 仍不用 WS。浏览器只连同源 `/stt-realtime`，不直连上游
+- **Realtime STT 用 WebSocket**：说话中持续上行 PCM、下行 partial；定稿经 TurnGate 后入库。浏览器只连同源 `/stt-realtime`，不直连上游
 
 **Realtime 薄协议（浏览器 ↔ 代理）**：
 
@@ -621,25 +618,24 @@ app.post('/llm', streamSSE(async (c) => {
 - 不保存原始音频或声纹 embedding；文本密文与最小查询元数据才入库
 - 不做 SSR / 模板渲染
 
-**STT 上行音频格式**：WAV，16kHz 单声道 PCM。
+**Realtime 上行音频**：16 kHz 单声道 PCM（base64 pcm16le），经 `append` 事件上行；不经 batch WAV POST。
 
-- 浏览器里音频本就是 PCM（VAD、speaker gate 都吃 PCM），WAV = 加 44 字节头，零依赖零编码
-- 不用 MediaRecorder/WebM——MediaRecorder 是实时录流器，不能对任意 PCM 缓冲事后编码，切片复杂度会渗进 pipeline 状态机
-- 16kHz mono 是语音采样标准，体积可控（3s ≈ 96KB），所有 STT provider 都认
-- `packages/audio` 暴露 `encodeWav(pcm: Float32Array, sampleRate = 16000): ArrayBuffer`；`/stt` 收 WAV 转发 OpenRouter `/audio/transcriptions`（`input_audio.format: "wav"`）
+- 浏览器里音频本就是 PCM（VAD、speaker gate 都吃 PCM）
+- 16 kHz mono 是语音采样标准；realtime 按 speech fragment 流式上行
+- `packages/audio` 仍暴露 `encodeWav`（调试 / 录音导出等）；STT 路径不依赖 WAV 上传
 
 **静态托管（`apps/web` 产物）**：Web 与 API 打进同一生产镜像，由 Caddy 在
 `app.kibotalk.app` 前置 TLS。Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用
 Q8：首选固定 commit 的 Hugging Face 文件并进入浏览器缓存，加载失败自动重试 VPS 同源镜像；
 桌面模型打进 DMG。DMG 仅通过 GitHub Release 分发，VPS 不托管安装包。
 
-- Hono 用 `serveStatic` 把 `apps/web/dist` 挂到根路径，API 路由挂 `/llm` `/stt`，PWA manifest / service worker 同源加载（iOS Safari 添加到主屏幕最稳）
-- 开发期各自 dev server（Vite 5173 + Hono 8787），Vite proxy 把 `/llm` `/stt` 转发到 Hono，避免开发期 CORS
+- Hono 用 `serveStatic` 把 `apps/web/dist` 挂到根路径，API 路由挂 `/llm` `/stt-realtime`，PWA manifest / service worker 同源加载（iOS Safari 添加到主屏幕最稳）
+- 开发期各自 dev server（Vite 5173 + Hono 8787），Vite proxy 把 `/llm` `/stt-realtime` 转发到 Hono，避免开发期 CORS
 - 不构成锁定：`apps/web` 仍是独立 Vite 包，产物纯静态，将来要拆到 Cloudflare Pages 只需改 Hono 不 serve 静态 + 加 CORS
 
 ```ts
 app.use('/llm', ...)
-app.use('/stt', ...)
+app.use('/stt-realtime', ...)
 app.use('/*', serveStatic({ root: '../web/dist' }))
 ```
 
@@ -657,9 +653,10 @@ app.use('/*', serveStatic({ root: '../web/dist' }))
 浏览器（Renderer + Web Worker）        VPS（Caddy + Hono + PostgreSQL）
 ─────────────────────────              ──────────────────────────────
 VAD → SpeakerGate → TurnGate
-  batch:     合并 PCM ──POST /stt────────→  转发 batch STT
-  realtime:  append/commit ──WS /stt-realtime──→  中继上游 realtime
-                  ↓                       ←── 定稿文本（realtime 另有 partial→UI 草稿）
+  append/commit ──WS /stt-realtime──→  中继上游 realtime
+                  ↓                       ←── partial（草稿）/ completed（fragment 定稿）
+            TurnGate flush → ingestFinalizedTurn
+                  ↓
             conversation.appendTurn（仅定稿）
                   ↓
         任一 speaker: ──POST /llm───→  转发 LLM provider
@@ -676,36 +673,33 @@ VAD → SpeakerGate → TurnGate
 
 **生产固定**：LLM 直连 DeepSeek `deepseek-v4-flash`（thinking disabled）；
 STT 以 `STT_ACTIVE=dashscope-realtime` 直连 DashScope
-`qwen3-asr-flash-realtime`。下方 OpenRouter / batch 配置仅用于本地开发和
-playground，不是生产 fallback。
+`qwen3-asr-flash-realtime`。
 
 ```bash
-# 本地开发可选：LLM 与 STT 共用 OpenRouter
+# 生产 / 开发 STT（realtime only）
+STT_ACTIVE=dashscope-realtime
+STT_DASHSCOPE_API_KEY=sk-xxxxxxxx
+STT_DASHSCOPE_WS_URL=wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime
+STT_DASHSCOPE_REALTIME_MODEL=qwen3-asr-flash-realtime
+
+# 本地开发可选：LLM 走 OpenRouter
 LLM_ACTIVE=openrouter
 LLM_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 LLM_OPENROUTER_API_KEY=sk-or-...
 LLM_OPENROUTER_MODEL=deepseek/deepseek-chat     # 或 anthropic/claude-...，随时切
 
-STT_ACTIVE=openrouter
-STT_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-STT_OPENROUTER_API_KEY=sk-or-...                # 同一个 key
-STT_OPENROUTER_MODEL=openai/gpt-4o-transcribe   # fallback: groq/whisper-large-v3-turbo
-
 # 将来要直连某家（绕开 OpenRouter）时再加一组，无需改代码
 # LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 # LLM_DEEPSEEK_API_KEY=sk-...
 # LLM_DEEPSEEK_MODEL=deepseek-chat
-# STT_OPENAI_BASE_URL=https://api.openai.com/v1
-# STT_OPENAI_API_KEY=sk-...
-# STT_OPENAI_MODEL=gpt-4o-transcribe
 ```
 
 **与代码的接口（provider 无关，不写死 OpenRouter）**：
 
 - `packages/llm` 暴露 `createLlmClient({ provider, baseUrl, apiKey, model })`，启动时按 `LLM_ACTIVE` 选一组 env 注入
-- `packages/audio`（或新建 `packages/stt`）对 STT 同构：`createSttClient({ provider, baseUrl, apiKey, model })`
-- `apps/api` 的 `/llm` `/stt` 路由接受可选 `provider` 字段做 per-request 覆盖（默认走 `LLM_ACTIVE` / `STT_ACTIVE`），将来按用户偏好路由就靠这个口子
-- **OpenRouter 只是 `provider` 的一个取值，不是代码里的硬编码假设**。加新 provider = 加一个 adapter（实现 `createLlmClient` / `createSttClient` 的接口）+ 加一组 env，不动现有代码、不动其他 adapter。LLM 走 `/chat/completions`、STT 走 `/audio/transcriptions`，是 OpenRouter adapter 自己的事，不渗到工厂接口层
+- `packages/stt` 暴露 DashScope realtime 映射辅助函数；`apps/api` 的 `WS /stt-realtime` 中继上游
+- `apps/api` 的 `/llm` 路由接受可选 `provider` 字段做 per-request 覆盖（默认走 `LLM_ACTIVE`），将来按用户偏好路由就靠这个口子
+- **OpenRouter 只是 LLM `provider` 的一个取值，不是代码里的硬编码假设**。加新 provider = 加一个 adapter + 加一组 env，不动现有代码、不动其他 adapter
 
 **分层（key 永不进 DB）**：
 
@@ -717,26 +711,9 @@ STT_OPENROUTER_MODEL=openai/gpt-4o-transcribe   # fallback: groq/whisper-large-v
 
 用户不自带 key（已定"走我们中转"），所以 DB 只存"用哪个 provider/model"的选择，不存 key 本身。
 
-**STT provider 形态**：每个已配置 provider 带 `mode: 'batch' | 'realtime'`（`GET /stt/providers`）。Playground 选 batch → `POST /stt`；选 realtime → `WS /stt-realtime`。`POST /stt` 与 WS 均接受可选 `language=` / query（BCP-47 短码，与 `conversationLang` 对齐）。默认 batch 仍可走 OpenRouter `openai/gpt-4o-transcribe` 等。
+**STT provider**：`dashscope-realtime`（`GET /stt/providers` 列出已配置 realtime provider）。`WS /stt-realtime` 接受可选 `language=` / query（BCP-47 短码，与 `conversationLang` 对齐）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
 
-**本地 STT（可选，低延迟 batch）**：`packages/stt` 注册 `openai` provider——标准 OpenAI 兼容 multipart `/v1/audio/transcriptions`，默认指向本机 [`mlx-qwen3-asr`](https://github.com/moona3k/mlx-qwen3-asr)。**仍经 `apps/api` 的 `/stt` 代理**。详见 [ADR 0002](../adr/0002-local-stt-mlx-qwen3-asr.md)。
-
-**阿里云 DashScope**：
-- **batch** `dashscope`：`POST …/compatible-mode/v1/chat/completions` + `input_audio`，默认 `qwen3-asr-flash`
-- **realtime** `dashscope-realtime`：`WS /stt-realtime` → 上游 WSS Manual 模式（本地 TurnGate + commit）。Env：`STT_DASHSCOPE_API_KEY`（与 batch 共用）、`STT_DASHSCOPE_WS_URL`、`STT_DASHSCOPE_REALTIME_MODEL`（默认 `qwen3-asr-flash-realtime`）。详见 [ADR 0004](../adr/0004-realtime-stt-parallel-to-batch.md)。
-
-**Realtime 失败（生产）**：短退避重连同一 realtime provider；仍失败则停止转写并显示错误。开发 / playground 可继续验证 batch，但生产不降级。
-
-```bash
-# 本地 Qwen3-ASR（仅 Apple Silicon，与 apps/api 同机）
-pip install "mlx-qwen3-asr[serve]"
-mlx-qwen3-asr serve --api-key $(openssl rand -hex 16)   # localhost:8765
-# 服务端 .env：
-STT_OPENAI_BASE_URL=http://localhost:8765/v1
-STT_OPENAI_API_KEY=本地 serve 启动时生成的 key
-STT_OPENAI_MODEL=Qwen/Qwen3-ASR-1.7B   # 想更快切 Qwen/Qwen3-ASR-0.6B
-# 浏览器：POST /stt?provider=openai
-```
+**Realtime 失败**：短退避重连同一 realtime provider；仍失败则停止转写并显示错误。
 
 ---
 
@@ -820,7 +797,7 @@ macOS 状态栏应用：apps/desktop（Electron，共用 packages）
 
 | 风险 | 对策 |
 |------|------|
-| 双人同麦 / 短句 / 音色接近导致 speaker 误判 | 本地 verification + 阈值调参；安静 demo；enrollment 念够 5–10 秒；必要时换 NeXt-TDNN mobile / Eagle 等更稳模型；测 user↔other 混淆率。**不**用 LLM 纠 speaker（成本翻倍且自身会错）；**不**做事后纠错；manual 标注仅活在 Playground（注入 mock 标签测下游），不进生产 env |
+| 双人同麦 / 短句 / 音色接近导致 speaker 误判 | 本地声纹 verification + 阈值调参；安静 demo；enrollment 念够 5–10 秒；必要时换 NeXt-TDNN mobile / Eagle 等更稳模型；测 user↔other 混淆率。**不**用 LLM 纠 speaker；**不**做事后纠错；生产仅声纹判定，Playground 声纹页用于 enrollment / 阈值调参 |
 | PWA 本地模型体积大 / iOS 慢 | 生产 WeSpeaker Q8 speaker 权重约 6.4MB；Worker + 缓存；**首次打开后台预下载全部权重**（§1.2，填表并行 + 右上角进度圆，下完才能进），会话中途再下会卡死演示 |
 | 权限延后申请被拒 / 打断录音 | 首次打开与模型预下载同期申请麦克风等权限；勿拖到「开始会话」或 enrollment 才弹 |
 | PWA iOS 后台杀进程 | 每轮即时写 IndexedDB；重开后以意外暂停恢复同一会话 |

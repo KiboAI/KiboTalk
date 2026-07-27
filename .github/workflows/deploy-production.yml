@@ -84,7 +84,7 @@ jobs:
             for name in \
               RELAY_PRIMARY_ORIGIN RELAY_CN_ORIGIN RELAY_CN_ENABLED \
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              STT_ACTIVE STT_BATCH_ACTIVE LLM_ACTIVE; do
+              STT_ACTIVE LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
           '
@@ -94,7 +94,7 @@ jobs:
             for name in \
               RELAY_PRIMARY_ORIGIN RELAY_ACCEPT_NEW_SESSIONS \
               RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              STT_ACTIVE STT_BATCH_ACTIVE LLM_ACTIVE; do
+              STT_ACTIVE LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk-relay/.env
             done
             relay_port=$(sed -n "s/^RELAY_HTTP_PORT=//p" /opt/kibotalk-relay/.env)

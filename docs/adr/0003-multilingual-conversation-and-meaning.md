@@ -38,6 +38,6 @@
 ## 后果
 
 - `/llm` body 与 Velin args 携带 `conversationLang` / `meaningLang` / `level`（不再默认 JLPT `N5`）。
-- `/stt` 接受 `?language=`，与会话快照的 `conversationLang` 对齐。
+- `WS /stt-realtime` query 接受 `language=`，与会话快照的 `conversationLang` 对齐。
 - 评测矩阵以 ja↔zh 为主；en/zh case 套件后置；字段名已改为 `meaning`。
 - Playground 语言偏好进 Zustand + localStorage；未确认前挡一层确认卡。

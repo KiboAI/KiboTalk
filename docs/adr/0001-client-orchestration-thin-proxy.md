@@ -4,7 +4,7 @@
 > “服务端仅无状态代理”的部署假设已由 [ADR 0005](./0005-competition-production-platform.md)
 > 覆盖。
 
-会话编排（VAD / 说话人判定 / STT 上行 / conversation store）全部跑在浏览器，服务端只做一个薄 Hono 代理转发 LLM 与 STT 请求、藏 API key、透传 streaming。部署在 Railway 常驻进程上。MVP 不做账号，将来加账号时用 hosted Supabase。
+会话编排（VAD / 说话人判定 / realtime STT 上行 / conversation store）全部跑在浏览器，服务端只做一个薄 Hono 代理转发 LLM 与 `WS /stt-realtime`、藏 API key、透传 streaming。部署在 Railway 常驻进程上。MVP 不做账号，将来加账号时用 hosted Supabase。
 
 ## 为何不把编排放服务端
 

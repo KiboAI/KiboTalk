@@ -1,5 +1,8 @@
 # 本地 STT = 外部 mlx-qwen3-asr（OpenAI 兼容，经代理）
 
+> **Status: Superseded** — 2026-07-27。Batch / 本地 mlx 路径已移除；产品 STT 仅保留
+> realtime（`WS /stt-realtime`，DashScope `qwen3-asr-flash-realtime`）。下文为历史记录。
+
 STT 增加一条本地低延迟路径：经 `apps/api` 的 `/stt` 代理转发到一个外部 Python 服务 `mlx-qwen3-asr`（`serve` 模式），它暴露标准 OpenAI `/v1/audio/transcriptions`（multipart）。该服务不纳入本仓库，作为独立进程在本机运行。
 
 ## 为何要本地 STT

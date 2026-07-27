@@ -8,10 +8,14 @@ problem_type: config
 
 ## 症状 / Symptom
 
-`apps/api` started but every `/stt` request failed with
+`apps/api` started but STT requests failed with
 `HTTP 500: Missing STT config for provider "openai"`, even though `.env` at the
-repo root had `STT_OPENAI_*` set. `process.env.STT_*` were undefined inside the
+repo root had provider vars set. `process.env.STT_*` were undefined inside the
 server.
+
+> **Note (2026-07-27)**：当时症状来自 `STT_OPENAI_*`（本地 mlx batch 路径）。
+> 该路径已移除；生产与开发现仅 `STT_ACTIVE=dashscope-realtime` +
+> `STT_DASHSCOPE_*`。dotenv 路径问题本身仍适用。
 
 ## 原因 / Cause
 
@@ -37,5 +41,5 @@ never runs in tests — the bug only surfaced at dev/runtime.
 
 ## 参考 / References
 
-- `.env.example` documents the `STT_OPENAI_*` / `LLM_*` naming.
+- `.env.example` documents `STT_DASHSCOPE_*` / `LLM_*` naming.
 - AGENTS.md "Keys in env, never client".

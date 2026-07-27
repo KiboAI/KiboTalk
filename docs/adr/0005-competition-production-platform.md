@@ -2,9 +2,9 @@
 
 - **状态**：Accepted
 - **日期**：2026-07-25
-- **覆盖**：ADR 0001 中 Railway / Supabase / 无账号的部署假设；ADR 0004 中生产降级策略
+- **覆盖**：ADR 0001 中 Railway / Supabase / 无账号的部署假设；ADR 0004 中 realtime-only STT
 
-> **2026-07-26 更新**：单 VPS 数据面、生产 batch STT 禁用和免费 10 分钟规则已由
+> **2026-07-26 更新**：单 VPS 数据面、生产 realtime-only STT 和免费 10 分钟规则已由
 > [ADR 0006](./0006-session-pinned-api-relay.md) 覆盖。日本 VPS 仍是唯一控制面。
 
 ## 决策
@@ -72,13 +72,10 @@ ID，防止凭据切换竞态。客户端只缓存不含 token 的最小账户�
 
 产品默认使用：
 
-- STT：`STT_ACTIVE=dashscope-realtime`，DashScope；生产 batch 路径由
-  `STT_BATCH_ACTIVE` 同时保留
-  `qwen3-asr-flash-realtime`；
+- STT：`STT_ACTIVE=dashscope-realtime`，DashScope `qwen3-asr-flash-realtime`（仅 realtime，无 batch 路径）；
 - LLM：DeepSeek `deepseek-v4-flash`，thinking disabled。
 
-Batch STT 继续用于本地 playground 和开发 provider；生产 API 返回
-`REALTIME_STT_REQUIRED`，不自动降级到 batch。
+Realtime 断线短退避重连；仍失败则停止转写并显示错误，不自动降级。
 
 ## 发布与运维
 

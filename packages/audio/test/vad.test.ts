@@ -113,7 +113,9 @@ describe('createVAD', () => {
 
   it('defaultVadConfig has expected shape', () => {
     expect(defaultVadConfig.sampleRate).toBe(16000)
-    expect(defaultVadConfig.minSilenceDurationMs).toBe(200)
+    expect(defaultVadConfig.speechThreshold).toBe(0.2)
+    expect(defaultVadConfig.exitThreshold).toBe(0.1)
+    expect(defaultVadConfig.minSilenceDurationMs).toBe(400)
     expect(defaultVadConfig.minSpeechDurationMs).toBe(200)
     expect(defaultVadConfig.maxSpeechDurationMs).toBe(30000)
   })

@@ -1,31 +1,8 @@
-import type { LlmClient, SttClient, CandidateStreamEvent } from '../src/types'
+import type { LlmClient, CandidateStreamEvent } from '../src/types'
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
 
-/** A scripted mock STT. Each `transcribe` call consumes the next scripted
- * result (a string, or an Error to throw). */
-export class MockStt implements SttClient {
-  results: Array<string | Error>
-  private calls = 0
-  readonly receivedPcm: Float32Array[] = []
-
-  constructor(results: Array<string | Error>) {
-    this.results = results
-  }
-
-  async transcribe(pcm: Float32Array, _signal: AbortSignal): Promise<string> {
-    this.receivedPcm.push(pcm)
-    const result = this.results[this.calls++]
-    if (result instanceof Error) throw result
-    return result
-  }
-
-  get callCount(): number {
-    return this.calls
-  }
-}
-
 /** A scripted mock LLM stream item. `gate` blocks the stream until the test
- * resolves it (used to hold an LLM mid-stream so a newer segment can abort it).
+ * resolves it (used to hold an LLM mid-stream so a newer turn can abort it).
  * `throw` makes the stream reject. */
 export type MockLlmItem = CandidateStreamEvent | { gate: string } | { throw: true }
 
@@ -119,6 +96,20 @@ export function candidate(index: number, meaning: string, targetText: string, re
   return { type: 'candidate-done', index, candidate }
 }
 
-export function seg(speaker: 'user' | 'other', startedAt: number, endedAt = startedAt + 1000, interrupted = false) {
-  return { pcm: new Float32Array(16), speaker, startedAt, endedAt, interrupted }
+export function turn(
+  speaker: 'user' | 'other',
+  text: string,
+  startedAt: number,
+  endedAt = startedAt + 1000,
+  interrupted = false,
+  sttFailed = false,
+) {
+  return {
+    speaker,
+    text,
+    startedAt,
+    endedAt,
+    ...(interrupted ? { interrupted } : {}),
+    ...(sttFailed ? { sttFailed: true } : {}),
+  }
 }

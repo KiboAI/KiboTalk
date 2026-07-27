@@ -18,7 +18,6 @@ export type RelayNodeList = {
 
 export type RelayScope =
   | 'llm'
-  | 'stt'
   | 'stt-realtime'
 
 export type RelaySessionClaims = {
@@ -31,7 +30,6 @@ export type RelaySessionClaims = {
   nodeId: string
   scopes: RelayScope[]
   sttProvider: string
-  sttBatchProvider: string
   llmProvider: string
   llmModel: string
   quotaSeconds: number

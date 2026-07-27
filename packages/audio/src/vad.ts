@@ -42,10 +42,11 @@ export type VadConfig = {
 
 export const defaultVadConfig: VadConfig = {
   sampleRate: 16000,
-  speechThreshold: 0.5,
-  exitThreshold: 0.3,
-  /** Tight cut so speaker turns with short gaps don't merge into one blob. */
-  minSilenceDurationMs: 200,
+  // Drama VAD grid champion (Silero v6.2, FC/-23 LUFS clip): enter 0.20 / exit 0.10 /
+  // silence 400ms / minSpeech 200ms — see docs/brainstorm/2026-07-23-drama-subtitle-benchmark.md
+  speechThreshold: 0.2,
+  exitThreshold: 0.1,
+  minSilenceDurationMs: 400,
   speechPadMs: 80,
   minSpeechDurationMs: 200,
   maxSpeechDurationMs: 30000,

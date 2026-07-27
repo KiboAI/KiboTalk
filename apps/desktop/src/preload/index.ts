@@ -38,13 +38,16 @@ const api: KiboTalkDesktopApi = {
   },
   island: {
     getContentSide: () => ipcRenderer.invoke(IPC_CHANNEL.islandGetContentSide),
+    settleContentSide: (current) => ipcRenderer.invoke(IPC_CHANNEL.islandSettleContentSide, current),
     hide: () => ipcRenderer.invoke(IPC_CHANNEL.islandHide),
     show: () => ipcRenderer.invoke(IPC_CHANNEL.islandShow),
     setPointerThrough: (ignored) => ipcRenderer.invoke(IPC_CHANNEL.islandSetPointerThrough, ignored),
-    onContentSideChanged: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, side: Parameters<typeof callback>[0]) => callback(side)
-      ipcRenderer.on(IPC_CHANNEL.islandContentSideChanged, listener)
-      return () => ipcRenderer.removeListener(IPC_CHANNEL.islandContentSideChanged, listener)
+    getBounds: () => ipcRenderer.invoke(IPC_CHANNEL.islandGetBounds),
+    setPosition: (x, y) => ipcRenderer.invoke(IPC_CHANNEL.islandSetPosition, x, y),
+    onMoveSettled: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on(IPC_CHANNEL.islandMoveSettledEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNEL.islandMoveSettledEvent, listener)
     },
   },
   session: {

@@ -43,10 +43,13 @@ export const IPC_CHANNEL = {
   systemAudioStart: 'system-audio:start',
   systemAudioStop: 'system-audio:stop',
   islandGetContentSide: 'island:get-content-side',
-  islandContentSideChanged: 'island:content-side-changed',
+  islandSettleContentSide: 'island:settle-content-side',
+  islandMoveSettledEvent: 'island:move-settled',
   islandHide: 'island:hide',
   islandShow: 'island:show',
   islandSetPointerThrough: 'island:set-pointer-through',
+  islandGetBounds: 'island:get-bounds',
+  islandSetPosition: 'island:set-position',
   sessionUpdateState: 'session:update-state',
   sessionCommandEvent: 'session:command',
   appSetLaunchAtLogin: 'app:set-launch-at-login',
@@ -94,10 +97,14 @@ export type KiboTalkDesktopApi = {
   }
   island: {
     getContentSide: () => Promise<IslandContentSide>
+    /** Single source of truth stays in the renderer; main only computes + persists. */
+    settleContentSide: (current: IslandContentSide) => Promise<IslandContentSide>
     hide: () => Promise<void>
     show: () => Promise<void>
     setPointerThrough: (ignored: boolean) => Promise<void>
-    onContentSideChanged: (callback: (side: IslandContentSide) => void) => () => void
+    getBounds: () => Promise<{ x: number; y: number; width: number; height: number }>
+    setPosition: (x: number, y: number) => Promise<void>
+    onMoveSettled: (callback: () => void) => () => void
   }
   session: {
     updateState: (state: DesktopSessionState) => Promise<void>

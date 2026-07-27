@@ -3,11 +3,7 @@ import type {
   RelayNodeList,
   RelaySessionGrant,
 } from '@kibotalk/shared'
-import {
-  probeRelayNodes,
-  selectRelayNode,
-  type RelayProbeResult,
-} from './relay-routing'
+import type { RelayProbeResult } from './relay-routing'
 
 const PRODUCTION_API_ORIGIN = 'https://app.kibotalk.app'
 
@@ -212,64 +208,33 @@ async function reportRelaySelection(
 
 export async function openRelaySession(options: {
   conversationSessionId: string
-  fixedNodeId?: string
-  preferredNodeId?: string
+  nodeId: string
+  probeResults?: RelayProbeResult[]
 }): Promise<RelaySessionSelection> {
   const nodeList = await fetchRelayNodes()
-  const results = options.fixedNodeId
-    ? nodeList.nodes.map((node) => ({
-        node,
-        latencyMs: null,
-        successfulAttempts: 0,
-      }))
-    : await probeRelayNodes(nodeList)
-  const automaticallySelected = selectRelayNode(
-    results,
-    nodeList.primaryNodeId,
-    nodeList.probe.primaryTieThresholdMs,
+  const selectedNode = nodeList.nodes.find((node) => node.id === options.nodeId)
+  if (!selectedNode) throw new Error('SELECTED_RELAY_NODE_UNAVAILABLE')
+  const results = options.probeResults ?? []
+  const selectedProbe = results.find(({ node }) => node.id === selectedNode.id)
+  const grant = await requestRelayGrant(
+    options.conversationSessionId,
+    selectedNode.id,
   )
-  const preferred =
-    options.fixedNodeId ?? options.preferredNodeId ?? automaticallySelected.node.id
-  const preferredResult = results.find(({ node }) => node.id === preferred)
-  if (!preferredResult) throw new Error('FROZEN_RELAY_NODE_UNAVAILABLE')
-
-  const candidates = options.fixedNodeId
-    ? [preferredResult]
-    : [
-        preferredResult,
-        ...results
-          .filter(({ node, latencyMs }) => node.id !== preferred && latencyMs !== null)
-          .sort((left, right) => left.latencyMs! - right.latencyMs!),
-      ]
-  let lastError: unknown
-  for (const candidate of candidates) {
-    try {
-      const grant = await requestRelayGrant(
-        options.conversationSessionId,
-        candidate.node.id,
-      )
-      await handshakeRelay(grant)
-      await confirmRelaySession(grant)
-      clearRelayRenewTimer()
-      activeRelaySession = { grant, renewTimer: null }
-      scheduleRelayRenewal()
-      void reportRelaySelection(
-        options.conversationSessionId,
-        grant.node.id,
-        results,
-      )
-      return {
-        node: grant.node,
-        latencyMs: candidate.latencyMs,
-        results,
-      }
-    } catch (cause) {
-      lastError = cause
-    }
+  await handshakeRelay(grant)
+  await confirmRelaySession(grant)
+  clearRelayRenewTimer()
+  activeRelaySession = { grant, renewTimer: null }
+  scheduleRelayRenewal()
+  void reportRelaySelection(
+    options.conversationSessionId,
+    grant.node.id,
+    results,
+  )
+  return {
+    node: grant.node,
+    latencyMs: selectedProbe?.latencyMs ?? null,
+    results,
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('RELAY_SESSION_UNAVAILABLE')
 }
 
 export async function relayFetch(

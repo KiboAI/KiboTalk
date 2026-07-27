@@ -35,6 +35,7 @@ import {
   Square,
   UserRound,
 } from 'lucide-react'
+import { RelayNodeDialog } from './RelayNodeDialog'
 
 export type IslandPageProps = {
   controller: ProductSessionController
@@ -152,7 +153,7 @@ export function IslandPage({
           on={false}
           disabled={session.lifecycle === 'starting' || session.lifecycle === 'restoring'}
           label={t('start')}
-          onClick={() => void session.start()}
+          onClick={controller.requestSessionStart}
         >
           <Play className="size-4" />
         </IslandToggleButton>
@@ -280,6 +281,7 @@ export function IslandPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <RelayNodeDialog controller={controller} />
     </>
   )
 }

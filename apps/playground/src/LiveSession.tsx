@@ -27,7 +27,9 @@ import {
   type RealtimeSttClient,
   type TranscribedAudioSegment,
   providerMode,
+  fetchRelayNodes,
   openRelaySession,
+  probeRelayNodes,
   releaseRelaySession,
   type SttProvider,
 } from '@kibotalk/app-shared'
@@ -284,10 +286,13 @@ export default function LiveSession({
       const relaySessionId =
         globalThis.crypto?.randomUUID?.()
         ?? `playground-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      setLoading('正在选择 API 网络节点…')
+      if (!cfg.relayNodeId) throw new Error('请先选择 API 网络节点')
+      setLoading('正在连接所选 API 网络节点…')
+      const relayProbeResults = await probeRelayNodes(await fetchRelayNodes())
       const relaySelection = await openRelaySession({
         conversationSessionId: relaySessionId,
-        preferredNodeId: cfg.relayNodeOverride ?? undefined,
+        nodeId: cfg.relayNodeId,
+        probeResults: relayProbeResults,
       })
       relaySessionIdRef.current = relaySessionId
       const relayStatus =

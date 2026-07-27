@@ -3,6 +3,7 @@ import type { ConversationSessionSnapshot, ConversationStorage } from '@kibotalk
 import { defaultAppConfig } from '../config'
 import { fetchSttProviders, defaultRealtimeFirstProvider } from '../stt-providers'
 import type { SessionLanguageSnapshot } from '../proxy-clients'
+import { useRelayNodeProbes } from '../use-relay-node-probes'
 import {
   useConversationSession,
   type CandidateRound,
@@ -19,15 +20,17 @@ export type ProductSessionParams = {
   storage?: ConversationStorage
   /** Reply-suggestion rounds kept visible on the stage. */
   candidateRoundsMax?: number
+  /** User preference used to highlight the default choice in the pre-session picker. */
+  preferredRelayNodeId?: string
 }
 
 /**
- * The always-on live session every product surface (`apps/web`'s
+ * The live session every product surface (`apps/web`'s
  * `SessionPage`, `apps/desktop`'s Island) drives identically: fetch STT
  * providers, wire `useConversationSession` on `defaultAppConfig`'s hardcoded
- * knobs, auto-start once providers are known, interrupt on unmount, and derive
- * the newest-first candidate rounds for `StickyNoteStack`. Only the
- * surrounding JSX differs per surface.
+ * knobs, probe user-to-node latency for the pre-session manual picker,
+ * interrupt on unmount, and derive the newest-first candidate rounds for
+ * `StickyNoteStack`. Only the surrounding JSX differs per surface.
  */
 export function useProductSession({
   languageSnapshot,
@@ -37,12 +40,14 @@ export function useProductSession({
   stopSystemAudioStream,
   storage,
   candidateRoundsMax = 3,
+  preferredRelayNodeId,
 }: ProductSessionParams) {
   const [providers, setProviders] = useState<Awaited<ReturnType<typeof fetchSttProviders>>>([])
   const [providersLoaded, setProvidersLoaded] = useState(false)
   const [replyEnabled, setReplyEnabled] = useState(true)
-  const autoStartedRef = useRef(false)
+  const [relaySelectionOpen, setRelaySelectionOpen] = useState(false)
   const previousLifecycleRef = useRef<ProductSessionLifecycle>('restoring')
+  const relayProbes = useRelayNodeProbes()
 
   useEffect(() => {
     let cancelled = false
@@ -97,21 +102,6 @@ export function useProductSession({
     }
   }, [session.lifecycle])
 
-  // The coach is always-on once a session surface is reached (onboarding +
-  // enrollment already gated entry) — no separate "start recording" click.
-  useEffect(() => {
-    if (
-      providersLoaded &&
-      session.lifecycle === 'stopped' &&
-      !session.loading &&
-      !autoStartedRef.current
-    ) {
-      autoStartedRef.current = true
-      void session.start()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providersLoaded, session.lifecycle])
-
   useEffect(() => {
     return () => {
       void interruptRef.current()
@@ -127,11 +117,37 @@ export function useProductSession({
     [session.turns],
   )
 
+  function requestSessionStart() {
+    setRelaySelectionOpen(true)
+    void relayProbes.refresh()
+  }
+
+  async function startOnRelayNode(nodeId: string) {
+    if (!providersLoaded) return
+    const selected = relayProbes.results.find(({ node }) => node.id === nodeId)
+    if (!selected || selected.latencyMs === null) return
+    setRelaySelectionOpen(false)
+    await session.start({
+      relayNodeId: nodeId,
+      relayProbeResults: relayProbes.results,
+    })
+  }
+
   return {
     session,
     rounds,
     replyEnabled,
     setReplyEnabled,
+    providersLoaded,
+    preferredRelayNodeId,
+    relayProbeResults: relayProbes.results,
+    relayProbeLoading: relayProbes.loading,
+    relayProbeError: relayProbes.error,
+    relaySelectionOpen,
+    setRelaySelectionOpen,
+    refreshRelayProbes: relayProbes.refresh,
+    requestSessionStart,
+    startOnRelayNode,
   }
 }
 

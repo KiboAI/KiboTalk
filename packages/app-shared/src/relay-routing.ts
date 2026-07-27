@@ -77,28 +77,3 @@ export async function probeRelayNodes(
   }
   return Promise.all(nodeList.nodes.map((node) => probeRelayNode(node, options)))
 }
-
-export function selectRelayNode(
-  results: RelayProbeResult[],
-  primaryNodeId: string,
-  primaryTieThresholdMs: number,
-): RelayProbeResult {
-  const primary = results.find((result) => result.node.id === primaryNodeId)
-  const reachable = results
-    .filter((result): result is RelayProbeResult & { latencyMs: number } =>
-      result.latencyMs !== null)
-    .sort((left, right) => left.latencyMs - right.latencyMs)
-
-  if (reachable.length === 0) {
-    if (!primary) throw new Error('PRIMARY_RELAY_NODE_MISSING')
-    return primary
-  }
-  const fastest = reachable[0]!
-  if (
-    primary?.latencyMs !== null
-    && primary?.latencyMs !== undefined
-    && fastest.node.id !== primaryNodeId
-    && fastest.latencyMs + primaryTieThresholdMs > primary.latencyMs
-  ) return primary
-  return fastest
-}

@@ -89,8 +89,8 @@ type ConfigState = {
   vadVariantId: string
   transcribeProvider: string | null
   transcribeMode: TranscribeMode
-  /** null = automatic latency selection; node id = force for diagnostics. */
-  relayNodeOverride: string | null
+  /** Data-plane node selected before a playground session starts. */
+  relayNodeId: string | null
   // Speaker verification (live session only, but shared for consistency)
   speakerThreshold: number
   /** Max candidate rounds visible in Live sticky stack (playground debug). */
@@ -137,7 +137,7 @@ const audioDefaults = {
   vadVariantId: SILERO_VARIANTS[0].id,
   transcribeProvider: null as string | null,
   transcribeMode: 'aggregated' as TranscribeMode,
-  relayNodeOverride: null as string | null,
+  relayNodeId: null as string | null,
   speakerThreshold: defaultAppConfig.speakerThreshold,
   candidateRoundsMax: 2,
   islandSttEnabled: true,

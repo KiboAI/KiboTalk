@@ -65,6 +65,7 @@ function WebProductShell({
     sessionTitle: localizedSessionFallbackTitle(Date.now(), snapshot.conversationLang, language),
     storage,
     candidateRoundsMax: 3,
+    preferredRelayNodeId: prefs.relayNodeId,
   })
 
   useEffect(() => {

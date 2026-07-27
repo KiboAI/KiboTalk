@@ -10,6 +10,7 @@ import {
   isLearnerLevel,
   systemUiLanguage,
   type ProductTheme,
+  type RelayNodePreference,
 } from './config'
 
 const LANGUAGE_PREFS_KEY = 'kibotalk.languagePrefs'
@@ -24,6 +25,7 @@ export type LanguagePrefs = {
   launchAtLogin: boolean
   audioSource: SessionAudioSource
   microphoneDeviceId: string
+  relayNodeId: RelayNodePreference
 }
 
 /**
@@ -51,6 +53,10 @@ export function loadLanguagePrefs(): LanguagePrefs {
       launchAtLogin: parsed.launchAtLogin === true,
       audioSource: parsed.audioSource ?? fallback.audioSource,
       microphoneDeviceId: parsed.microphoneDeviceId ?? fallback.microphoneDeviceId,
+      relayNodeId:
+        parsed.relayNodeId === 'cn-relay'
+          ? 'cn-relay'
+          : fallback.relayNodeId,
     }
   } catch {
     return fallback

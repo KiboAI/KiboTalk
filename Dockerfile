@@ -45,15 +45,22 @@ RUN pnpm --filter @kibotalk/web build \
   && mkdir -p /output/web \
   && cp -R apps/web/dist /output/web/dist
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-alpine AS runtime-base
 
 ENV NODE_ENV=production
 WORKDIR /app/api
-COPY --from=builder /output/api /app/api
-COPY --from=builder /output/web /app/web
 
 USER root
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
+
+FROM runtime-base AS relay
+
+COPY --from=builder /output/api /app/api
+
 EXPOSE 8787
 CMD ["node", "dist/index.cjs"]
+
+FROM relay AS runtime
+
+COPY --from=builder /output/web /app/web

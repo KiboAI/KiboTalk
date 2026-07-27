@@ -520,13 +520,15 @@ app.post('/api/session-review', async (context) => {
 })
 
 // Legacy aliases keep the local playground/tests working while product clients
-// use the namespaced routes. Production Caddy exposes both, but auth remains
-// enforced because aliases re-enter the same handlers.
+// use the namespaced routes. Auth remains enforced because aliases re-enter
+// the same handlers.
 app.route('/', new Hono()
   .get('/stt/providers', (context) => app.fetch(new Request(new URL('/api/stt/providers', context.req.url), context.req.raw)))
   .post('/stt', (context) => app.fetch(new Request(new URL(`/api/stt${new URL(context.req.url).search}`, context.req.url), context.req.raw)))
   .post('/llm', (context) => app.fetch(new Request(new URL('/api/llm', context.req.url), context.req.raw)))
   .post('/session-review', (context) => app.fetch(new Request(new URL('/api/session-review', context.req.url), context.req.raw))))
 
-app.use('/*', serveStatic({ root: '../web/dist' }))
-app.get('*', serveStatic({ root: '../web/dist', path: './index.html' }))
+if (role === 'primary') {
+  app.use('/*', serveStatic({ root: '../web/dist' }))
+  app.get('*', serveStatic({ root: '../web/dist', path: './index.html' }))
+}

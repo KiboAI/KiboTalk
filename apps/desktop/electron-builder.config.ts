@@ -58,6 +58,7 @@ const config: Configuration = {
   },
   artifactName: '${productName}-${version}-${arch}.${ext}',
   files: ['out/**/*'],
+  electronLanguages: ['en', 'en_GB', 'ja', 'zh_CN', 'zh_TW'],
   // Populated by `pnpm download-models` — bundled models, not runtime-fetched (see `src/main/model-protocol.ts`).
   extraResources: [
     { from: 'resources/bundle-models', to: 'models' },

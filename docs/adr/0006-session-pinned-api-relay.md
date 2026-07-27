@@ -2,7 +2,7 @@
 
 - **状态**：Accepted
 - **日期**：2026-07-26
-- **覆盖**：ADR 0005 的单 VPS 数据面、生产 batch STT 禁用和每月 10 分钟免费额度
+- **覆盖**：ADR 0005 的单 VPS 数据面、生产 realtime-only STT 和每月 10 分钟免费额度
 
 ## 背景
 
@@ -40,8 +40,8 @@
 ### 控制面与短令牌
 
 日本服务器使用 Ed25519 私钥签发 30 分钟短令牌，两节点使用公钥离线验签。令牌绑定
-用户、设备、conversation session、选定节点、STT/LLM scope、provider/model 和签发
-时可用额度。客户端在第 20 分钟开始静默续签；续签只能得到相同节点。
+用户、设备、conversation session、选定节点、STT-realtime / LLM scope、`sttProvider`、
+model 和签发时可用额度。客户端在第 20 分钟开始静默续签；续签只能得到相同节点。
 
 实时 STT 建连前，用短令牌向所选节点交换 60 秒、单次使用的 WebSocket ticket，
 完整短令牌不进入 WebSocket URL。日本仍通过活跃会话租约保证同一账号只有一个
@@ -89,8 +89,8 @@ HTTPS Web 页面会因浏览器 mixed-content 策略探测失败并回退日本�
 普通用户北京时间自然月免费额度从 10 分钟提高为 30 分钟。既有当月 10 分钟桶在
 首次读取时补足 grant 差额；节点选择与剩余额度无关，实际 AI 使用仍在额度归零时停止。
 
-生产同时保留 realtime 与 batch STT；产品默认 realtime，batch 由
-`STT_BATCH_ACTIVE` 冻结并通过同一短令牌授权。
+生产 STT 仅 realtime（`STT_ACTIVE=dashscope-realtime`）；短令牌授权
+`stt-realtime` scope 与冻结的 `sttProvider`。
 
 ## 后果
 

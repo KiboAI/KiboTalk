@@ -31,15 +31,14 @@ update the spec — don't silently drift.
 Client orchestration + thin proxy (ADR 0001). The browser runs the pipeline;
 `apps/api` is a stateless Hono proxy that hides provider keys and forwards STT/LLM.
 
-**STT modes** (ADR 0004): **batch** (`POST /stt`) and **realtime**
-(`WS /stt-realtime`) run in parallel—not a migration. Local VAD + speaker
-verification own turn boundaries (`pauseMs`); realtime uses Manual commit
-(no server VAD). Timeline may show partial drafts; formal turns + LLM fire
-only on finalized transcript.
+**STT** (ADR 0004): **realtime only** via `WS /stt-realtime` (DashScope
+`qwen3-asr-flash-realtime`). Local VAD + speaker verification own turn
+boundaries (`pauseMs`); upstream uses Manual commit (no server VAD). Timeline
+may show partial drafts; formal turns + LLM fire only on finalized transcript.
 
 ```
 apps/
-  api/        Hono proxy: /stt, /stt-realtime (WS), /llm (SSE). Keys server-side only.
+  api/        Hono proxy: /stt-realtime (WS), /llm (SSE). Keys server-side only.
   playground/ Vite + React dev panel (Chinese UI) for testing each layer
               (声纹页 covers enrollment + free-speech verify / threshold tuning).
   web/        PWA shell (not yet built).
@@ -49,8 +48,8 @@ packages/
   prompts/    Reply-suggestion prompts (Velin TSX → markdown).
   speaker/    Speaker verification (wavlm-base-plus-sv, WASM + IndexedDB);
               `verify` returns raw `similarity` plus label `confidence`.
-  stt/        Provider-agnostic STT: batch adapters + DashScope realtime mapper
-              helpers (server-side). Providers declare mode batch|realtime.
+  stt/        DashScope realtime mapper helpers (server-side); `apps/api` relays
+              `WS /stt-realtime` only.
   pipeline/   Conversation store + turn state machine.
   ui/         shadcn/ui primitives on Tailwind v4 (shared).
   app-shared/ Shared client types/config shell.
@@ -62,21 +61,20 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 
 - **LLM → `xsai`** (`@xsai/stream-text`). Never hand-roll fetch/SSE for LLM. An official `xsai` skill is installed at `.agents/skills/xsai/` — read its `SKILL.md` + `references/` before touching `packages/llm`.
 - **Prompts → Velin** (`@velin-dev/core-react`). Render TSX components to markdown strings; don't template with raw string concat.
-- **STT → provider-agnostic factory** in `packages/stt`, reached via the `apps/api` `/stt` proxy. Local ASR (`mlx-qwen3-asr`) also goes through the proxy (`?provider=openai`), **never browser-direct** (ADR 0002).
+- **STT → DashScope realtime** via `packages/stt` mapper helpers, reached through the `apps/api` `WS /stt-realtime` relay. **Never browser-direct** to upstream (ADR 0004).
 - **VAD → Silero** via `@huggingface/transformers`. v6.2 needs a 64-sample context prepended to each 512-sample chunk (576 input), carried across calls; v5 takes 512 raw. See `apps/playground/src/audio/silero-vad.ts`.
 - **Speaker → `Xenova/wavlm-base-plus-sv`** via transformers.js in a Web Worker; embeddings persist in IndexedDB.
 
 ## Audio pipeline specifics
 
-- **Sample rate**: 16 kHz mono PCM everywhere (VAD, STT uploads, speaker embeddings).
+- **Sample rate**: 16 kHz mono PCM everywhere (VAD, realtime STT uplink, speaker embeddings).
 - **VAD chunk size**: 512 samples (32 ms) per `processAudio` call (`packages/audio/src/vad.ts` `newBufferSize`). Silero v6.2 prepends 64-sample context → 576 input; v5 takes 512 raw. See `docs/solutions/silero-vad-v6-context-frame.md`.
-- **STT upload format**: WAV 16 kHz mono PCM via `encodeWav` (`packages/audio/src`). The `/stt` proxy forwards the WAV body as-is.
 - **Speaker embeddings**: computed in a Web Worker (`apps/playground/src/audio/speaker-worker.ts`), persisted in IndexedDB. Don't run the WASM model on the main thread.
-- **Segment aggregation / TurnGate** (`packages/audio/src/aggregator.ts`): sits between VAD (+ speaker verification) and batch `ingestSegment` or realtime `append`/`commit`. Accumulates same-speaker speech and flushes on `pauseMs`, `maxMs` (speech only), or speaker change. PCM is direct-concatenated (no gap fill). Spec §2.4 / ADR 0004. Pipeline fires LLM per finalized turn and does NOT wait on pause itself.
+- **Segment aggregation / TurnGate** (`packages/audio/src/aggregator.ts`): sits between VAD (+ speaker verification) and realtime `append`/`commit` → `ingestFinalizedTurn`. Merges same-speaker fragment transcripts and flushes on `pauseMs`, `maxMs` (speech only), or speaker change. Spec §2.4 / ADR 0004. Pipeline fires LLM per finalized turn and does NOT wait on pause itself.
 
 ## Conventions
 
-- **Keys in env, never client.** All provider keys/config live in `.env` (see `.env.example`), loaded by `apps/api`. Naming: `<SCOPE>_<PROVIDER>_<FIELD>` (e.g. `LLM_OPENROUTER_API_KEY`, `STT_OPENAI_BASE_URL`).
+- **Keys in env, never client.** All provider keys/config live in `.env` (see `.env.example`), loaded by `apps/api`. Naming: `<SCOPE>_<PROVIDER>_<FIELD>` (e.g. `LLM_OPENROUTER_API_KEY`, `STT_DASHSCOPE_API_KEY`).
 - **Pure functions; no new classes** unless the framework/API requires it. Imports at top. TS unions: exhaustive `switch`.
 - **Full words.** No obscure abbreviations; only use ones common in software.
 - **Smallest correct diff.** Only change what was asked. No drive-by refactor, tests, or docs unless asked. When you touch code, small progressive refactors alongside the change are welcome.
@@ -84,7 +82,7 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 - **No backward-compatibility guards.** If a rename/breakage is needed, do it directly and update callers in the same change.
 - **Playground UI is Chinese** — labels, examples, and sample content in Chinese.
 - **Tailwind v4 + shadcn/ui** for all UI (playground included). Shared primitives in `packages/ui`（Button、Card、Badge、Input、Textarea、Label、Tabs、Separator、Accordion、Collapsible、Dialog、DropdownMenu、Popover、Progress、ScrollArea、Select、Sheet、Skeleton、Slider、Switch、Tooltip、Toaster）。缺组件先 `shadcn add` 进该包并导出；**改样式改源组件 / token，不要平行重造**。
-- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/ASR/merge/speaker knobs, language prefs (`uiLang` / `conversationLang` / `level` / `languagesConfirmed`, persisted; `meaningLang` is derived from `uiLang` in the session snapshot), and selectors (provider, VAD model, transcribe mode) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `AsrPadFields`, `MergeParamsFields`, `LanguagePrefsFields`, `VadModelSelect`, `TranscribeModeSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
+- **Shared playground config lives in one Zustand store** (`apps/playground/src/config-store.ts`, `useConfig`) — the React analog of a Pinia store. VAD/merge/speaker knobs, language prefs (`uiLang` / `conversationLang` / `level` / `languagesConfirmed`, persisted; `meaningLang` is derived from `uiLang` in the session snapshot), and selectors (VAD model, STT provider) are shared across the VAD panel and the live session: change one on a tab and it's already aligned on the other. Subscribe per-field (`useConfig(s => s.field)`); in async callbacks read `useConfig.getState()`. Stage-grouped field components live in `apps/playground/src/components/ConfigFields.tsx` (`VadParamsFields`, `MergeParamsFields`, `LanguagePrefsFields`, `VadModelSelect`, `TranscribeProviderSelect`, `NumberField`) — reuse these instead of re-declaring the same knobs.
 
 ## Commands
 

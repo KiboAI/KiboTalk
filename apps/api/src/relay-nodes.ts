@@ -11,7 +11,6 @@ import {
 const DEFAULT_PROBE = {
   attempts: 5,
   timeoutMs: 1_500,
-  primaryTieThresholdMs: 5,
 } as const
 const HEARTBEAT_MAX_AGE_SECONDS = 45
 

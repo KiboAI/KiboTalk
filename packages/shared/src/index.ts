@@ -13,7 +13,6 @@ export type RelayNodeList = {
   probe: {
     attempts: number
     timeoutMs: number
-    primaryTieThresholdMs: number
   }
 }
 

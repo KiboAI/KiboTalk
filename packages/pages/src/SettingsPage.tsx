@@ -14,8 +14,10 @@ import {
   levelLabel,
   systemUiLanguage,
   useI18n,
+  useRelayNodeProbes,
   type LanguagePrefs,
   type ProductTheme,
+  type RelayNodePreference,
 } from '@kibotalk/app-shared'
 import {
   Button,
@@ -35,6 +37,7 @@ import {
 } from '@kibotalk/ui'
 import {
   ArrowLeft,
+  CircleAlert,
   CircleCheck,
   Database,
   Fingerprint,
@@ -45,6 +48,7 @@ import {
   Mic,
   MonitorUp,
   Palette,
+  RefreshCw,
   RotateCcw,
   Settings,
   ShieldCheck,
@@ -77,6 +81,7 @@ const LANGUAGES: AppLanguage[] = ['ja', 'en', 'zh']
 const LEVELS: LearnerLevel[] = ['beginner', 'intermediate', 'advanced']
 const THEMES: ProductTheme[] = ['system', 'light', 'dark']
 const AUDIO_SOURCES: SessionAudioSource[] = ['microphone', 'system', 'both']
+const RELAY_NODES: RelayNodePreference[] = ['jp-primary', 'cn-relay']
 
 function SettingRow({
   title,
@@ -129,6 +134,7 @@ export function SettingsPage({
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
   const [voiceprintReady, setVoiceprintReady] = useState(false)
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([])
+  const relayProbes = useRelayNodeProbes()
 
   useEffect(() => {
     void createCurrentSpeakerEmbeddingStorage()
@@ -344,6 +350,72 @@ export function SettingsPage({
                     </SelectContent>
                   </Select>
                 </SettingRow>
+                <SettingRow
+                  title={t('defaultNetworkNode')}
+                  description={t('defaultNetworkNodeDescription')}
+                >
+                  <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                    <Select
+                      value={prefs.relayNodeId}
+                      disabled={
+                        sessionActive
+                        || relayProbes.loading
+                        || relayProbes.results.length === 0
+                      }
+                      onValueChange={(value) =>
+                        update({ relayNodeId: value as RelayNodePreference })}
+                    >
+                      <SelectTrigger className="w-full sm:w-56">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RELAY_NODES.map((nodeId) => {
+                          const result = relayProbes.results.find(
+                            ({ node }) => node.id === nodeId,
+                          )
+                          let latencyLabel = t('checkingLatency')
+                          if (result?.latencyMs === null) {
+                            latencyLabel = t('nodeUnreachable')
+                          } else if (result) {
+                            latencyLabel = `${Math.round(result.latencyMs)} ms`
+                          }
+                          return (
+                            <SelectItem
+                              key={nodeId}
+                              value={nodeId}
+                              disabled={result?.latencyMs === null}
+                            >
+                              {nodeId === 'jp-primary' ? t('japanNode') : t('chinaNode')}
+                              {' · '}
+                              {latencyLabel}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      size="icon"
+                      disabled={relayProbes.loading}
+                      onClick={() => void relayProbes.refresh()}
+                      aria-label={t('refreshLatency')}
+                    >
+                      <RefreshCw className={`size-4 ${relayProbes.loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
+                </SettingRow>
+                {prefs.relayNodeId === 'cn-relay' ? (
+                  <div className="flex items-start gap-2 bg-destructive/10 px-4 py-3 text-xs leading-relaxed text-destructive">
+                    <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                    {t('insecureRelayWarning')}
+                  </div>
+                ) : null}
+                {relayProbes.error ? (
+                  <div className="px-4 py-3 text-xs text-destructive">
+                    {t('nodeProbeFailed')}
+                  </div>
+                ) : null}
               </SettingsGroup>
 
               {platform === 'desktop' ? (

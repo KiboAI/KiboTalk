@@ -38,6 +38,7 @@ import {
   releaseRelaySession,
   releaseRelaySessionById,
 } from '../api-runtime'
+import type { RelayProbeResult } from '../relay-routing'
 
 export type SessionTurn = ConversationTurn & { candidates?: ReplyCandidate[] }
 
@@ -73,8 +74,6 @@ export type ConversationSessionParams = {
   providers: SttProvider[]
   /** Preferred provider id; realtime if its mode is `realtime`, else batch. */
   selectedProvider: string | null
-  /** Playground-only forced data-plane node. Product sessions leave this automatic. */
-  relayNodeOverride?: string
   /** Defaults to a fresh `InMemoryConversationStorage` (playground behavior). */
   storage?: ConversationStorage
   /** Product shells persist lifecycle/history; playground sessions stay ephemeral. */
@@ -280,7 +279,11 @@ export function useConversationSession(params: ConversationSessionParams) {
     }
   }
 
-  async function start(options: { resume?: boolean } = {}) {
+  async function start(options: {
+    resume?: boolean
+    relayNodeId?: string
+    relayProbeResults?: RelayProbeResult[]
+  } = {}) {
     if (startInFlightRef.current || lifecycle === 'starting' || running) return
     startInFlightRef.current = true
     stableSpeakerRef.current = speakerRef.current
@@ -344,11 +347,13 @@ export function useConversationSession(params: ConversationSessionParams) {
       }
 
       const p = paramsRef.current
-      setLoading('正在选择最快网络节点…')
+      const selectedRelayNodeId = frozenRelayNodeId ?? options.relayNodeId
+      if (!selectedRelayNodeId) throw new Error('RELAY_NODE_SELECTION_REQUIRED')
+      setLoading('正在连接所选网络节点…')
       const relaySelection = await openRelaySession({
         conversationSessionId,
-        fixedNodeId: frozenRelayNodeId,
-        preferredNodeId: p.relayNodeOverride,
+        nodeId: selectedRelayNodeId,
+        probeResults: options.relayProbeResults,
       })
       setRelayNodeId(relaySelection.node.id)
       setRelayLatencyMs(relaySelection.latencyMs)

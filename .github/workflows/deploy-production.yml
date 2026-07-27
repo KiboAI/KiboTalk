@@ -27,12 +27,10 @@ jobs:
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
           CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
-          CN_CLOUDFLARE_API_TOKEN: ${{ secrets.CN_CLOUDFLARE_API_TOKEN }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN \
-            CN_CLOUDFLARE_API_TOKEN; do
+            CN_DEPLOY_SSH_KEY CN_SERVER_HOST CN_SERVER_USER CN_RELAY_ORIGIN; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
               exit 1
@@ -51,25 +49,27 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519_primary ~/.ssh/id_ed25519_cn
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
           ssh-keyscan -H "$CN_SERVER_HOST" >> ~/.ssh/known_hosts
-      - name: Configure relay DNS credential
+      - name: Configure relay origin on primary
         env:
-          CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
-          CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
-          CN_CLOUDFLARE_API_TOKEN: ${{ secrets.CN_CLOUDFLARE_API_TOKEN }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
         run: |
-          printf '%s\n' "$CN_CLOUDFLARE_API_TOKEN" \
-            | ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" '
+          case "$CN_RELAY_ORIGIN" in
+            http://*|https://*) ;;
+            *) echo "::error::CN_RELAY_ORIGIN must be an absolute HTTP(S) origin"; exit 1 ;;
+          esac
+          printf '%s\n' "$CN_RELAY_ORIGIN" \
+            | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
                 set -eu
-                IFS= read -r token
-                test -n "$token"
-                cd /opt/kibotalk-relay
-                if grep -q "^CLOUDFLARE_API_TOKEN=" .env; then
-                  escaped=$(printf "%s" "$token" | sed "s/[|&]/\\\\&/g")
-                  sed -i "s|^CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=${escaped}|" .env
+                IFS= read -r origin
+                escaped=$(printf "%s" "$origin" | sed "s/[|&]/\\\\&/g")
+                if grep -q "^RELAY_CN_ORIGIN=" /opt/kibotalk/.env; then
+                  sed -i "s|^RELAY_CN_ORIGIN=.*|RELAY_CN_ORIGIN=${escaped}|" /opt/kibotalk/.env
                 else
-                  printf "CLOUDFLARE_API_TOKEN=%s\n" "$token" >> .env
+                  printf "RELAY_CN_ORIGIN=%s\n" "$origin" >> /opt/kibotalk/.env
                 fi
-                chmod 600 .env
+                chmod 600 /opt/kibotalk/.env
               '
       - name: Validate server environments
         env:
@@ -92,16 +92,16 @@ jobs:
             set -eu
             test -s /opt/kibotalk-relay/.env
             for name in \
-              RELAY_PRIMARY_ORIGIN RELAY_ACCEPT_NEW_SESSIONS RELAY_DOMAIN \
-              RELAY_HTTPS_PORT RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
-              ACME_EMAIL CLOUDFLARE_API_TOKEN \
+              RELAY_PRIMARY_ORIGIN RELAY_ACCEPT_NEW_SESSIONS \
+              RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
               STT_ACTIVE STT_BATCH_ACTIVE LLM_ACTIVE; do
               grep -q "^${name}=." /opt/kibotalk-relay/.env
             done
-            relay_port=$(sed -n "s/^RELAY_HTTPS_PORT=//p" /opt/kibotalk-relay/.env)
+            relay_port=$(sed -n "s/^RELAY_HTTP_PORT=//p" /opt/kibotalk-relay/.env)
+            relay_port=${relay_port:-8443}
             case "$relay_port" in
               8443|9443) ;;
-              *) echo "RELAY_HTTPS_PORT must be 8443 or 9443" >&2; exit 1 ;;
+              *) echo "RELAY_HTTP_PORT must be 8443 or 9443" >&2; exit 1 ;;
             esac
           '
       - uses: pnpm/action-setup@v4
@@ -119,8 +119,9 @@ jobs:
       - name: Build API image
         run: |
           docker build --platform linux/amd64 --tag "kibotalk-api:${GITHUB_SHA}" .
+          docker build --platform linux/amd64 --target relay \
+            --tag "kibotalk-relay-api:${GITHUB_SHA}" .
           docker build --platform linux/amd64 --tag kibotalk-caddy:2.10 --file infra/production/Caddy.Dockerfile .
-          docker build --platform linux/amd64 --tag kibotalk-relay-caddy:2.10 --file infra/relay/Caddy.Dockerfile .
           docker build --platform linux/amd64 --tag kibotalk-postgres:17 --file infra/production/Postgres.Dockerfile .
           touch infra/production/.env infra/relay/.env
           (
@@ -130,7 +131,7 @@ jobs:
           )
           (
             cd infra/relay
-            RELAY_HTTPS_PORT=8443 docker compose -f compose.yaml \
+            RELAY_HTTP_PORT=8443 docker compose -f compose.yaml \
               config --quiet --no-env-resolution --no-path-resolution
           )
           rm infra/production/.env infra/relay/.env
@@ -138,23 +139,13 @@ jobs:
             --volume "$PWD/infra/production/Caddyfile:/etc/caddy/Caddyfile:ro" \
             kibotalk-caddy:2.10 \
             caddy validate --config /etc/caddy/Caddyfile
-          docker run --rm \
-            --env ACME_EMAIL=validation@kibotalk.app \
-            --env CLOUDFLARE_API_TOKEN=0000000000000000000000000000000000000000 \
-            --env RELAY_DOMAIN=relay-validation.kibotalk.app \
-            --env RELAY_HTTPS_PORT=8443 \
-            --volume "$PWD/infra/relay/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            kibotalk-relay-caddy:2.10 \
-            caddy validate --config /etc/caddy/Caddyfile
           docker save \
             "kibotalk-api:${GITHUB_SHA}" \
             kibotalk-caddy:2.10 \
-            kibotalk-relay-caddy:2.10 \
             kibotalk-postgres:17 \
             | gzip -1 > /tmp/kibotalk-images.tar.gz
           docker save \
-            "kibotalk-api:${GITHUB_SHA}" \
-            kibotalk-relay-caddy:2.10 \
+            "kibotalk-relay-api:${GITHUB_SHA}" \
             | gzip -1 > /tmp/kibotalk-relay-images.tar.gz
       - name: Stage on-device model mirror
         run: |
@@ -167,69 +158,19 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" "mkdir -p /opt/kibotalk/incoming"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-images.tar.gz"
-          scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-relay-images.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-relay-images.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary /tmp/kibotalk-models.tar.gz "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/incoming/kibotalk-models.tar.gz"
           scp -i ~/.ssh/id_ed25519_primary infra/production/compose.yaml infra/production/Caddyfile "${SERVER_USER}@${SERVER_HOST}:/opt/kibotalk/"
       - name: Upload relay payload
         env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
           CN_SERVER_HOST: ${{ secrets.CN_SERVER_HOST }}
           CN_SERVER_USER: ${{ secrets.CN_SERVER_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" \
-            "mkdir -p /opt/kibotalk-relay/incoming/parts-${GITHUB_SHA}"
-          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
-            "mkdir -p /opt/kibotalk/incoming/relay-parts-${GITHUB_SHA} \
-              && split --number=8 --numeric-suffixes=0 --suffix-length=3 \
-                /opt/kibotalk/incoming/kibotalk-relay-images.tar.gz \
-                /opt/kibotalk/incoming/relay-parts-${GITHUB_SHA}/part-"
-          eval "$(ssh-agent -s)"
-          trap 'ssh-agent -k >/dev/null' EXIT
-          ssh-add ~/.ssh/id_ed25519_cn
-          ssh -A -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519_primary \
-            "${SERVER_USER}@${SERVER_HOST}" \
-            bash -s -- "$CN_SERVER_USER" "$CN_SERVER_HOST" "$GITHUB_SHA" <<'REMOTE'
-          set -eu
-          cn_user=$1
-          cn_host=$2
-          release_sha=$3
-          part_dir="/opt/kibotalk/incoming/relay-parts-${release_sha}"
-          pids=""
-          for part in "${part_dir}"/part-*; do
-            scp -q -o StrictHostKeyChecking=accept-new \
-              "$part" \
-              "${cn_user}@${cn_host}:/opt/kibotalk-relay/incoming/parts-${release_sha}/" &
-            pids="${pids} $!"
-          done
-          transfer_status=0
-          for pid in $pids; do
-            wait "$pid" || transfer_status=1
-          done
-          test "$transfer_status" -eq 0
-          REMOTE
-          ssh -i ~/.ssh/id_ed25519_cn "${CN_SERVER_USER}@${CN_SERVER_HOST}" \
-            bash -s -- "$GITHUB_SHA" <<'REMOTE'
-          set -eu
-          release_sha=$1
-          part_dir="/opt/kibotalk-relay/incoming/parts-${release_sha}"
-          cat "${part_dir}"/part-* > /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz
-          gzip -t /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz
-          for part in "${part_dir}"/part-*; do
-            unlink "$part"
-          done
-          rmdir "$part_dir"
-          REMOTE
-          ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" \
-            bash -s -- "$GITHUB_SHA" <<'REMOTE'
-          set -eu
-          part_dir="/opt/kibotalk/incoming/relay-parts-${1}"
-          for part in "${part_dir}"/part-*; do
-            unlink "$part"
-          done
-          rmdir "$part_dir"
-          REMOTE
-          scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml infra/relay/Caddyfile "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
+            "mkdir -p /opt/kibotalk-relay/incoming"
+          scp -i ~/.ssh/id_ed25519_cn /tmp/kibotalk-relay-images.tar.gz \
+            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/incoming/kibotalk-images.tar.gz"
+          scp -i ~/.ssh/id_ed25519_cn infra/relay/compose.yaml \
+            "${CN_SERVER_USER}@${CN_SERVER_HOST}:/opt/kibotalk-relay/"
       - name: Activate release
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -268,14 +209,14 @@ jobs:
             set -eu
             gzip -dc /opt/kibotalk-relay/incoming/kibotalk-images.tar.gz | docker load
             cd /opt/kibotalk-relay
-            if grep -q '^KIBOTALK_API_IMAGE=' .env; then
-              sed -i 's|^KIBOTALK_API_IMAGE=.*|KIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}|' .env
+            if grep -q '^KIBOTALK_RELAY_IMAGE=' .env; then
+              sed -i 's|^KIBOTALK_RELAY_IMAGE=.*|KIBOTALK_RELAY_IMAGE=kibotalk-relay-api:${GITHUB_SHA}|' .env
             else
-              printf '\nKIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}\n' >> .env
+              printf '\nKIBOTALK_RELAY_IMAGE=kibotalk-relay-api:${GITHUB_SHA}\n' >> .env
             fi
             docker compose --env-file .env -f compose.yaml up -d --pull never
           "
-      - name: Verify HTTPS
+      - name: Verify deployment
         env:
           CN_RELAY_ORIGIN: ${{ secrets.CN_RELAY_ORIGIN }}
         run: |

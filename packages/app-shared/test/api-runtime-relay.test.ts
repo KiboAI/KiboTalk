@@ -18,7 +18,7 @@ const primary: RelayNode = {
 }
 const relay: RelayNode = {
   id: 'cn-relay',
-  origin: 'https://cn-api.kibotalk.app:8443',
+  origin: 'http://123.99.200.156:8443',
   role: 'relay',
   acceptingNewSessions: true,
 }
@@ -42,7 +42,7 @@ describe('relay API runtime', () => {
         return Response.json({
           nodes: [primary, relay],
           primaryNodeId: primary.id,
-          probe: { attempts: 2, timeoutMs: 100, primaryTieThresholdMs: 5 },
+          probe: { attempts: 2, timeoutMs: 100 },
         })
       }
       if (url.pathname === '/api/latency') return Response.json({ ok: true })
@@ -91,14 +91,19 @@ describe('relay API runtime', () => {
 
     const selection = await openRelaySession({
       conversationSessionId: 'session-1',
-      preferredNodeId: relay.id,
+      nodeId: relay.id,
+      probeResults: [
+        { node: primary, latencyMs: 80, successfulAttempts: 4 },
+        { node: relay, latencyMs: 24, successfulAttempts: 4 },
+      ],
     })
     expect(selection.node.id).toBe(relay.id)
+    expect(selection.latencyMs).toBe(24)
 
     const response = await relayFetch('/api/llm', { method: 'POST' })
     expect(response.ok).toBe(true)
     expect(calls).toContainEqual({
-      url: 'https://cn-api.kibotalk.app:8443/api/llm',
+      url: 'http://123.99.200.156:8443/api/llm',
       authorization: 'Bearer short-token',
     })
 

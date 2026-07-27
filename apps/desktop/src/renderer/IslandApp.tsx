@@ -53,6 +53,7 @@ function ReadyIsland({
     sessionTitle: localizedSessionFallbackTitle(Date.now(), snapshot.conversationLang, language),
     storage,
     candidateRoundsMax: 3,
+    preferredRelayNodeId: prefs.relayNodeId,
     getSystemAudioStream,
     stopSystemAudioStream: () => window.kibotalk.systemAudio.stop(),
   })
@@ -81,7 +82,7 @@ function ReadyIsland({
       const current = controllerRef.current
       switch (command) {
         case 'start':
-          void current.session.start()
+          current.requestSessionStart()
           break
         case 'pause':
           void current.session.pause()

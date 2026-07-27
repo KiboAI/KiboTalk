@@ -45,9 +45,9 @@ export {
 } from './api-runtime'
 export {
   probeRelayNodes,
-  selectRelayNode,
   type RelayProbeResult,
 } from './relay-routing'
+export { useRelayNodeProbes } from './use-relay-node-probes'
 export {
   deleteCloudAccount,
   fetchAccountDevices,
@@ -98,7 +98,7 @@ export {
   LEARNER_LEVEL_OPTIONS,
   systemUiLanguage,
 } from './config'
-export type { AppConfig, ProductTheme } from './config'
+export type { AppConfig, ProductTheme, RelayNodePreference } from './config'
 
 export {
   createSessionSnapshot,

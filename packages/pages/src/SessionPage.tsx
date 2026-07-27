@@ -34,6 +34,7 @@ import {
   Square,
   UserRound,
 } from 'lucide-react'
+import { RelayNodeDialog } from './RelayNodeDialog'
 
 export type SessionPageProps = {
   controller: ProductSessionController
@@ -172,7 +173,7 @@ export function SessionPage({ controller, onGoSettings, onGoHistory, onGoAccount
               <span className="hidden sm:inline">{t('stop')}</span>
             </Button>
           ) : session.lifecycle === 'stopped' ? (
-            <Button size="sm" onClick={() => void session.start()}>
+            <Button size="sm" onClick={controller.requestSessionStart}>
               <Play className="size-3.5" />
               <span className="hidden sm:inline">{t('start')}</span>
             </Button>
@@ -333,6 +334,7 @@ export function SessionPage({ controller, onGoSettings, onGoHistory, onGoAccount
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <RelayNodeDialog controller={controller} />
     </div>
   )
 }

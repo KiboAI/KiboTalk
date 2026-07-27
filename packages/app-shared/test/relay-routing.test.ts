@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { RelayNode } from '@kibotalk/shared'
-import { selectRelayNode, type RelayProbeResult } from '../src/relay-routing'
+import type { RelayNode, RelayNodeList } from '@kibotalk/shared'
+import { probeRelayNodes } from '../src/relay-routing'
 
 const primary: RelayNode = {
   id: 'jp-primary',
@@ -10,34 +10,43 @@ const primary: RelayNode = {
 }
 const relay: RelayNode = {
   id: 'cn-relay',
-  origin: 'https://cn-api.kibotalk.app:8443',
+  origin: 'http://123.99.200.156:8443',
   role: 'relay',
   acceptingNewSessions: true,
 }
 
-function result(node: RelayNode, latencyMs: number | null): RelayProbeResult {
-  return { node, latencyMs, successfulAttempts: latencyMs === null ? 0 : 4 }
-}
+describe('relay node latency probes', () => {
+  it('returns measured latency for the user-facing manual picker', async () => {
+    const nodeList: RelayNodeList = {
+      nodes: [primary],
+      primaryNodeId: primary.id,
+      probe: { attempts: 3, timeoutMs: 100 },
+    }
+    const times = [0, 8, 10, 30, 40, 64]
+    const results = await probeRelayNodes(nodeList, {
+      fetch: async () => Response.json({ ok: true }),
+      now: () => times.shift()!,
+    })
 
-describe('relay node selection', () => {
-  it('selects the relay when it is at least 5 ms faster', () => {
-    expect(selectRelayNode([
-      result(primary, 45),
-      result(relay, 39),
-    ], primary.id, 5).node.id).toBe(relay.id)
+    expect(results).toEqual([
+      { node: primary, latencyMs: 22, successfulAttempts: 2 },
+    ])
   })
 
-  it('prefers the primary inside the 5 ms tie window', () => {
-    expect(selectRelayNode([
-      result(primary, 45),
-      result(relay, 41),
-    ], primary.id, 5).node.id).toBe(primary.id)
-  })
+  it('marks an unreachable node without choosing another node', async () => {
+    const nodeList: RelayNodeList = {
+      nodes: [relay],
+      primaryNodeId: primary.id,
+      probe: { attempts: 2, timeoutMs: 100 },
+    }
+    const results = await probeRelayNodes(nodeList, {
+      fetch: async () => {
+        throw new Error('blocked')
+      },
+    })
 
-  it('falls back to the primary when all probes fail', () => {
-    expect(selectRelayNode([
-      result(primary, null),
-      result(relay, null),
-    ], primary.id, 5).node.id).toBe(primary.id)
+    expect(results).toEqual([
+      { node: relay, latencyMs: null, successfulAttempts: 0 },
+    ])
   })
 })

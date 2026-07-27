@@ -19,8 +19,9 @@ import {
 } from '../config-store'
 import {
   fetchRelayNodes,
+  probeRelayNodes,
   SILERO_VARIANTS,
-  type RelayNode,
+  type RelayProbeResult,
 } from '@kibotalk/app-shared'
 import { SttProviderSelect } from '../SttProviderSelect'
 import { useTranscribeProvider } from '../SttProviderSelect'
@@ -256,20 +257,25 @@ export function TranscribeProviderSelect({
   )
 }
 
-/** Data-plane node override for playground diagnostics. */
+/** Manual data-plane node selection with measured user-to-node latency. */
 export function RelayNodeSelect({ disabled }: { disabled?: boolean }) {
-  const relayNodeOverride = useConfig((state) => state.relayNodeOverride)
+  const relayNodeId = useConfig((state) => state.relayNodeId)
   const patch = useConfig((state) => state.patch)
-  const [nodes, setNodes] = useState<RelayNode[]>([])
+  const [results, setResults] = useState<RelayProbeResult[]>([])
 
   useEffect(() => {
     let cancelled = false
     void fetchRelayNodes()
-      .then((nodeList) => {
-        if (!cancelled) setNodes(nodeList.nodes)
+      .then(async (nodeList) => {
+        const measured = await probeRelayNodes(nodeList)
+        if (cancelled) return
+        setResults(measured)
+        if (!useConfig.getState().relayNodeId) {
+          patch({ relayNodeId: nodeList.primaryNodeId })
+        }
       })
       .catch(() => {
-        if (!cancelled) setNodes([])
+        if (!cancelled) setResults([])
       })
     return () => {
       cancelled = true
@@ -280,19 +286,20 @@ export function RelayNodeSelect({ disabled }: { disabled?: boolean }) {
     <div className="flex flex-col gap-1.5">
       <Label className="text-xs text-muted-foreground">API 网络节点</Label>
       <Select
-        value={relayNodeOverride ?? 'auto'}
-        onValueChange={(value) =>
-          patch({ relayNodeOverride: value === 'auto' ? null : value })}
+        value={relayNodeId ?? undefined}
+        onValueChange={(value) => patch({ relayNodeId: value })}
         disabled={disabled}
       >
         <SelectTrigger className="h-9">
-          <SelectValue />
+          <SelectValue placeholder="请选择节点" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="auto">自动测速</SelectItem>
-          {nodes.map((node) => (
-            <SelectItem key={node.id} value={node.id}>
-              {node.id} · {node.role === 'primary' ? '日本主节点' : '国内中转'}
+          {results.map(({ node, latencyMs }) => (
+            <SelectItem key={node.id} value={node.id} disabled={latencyMs === null}>
+              {node.role === 'primary' ? '日本主节点' : '国内中转'}
+              {' · '}
+              {latencyMs === null ? '不可达' : `${Math.round(latencyMs)} ms`}
+              {node.origin.startsWith('http:') ? ' · HTTP 未加密' : ''}
             </SelectItem>
           ))}
         </SelectContent>

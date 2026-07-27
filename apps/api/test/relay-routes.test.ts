@@ -21,7 +21,7 @@ afterEach(() => {
 describe('relay control plane', () => {
   it('publishes both configured nodes and signs a node-bound session grant', async () => {
     process.env.RELAY_PRIMARY_ORIGIN = 'https://app.kibotalk.app'
-    process.env.RELAY_CN_ORIGIN = 'https://cn-api.kibotalk.app:8443'
+    process.env.RELAY_CN_ORIGIN = 'http://123.99.200.156:8443'
     process.env.RELAY_CN_ENABLED = 'true'
     process.env.STT_ACTIVE = 'dashscope-realtime'
     process.env.LLM_ACTIVE = 'openrouter'
@@ -31,16 +31,16 @@ describe('relay control plane', () => {
     expect(nodesResponse.status).toBe(200)
     const nodes = await nodesResponse.json() as {
       nodes: Array<{ id: string; origin: string }>
-      probe: { attempts: number; primaryTieThresholdMs: number }
+      probe: { attempts: number }
     }
     expect(nodes.nodes).toEqual([
       expect.objectContaining({ id: 'jp-primary', origin: 'https://app.kibotalk.app' }),
       expect.objectContaining({
         id: 'cn-relay',
-        origin: 'https://cn-api.kibotalk.app:8443',
+        origin: 'http://123.99.200.156:8443',
       }),
     ])
-    expect(nodes.probe).toMatchObject({ attempts: 5, primaryTieThresholdMs: 5 })
+    expect(nodes.probe).toMatchObject({ attempts: 5 })
 
     const grantResponse = await app.request('/api/relay/sessions', {
       method: 'POST',

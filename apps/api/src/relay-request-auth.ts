@@ -32,7 +32,6 @@ function developmentClaims(scope: RelayScope): RelaySessionClaims {
     nodeId: relayNodeId(),
     scopes: [scope],
     sttProvider: process.env.STT_ACTIVE ?? 'dashscope-realtime',
-    sttBatchProvider: process.env.STT_BATCH_ACTIVE ?? process.env.STT_ACTIVE ?? 'openrouter',
     llmProvider: process.env.LLM_ACTIVE ?? 'openrouter',
     llmModel: process.env.LLM_OPENROUTER_MODEL ?? 'development',
     quotaSeconds: 30 * 60,

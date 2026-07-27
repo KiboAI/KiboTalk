@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import type { AppLanguage, ConversationTurn, LearnerLevel } from '@kibotalk/conversation'
 import { createLlmClient, llmConfigFromEnv, type LlmUsage } from '@kibotalk/llm'
 import { buildReplySuggestionsMessages, buildSessionReviewMessages } from '@kibotalk/prompts'
-import { createSttClient, listSttProviders, sttConfigFromEnv } from '@kibotalk/stt'
+import { listSttProviders } from '@kibotalk/stt'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
@@ -47,7 +47,6 @@ import {
 } from './sync'
 import { recordTelemetry, recordTelemetryLater } from './telemetry'
 import { redeemVoucher } from './vouchers'
-import { billCompletedRelayTurn } from './relay-billing'
 import { requireRelayRequestAuth } from './relay-request-auth'
 import { registerRelayRoutes } from './relay-routes'
 import {
@@ -116,9 +115,7 @@ const RELAY_DATA_PATHS = new Set([
   '/api/latency',
   '/api/relay/handshake',
   '/api/relay/ws-ticket',
-  '/api/stt',
   '/api/llm',
-  '/stt',
   '/llm',
 ])
 
@@ -225,77 +222,8 @@ app.get('/api/stt/providers', async (context) => {
   const auth = await requireRequestAuth(context)
   if (auth instanceof Response) return auth
   const providers = listSttProviders(process.env)
-    .filter((provider) => provider.configured)
+    .filter((provider) => provider.configured && provider.mode === 'realtime')
   return context.json({ providers })
-})
-
-app.post('/api/stt', async (context) => {
-  const relayAuth = requireRelayRequestAuth(context, 'stt')
-  if (relayAuth instanceof Response) return relayAuth
-  const startedAt = Date.now()
-  const requestId = randomUUID()
-  const wav = await context.req.arrayBuffer()
-  const providerOverride =
-    process.env.APP_ENV === 'production'
-      ? process.env.STT_BATCH_ACTIVE
-      : context.req.query('provider') || undefined
-  const language = context.req.query('language') || undefined
-  let sttClient
-  try {
-    sttClient = createSttClient(sttConfigFromEnv(process.env, providerOverride))
-  } catch (cause) {
-    return context.json({ error: (cause as Error).message }, 500)
-  }
-  try {
-    const text = await sttClient.transcribe(wav, {
-      signal: context.req.raw.signal,
-      language,
-    })
-    const config = sttConfigFromEnv(process.env, providerOverride)
-    if (
-      process.env.APP_ENV === 'production'
-      && config.provider !== relayAuth.claims.sttBatchProvider
-    ) throw new Error('RELAY_CAPABILITY_MISMATCH')
-    const durationMs = Date.now() - startedAt
-    const deduction = await billCompletedRelayTurn({
-      role,
-      auth: relayAuth,
-      requestId,
-      audioSeconds: Math.max(1, (wav.byteLength - 44) / (16_000 * 2)),
-      provider: config.provider,
-      model: config.model,
-      durationMs,
-    })
-    recordTelemetryLater(relayAuth.requestAuth, {
-      requestId,
-      eventType: 'stt_batch',
-      provider: config.provider,
-      model: config.model,
-      status: 'ok',
-      durationMs,
-      billedAudioSeconds: deduction.billedSeconds,
-      metadata: {
-        nodeId: relayAuth.claims.nodeId,
-        deductedSeconds: deduction.deductedSeconds,
-        overdrawSeconds: deduction.overdrawSeconds,
-      },
-    })
-    return context.json({
-      text,
-      quotaExhausted: deduction.exhausted,
-      remainingSeconds: deduction.remainingSeconds,
-    })
-  } catch (cause) {
-    recordTelemetryLater(relayAuth.requestAuth, {
-      requestId,
-      eventType: 'stt_batch',
-      provider: providerOverride ?? process.env.STT_ACTIVE,
-      status: 'error',
-      durationMs: Date.now() - startedAt,
-      errorCode: cause instanceof Error ? cause.name : 'UPSTREAM_ERROR',
-    })
-    return context.json({ error: (cause as Error).message }, 502)
-  }
 })
 
 app.post('/api/llm', async (context) => {
@@ -524,7 +452,6 @@ app.post('/api/session-review', async (context) => {
 // the same handlers.
 app.route('/', new Hono()
   .get('/stt/providers', (context) => app.fetch(new Request(new URL('/api/stt/providers', context.req.url), context.req.raw)))
-  .post('/stt', (context) => app.fetch(new Request(new URL(`/api/stt${new URL(context.req.url).search}`, context.req.url), context.req.raw)))
   .post('/llm', (context) => app.fetch(new Request(new URL('/api/llm', context.req.url), context.req.raw)))
   .post('/session-review', (context) => app.fetch(new Request(new URL('/api/session-review', context.req.url), context.req.raw))))
 

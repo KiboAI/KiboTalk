@@ -22,7 +22,6 @@ const claims: RelaySessionClaims = {
   nodeId: 'cn-relay',
   scopes: ['llm', 'stt-realtime'],
   sttProvider: 'dashscope-realtime',
-  sttBatchProvider: 'dashscope',
   llmProvider: 'openai',
   llmModel: 'deepseek-v4-flash',
   quotaSeconds: 5,

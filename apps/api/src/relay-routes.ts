@@ -72,14 +72,17 @@ function heartbeatSessions(value: unknown): RelayActiveSessionHeartbeat[] {
 }
 
 function registerCommonRelayRoutes(app: Hono): void {
+  // Reachability / RTT only — must not 503 when upstreams are degraded
+  // (ADR 0006: latency excludes node→provider time).
   app.get('/api/latency', (context) =>
     context.json(
       {
-        ok: providerHealthy(),
+        ok: true,
+        providersOk: providerHealthy(),
         nodeId: relayNodeId(),
         timestamp: Date.now(),
       },
-      providerHealthy() ? 200 : 503,
+      200,
       {
         'cache-control': 'no-store',
         'server-timing': 'relay;dur=0',

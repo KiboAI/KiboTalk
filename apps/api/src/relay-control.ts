@@ -14,15 +14,13 @@ const SESSION_ID_MAX_LENGTH = 200
 
 function providerSnapshot(env: NodeJS.ProcessEnv): {
   sttProvider: string
-  sttBatchProvider: string
   llmProvider: string
   llmModel: string
 } {
   const sttProvider = env.STT_ACTIVE ?? 'dashscope-realtime'
-  const sttBatchProvider = env.STT_BATCH_ACTIVE ?? 'dashscope'
   const llmProvider = env.LLM_ACTIVE ?? 'openrouter'
   const llmModel = env[`LLM_${llmProvider.toUpperCase()}_MODEL`] ?? 'development'
-  return { sttProvider, sttBatchProvider, llmProvider, llmModel }
+  return { sttProvider, llmProvider, llmModel }
 }
 
 async function existingRelaySession(
@@ -135,7 +133,7 @@ export async function grantRelaySession(args: {
     deviceSessionId: args.auth.deviceSessionId,
     conversationSessionId: args.conversationSessionId,
     nodeId: node.id,
-    scopes: ['llm', 'stt', 'stt-realtime'],
+    scopes: ['llm', 'stt-realtime'],
     ...providerSnapshot(env),
     quotaSeconds,
   }, { env })

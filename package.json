@@ -20,6 +20,10 @@
   },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
+    "@alint-js/agent-apeira": "0.2.0",
+    "@alint-js/cli": "0.2.0",
+    "@alint-js/plugin-js": "0.2.0",
+    "@alint-js/plugin-simplicity": "0.2.0",
     "@kibotalk/conversation": "workspace:*",
     "@kibotalk/prompts": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",

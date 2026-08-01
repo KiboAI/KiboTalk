@@ -190,7 +190,6 @@ function AccountContent({
     void fetchAccountDevices().then(setDevices).catch(() => setDevices([]))
   }, [account.deviceSessionId])
 
-  const quota = account.quota
   const sections = [
     { id: 'quota' as const, label: '额度', icon: Gift },
     { id: 'devices' as const, label: '设备', icon: Laptop },
@@ -248,7 +247,6 @@ function AccountContent({
           </div>
           <nav className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:overflow-visible sm:px-0">
             {sections.map((item) => {
-              const Icon = item.icon
               return (
                 <button
                   key={item.id}
@@ -260,7 +258,7 @@ function AccountContent({
                       : 'text-muted-foreground hover:bg-foreground/5'
                   }`}
                 >
-                  <Icon className="size-4 shrink-0" />
+                  <item.icon className="size-4 shrink-0" />
                   <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               )
@@ -281,11 +279,11 @@ function AccountContent({
               <Card>
                 <CardHeader>
                   <CardDescription>当前可用</CardDescription>
-                  <CardTitle className="text-3xl">{minutes(quota.totalSeconds)} 分钟</CardTitle>
+                  <CardTitle className="text-3xl">{minutes(account.quota.totalSeconds)} 分钟</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-xs text-muted-foreground">
-                    免费额度将在 {new Date(quota.resetsAt).toLocaleDateString()} 更新。
+                    免费额度将在 {new Date(account.quota.resetsAt).toLocaleDateString()} 更新。
                   </p>
                 </CardContent>
               </Card>

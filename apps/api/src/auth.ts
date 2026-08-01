@@ -36,20 +36,32 @@ function normalizeEmail(value: unknown): string | null {
   return email
 }
 
-function adminEmails(): Set<string> {
-  return new Set(
-    (process.env.ADMIN_EMAILS ?? '')
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  )
+function isAdminEmail(email: string): boolean {
+  const raw = process.env.ADMIN_EMAILS ?? ''
+  let start = 0
+  while (start < raw.length) {
+    const end = raw.indexOf(',', start)
+    const segmentEnd = end === -1 ? raw.length : end
+    const normalized = raw.slice(start, segmentEnd).trim().toLowerCase()
+    if (normalized !== '' && normalized === email) return true
+    if (end === -1) break
+    start = end + 1
+  }
+  return false
+}
+
+function firstForwardedIp(value: string): string {
+  const commaIndex = value.indexOf(',')
+  const first = commaIndex === -1 ? value : value.slice(0, commaIndex)
+  return first.trim()
 }
 
 function clientIp(context: Context): string {
+  const forwarded = context.req.header('x-forwarded-for')
   return (
     context.req.header('cf-connecting-ip')
     ?? context.req.header('x-real-ip')
-    ?? context.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? (forwarded === undefined ? undefined : firstForwardedIp(forwarded))
     ?? 'unknown'
   )
 }
@@ -129,7 +141,7 @@ export async function authenticateRequest(context: Context): Promise<RequestAuth
     deviceSessionId: row.device_session_id,
     platform: row.platform,
     clientVersion: row.client_version,
-    isAdmin: adminEmails().has(row.email),
+    isAdmin: isAdminEmail(row.email),
   }
 }
 
@@ -145,8 +157,7 @@ export async function requireRequestAuth(context: Context): Promise<RequestAuth 
 }
 
 async function sendOtpEmail(email: string, code: string): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
+  if (!process.env.RESEND_API_KEY) {
     if (process.env.ALLOW_DEV_OTP === 'true') return
     throw new Error('RESEND_API_KEY is not set')
   }
@@ -155,7 +166,7 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -329,7 +340,7 @@ export async function verifyOtp(context: Context): Promise<Response> {
     user: {
       id: result.user.id,
       email: result.user.email,
-      isAdmin: adminEmails().has(result.user.email),
+      isAdmin: isAdminEmail(result.user.email),
     },
     deviceSessionId: result.deviceSessionId,
     quota: await quotaSummary(result.user.id),

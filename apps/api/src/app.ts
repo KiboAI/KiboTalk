@@ -235,7 +235,6 @@ app.get('/api/stt/providers', async (context) => {
 app.post('/api/llm', async (context) => {
   const relayAuth = requireRelayRequestAuth(context, 'llm')
   if (relayAuth instanceof Response) return relayAuth
-  const auth = relayAuth.requestAuth
   const body = (await context.req.json().catch(() => null)) as {
     context?: ConversationTurn[]
     level?: string
@@ -266,7 +265,7 @@ app.post('/api/llm', async (context) => {
     }
     try {
       aiAuthorization = await authorizeAiUse({
-        userId: auth.userId,
+        userId: relayAuth.requestAuth.userId,
         conversationSessionId,
         kind: 'reply',
       })
@@ -289,7 +288,6 @@ app.post('/api/llm', async (context) => {
     let usage: LlmUsage | undefined
     let refundLocalAllowance = false
     try {
-      const signal = context.req.raw.signal
       const conversationLang = parseAppLanguage(body?.conversationLang, 'ja')
       const meaningLang = parseAppLanguage(body?.meaningLang, 'zh')
       const level = parseLearnerLevel(body?.level, 'beginner')
@@ -299,7 +297,11 @@ app.post('/api/llm', async (context) => {
         conversationLang,
         meaningLang,
       })
-      const prompt = messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join('\n\n')
+      let prompt = ''
+      for (const message of messages) {
+        if (prompt) prompt += '\n\n'
+        prompt += `${message.role.toUpperCase()}:\n${message.content}`
+      }
       await stream.writeSSE({ event: 'prompt', data: prompt })
       const config = llmConfigFromEnv(process.env)
       if (
@@ -312,7 +314,7 @@ app.post('/api/llm', async (context) => {
       const llmClient = createLlmClient(config)
       const tokenStream = llmClient.streamChat({
         messages,
-        signal,
+        signal: context.req.raw.signal,
         onUsage: (nextUsage) => {
           usage = nextUsage
         },
@@ -320,7 +322,7 @@ app.post('/api/llm', async (context) => {
       for await (const token of tokenStream) {
         await stream.writeSSE({ event: 'token', data: token })
       }
-      await recordTelemetry(auth, {
+      await recordTelemetry(relayAuth.requestAuth, {
         requestId,
         eventType: 'reply_suggestions',
         provider: config.provider,
@@ -338,7 +340,7 @@ app.post('/api/llm', async (context) => {
       if (aiAuthorization.allowanceConsumed && !context.req.raw.signal.aborted) {
         if (role === 'primary') {
           await refundAiAllowance({
-            userId: auth.userId,
+            userId: relayAuth.requestAuth.userId,
             conversationSessionId,
             kind: 'reply',
           }).catch(() => {})
@@ -350,7 +352,7 @@ app.post('/api/llm', async (context) => {
           data: cause instanceof Error ? cause.message : String(cause),
         }).catch(() => {})
       }
-      recordTelemetryLater(auth, {
+      recordTelemetryLater(relayAuth.requestAuth, {
         requestId,
         eventType: 'reply_suggestions',
         status: context.req.raw.signal.aborted ? 'cancelled' : 'error',

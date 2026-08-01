@@ -135,8 +135,17 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
   )
 }
 
+function QuotaTile({ label, seconds }: { label: string; seconds: number }) {
+  return (
+    <div className="rounded-md bg-muted p-2">
+      <strong className="block text-base">{(Number(seconds) / 60).toFixed(1)}</strong>
+      {label}分钟
+    </div>
+  )
+}
+
 function UsageBars({ points }: { points: Dashboard['chart'] }) {
-  const max = Math.max(1, ...points.map((point) => point.sttSeconds))
+  const max = points.reduce((currentMax, point) => Math.max(currentMax, point.sttSeconds), 1)
   return (
     <div className="flex h-44 items-end gap-1 rounded-lg border border-border bg-card p-3">
       {points.length === 0 ? (
@@ -432,17 +441,10 @@ export default function AdminApp() {
           ) : userDetail ? (
             <div className="space-y-5">
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                {[
-                  ['总计', userDetail.quota.totalSeconds],
-                  ['免费', userDetail.quota.freeSeconds],
-                  ['Pro', userDetail.quota.proSeconds],
-                  ['永久', userDetail.quota.paidSeconds],
-                ].map(([label, seconds]) => (
-                  <div key={String(label)} className="rounded-md bg-muted p-2">
-                    <strong className="block text-base">{(Number(seconds) / 60).toFixed(1)}</strong>
-                    {label}分钟
-                  </div>
-                ))}
+                <QuotaTile label="总计" seconds={userDetail.quota.totalSeconds} />
+                <QuotaTile label="免费" seconds={userDetail.quota.freeSeconds} />
+                <QuotaTile label="Pro" seconds={userDetail.quota.proSeconds} />
+                <QuotaTile label="永久" seconds={userDetail.quota.paidSeconds} />
               </div>
               <section className="space-y-2">
                 <h3 className="text-sm font-bold">设备</h3>
@@ -489,18 +491,21 @@ export default function AdminApp() {
                   <p className="text-sm text-muted-foreground">暂无流水</p>
                 ) : (
                   <div className="max-h-52 overflow-y-auto rounded-md border border-border">
-                    {userDetail.ledger.slice(0, 20).map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="flex items-center justify-between gap-3 border-b border-border p-2 text-xs last:border-0"
-                      >
-                        <span>{entry.eventType}</span>
-                        <span>{entry.deltaSeconds > 0 ? '+' : ''}{entry.deltaSeconds} 秒</span>
-                        <span className="text-muted-foreground">
-                          {new Date(entry.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
+                    {Array.from({ length: Math.min(userDetail.ledger.length, 20) }, (_, index) => {
+                      const entry = userDetail.ledger[index]
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-center justify-between gap-3 border-b border-border p-2 text-xs last:border-0"
+                        >
+                          <span>{entry.eventType}</span>
+                          <span>{entry.deltaSeconds > 0 ? '+' : ''}{entry.deltaSeconds} 秒</span>
+                          <span className="text-muted-foreground">
+                            {new Date(entry.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </section>

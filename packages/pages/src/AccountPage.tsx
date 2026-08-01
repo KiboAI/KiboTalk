@@ -60,7 +60,6 @@ function LoginCard({
   onAuthenticated,
 }: Pick<AccountPageProps, 'embedded' | 'onAuthenticated'>) {
   const [email, setEmail] = useState('')
-  const [inviteCode, setInviteCode] = useState('')
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
   const [developmentCode, setDevelopmentCode] = useState('')
@@ -71,7 +70,7 @@ function LoginCard({
     setBusy(true)
     setError('')
     try {
-      const result = await requestLoginCode(email, inviteCode)
+      const result = await requestLoginCode(email)
       setCodeSent(true)
       setDevelopmentCode(result.developmentCode ?? '')
     } catch (cause) {
@@ -85,7 +84,7 @@ function LoginCard({
     setBusy(true)
     setError('')
     try {
-      onAuthenticated(await verifyLoginCode(email, code, inviteCode))
+      onAuthenticated(await verifyLoginCode(email, code))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -109,12 +108,6 @@ function LoginCard({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
-            <p className="font-semibold">KiboTalk 正在邀请内测</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              新用户注册需要邀请码；已有账户可直接登录。
-            </p>
-          </div>
           <div className="space-y-2">
             <Label htmlFor="account-email">邮箱</Label>
             <Input
@@ -125,17 +118,6 @@ function LoginCard({
               disabled={busy || codeSent}
               placeholder="you@example.com"
               onChange={(event) => setEmail(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="account-invite-code">邀请码（仅新用户必填）</Label>
-            <Input
-              id="account-invite-code"
-              autoComplete="off"
-              value={inviteCode}
-              disabled={busy || codeSent}
-              placeholder="已有账户可留空"
-              onChange={(event) => setInviteCode(event.target.value)}
             />
           </div>
           {codeSent ? (

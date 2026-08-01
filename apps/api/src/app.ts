@@ -21,11 +21,6 @@ import {
   adminUserDetails,
 } from './admin'
 import {
-  adminCreateInviteCode,
-  adminListInviteCodes,
-  adminUpdateInviteCode,
-} from './invite-codes'
-import {
   authorizeAiUse,
   refundAiAllowance,
   type AiUseAuthorization,
@@ -224,9 +219,6 @@ app.delete('/api/admin/users/:userId/devices/:deviceId', adminRevokeDevice)
 app.get('/api/admin/vouchers', adminListVouchers)
 app.post('/api/admin/vouchers', adminCreateVoucher)
 app.patch('/api/admin/vouchers/:voucherId', adminUpdateVoucher)
-app.get('/api/admin/invite-codes', adminListInviteCodes)
-app.post('/api/admin/invite-codes', adminCreateInviteCode)
-app.patch('/api/admin/invite-codes/:inviteCodeId', adminUpdateInviteCode)
 app.get('/api/admin/ledger', adminLedger)
 
 app.get('/api/stt/providers', async (context) => {

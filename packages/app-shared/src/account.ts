@@ -86,9 +86,6 @@ async function persistAccount(account: AccountSession): Promise<void> {
 }
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  INVITE_CODE_REQUIRED: 'KiboTalk 正在邀请内测，新用户注册需要填写邀请码。',
-  INVITE_CODE_UNAVAILABLE: '邀请码无效、已停用或已过期。',
-  INVITE_CODE_EXHAUSTED: '邀请码使用次数已耗尽。',
   INVALID_OTP: '验证码无效或已过期。',
 }
 
@@ -98,12 +95,11 @@ function accountError(body: { error?: string; message?: string }, fallback: stri
 
 export async function requestLoginCode(
   email: string,
-  inviteCode: string,
 ): Promise<{ developmentCode?: string }> {
   const response = await authorizedFetch('/api/auth/request-code', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, inviteCode }),
+    body: JSON.stringify({ email }),
   })
   const body = (await response.json().catch(() => ({}))) as {
     error?: string
@@ -117,7 +113,6 @@ export async function requestLoginCode(
 export async function verifyLoginCode(
   email: string,
   code: string,
-  inviteCode: string,
 ): Promise<AccountSession> {
   const response = await authorizedFetch('/api/auth/verify', {
     method: 'POST',
@@ -128,7 +123,6 @@ export async function verifyLoginCode(
       deviceName: runtimeDeviceName(),
       platform: runtimePlatform(),
       clientVersion: await runtimeClientVersion(),
-      inviteCode,
     }),
   })
   const body = (await response.json().catch(() => ({}))) as AccountSession & {

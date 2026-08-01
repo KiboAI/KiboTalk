@@ -122,28 +122,8 @@ export async function migrateDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS voucher_redemptions_lookup_idx
       ON voucher_redemptions (voucher_id, user_id);
 
-    CREATE TABLE IF NOT EXISTS invite_codes (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      code text NOT NULL UNIQUE,
-      name text NOT NULL,
-      max_uses integer NOT NULL DEFAULT 100 CHECK (max_uses > 0),
-      use_count integer NOT NULL DEFAULT 0 CHECK (use_count >= 0),
-      active boolean NOT NULL DEFAULT true,
-      valid_from timestamptz NOT NULL DEFAULT now(),
-      valid_until timestamptz,
-      created_by uuid REFERENCES users(id) ON DELETE SET NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
-    );
-
-    CREATE TABLE IF NOT EXISTS invite_code_uses (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      invite_code_id uuid NOT NULL REFERENCES invite_codes(id) ON DELETE CASCADE,
-      user_id uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-      used_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE INDEX IF NOT EXISTS invite_code_uses_code_idx
-      ON invite_code_uses (invite_code_id, used_at DESC);
+    DROP TABLE IF EXISTS invite_code_uses;
+    DROP TABLE IF EXISTS invite_codes;
 
     CREATE SEQUENCE IF NOT EXISTS sync_version_sequence;
 

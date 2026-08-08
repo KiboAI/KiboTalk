@@ -12,7 +12,7 @@ import { createVAD } from '@kibotalk/audio/vad'
 import type { VAD } from '@kibotalk/audio/vad'
 import { createSegmentAggregator } from '@kibotalk/audio/aggregator'
 import type { SegmentAggregator } from '@kibotalk/audio/aggregator'
-import { Button, Separator, toast } from '@kibotalk/ui'
+import { Button, Separator, StickyNoteStack, toast, type CandidateRound } from '@kibotalk/ui'
 import {
   AudioSource,
   createSileroInfer,
@@ -31,10 +31,6 @@ import {
   releaseRelaySession,
 } from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
-import {
-  CandidateRoundStack,
-  type CandidateRound,
-} from './components/StickyCandidateStack'
 import { SessionToolbar } from './components/SessionToolbar'
 import { TranscriptPanel } from './components/TranscriptPanel'
 import { DebugPanel } from './components/DebugPanel'
@@ -512,8 +508,7 @@ export default function LiveSession({
               悬浮模拟 · Island + 便利贴
             </p>
             <div className="min-h-0 flex-1 px-2 pt-6 sm:px-4">
-              <CandidateRoundStack
-                surface="floating"
+              <StickyNoteStack
                 rounds={candidateRounds}
                 maxRounds={candidateRoundsMax}
                 streaming={state === 'LLM_STREAMING' && islandReplyEnabled}
@@ -554,8 +549,7 @@ export default function LiveSession({
               )}
             </div>
             <div className="min-h-0 flex-1 px-3 py-3 sm:px-5">
-              <CandidateRoundStack
-                surface="window"
+              <StickyNoteStack
                 rounds={candidateRounds}
                 maxRounds={candidateRoundsMax}
                 streaming={state === 'LLM_STREAMING' && islandReplyEnabled}

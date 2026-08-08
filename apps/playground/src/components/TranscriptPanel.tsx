@@ -1,7 +1,6 @@
 import type { ConversationTurn, ReplyCandidate } from '@kibotalk/conversation'
-import { ScrollArea } from '@kibotalk/ui'
+import { ScrollArea, StickyNoteCard } from '@kibotalk/ui'
 import { MessagesSquare } from 'lucide-react'
-import { ReplyCandidateCard } from './ReplyCandidateCard'
 
 type TurnView = ConversationTurn & { candidates?: ReplyCandidate[] }
 
@@ -57,11 +56,11 @@ export function TranscriptPanel({ turns, draft }: TranscriptPanelProps) {
                 </div>
                 <div className="text-sm">{t.sttFailed ? '（空·转写失败）' : t.text}</div>
                 {t.candidates && t.candidates.length > 0 ? (
-                  <ul className="mt-1 ml-3 list-disc space-y-1">
+                  <div className="mt-2 space-y-2">
                     {t.candidates.map((c) => (
-                      <ReplyCandidateCard key={c.id} candidate={c} compact />
+                      <StickyNoteCard key={c.id} candidates={[c]} className="max-w-xs" />
                     ))}
-                  </ul>
+                  </div>
                 ) : null}
               </li>
             ))}

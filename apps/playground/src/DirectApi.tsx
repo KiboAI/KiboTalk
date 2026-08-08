@@ -11,7 +11,6 @@ import {
 import { Cable, Loader2, Sparkles, StopCircle } from 'lucide-react'
 import { extractCandidates, parseSseStream } from '@kibotalk/app-shared'
 import { readLanguageSnapshot, useConfig } from './config-store'
-import { WindowRoundCard, WindowRoundPlaceholder } from './components/WindowRoundCard'
 import { StageShell } from './components/StageShell'
 
 type CandidateState = ReplyCandidate[]
@@ -219,21 +218,11 @@ export default function DirectApi() {
 
   const replyPreview =
     candidates.length > 0 ? (
-      productSurfaceMode === 'floating' ? (
-        <StickyNoteCard candidates={candidates} />
-      ) : (
-        <WindowRoundCard candidates={candidates} label="本轮建议" />
-      )
+      <StickyNoteCard candidates={candidates} />
     ) : busy ? (
-      productSurfaceMode === 'floating' ? (
-        <StickyNoteCardPlaceholder label="正在流式生成…" />
-      ) : (
-        <WindowRoundPlaceholder label="正在流式生成…" />
-      )
-    ) : productSurfaceMode === 'floating' ? (
-      <StickyNoteCardPlaceholder label="（还没有候选）" />
+      <StickyNoteCardPlaceholder label="正在流式生成…" />
     ) : (
-      <WindowRoundPlaceholder label="（还没有候选）" />
+      <StickyNoteCardPlaceholder label="（还没有候选）" />
     )
 
   return (

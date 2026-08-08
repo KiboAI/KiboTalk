@@ -123,5 +123,6 @@ export {
   DesktopProductWindowFrame,
   type DesktopProductWindowFrameProps,
 } from './components/product/DesktopProductWindowFrame'
+export { DesktopWindowHeader } from './components/product/DesktopWindowHeader'
 export { SessionListItem, type SessionListItemProps } from './components/product/SessionListItem'
 export { PillTag, type PillTagProps } from './components/product/PillTag'

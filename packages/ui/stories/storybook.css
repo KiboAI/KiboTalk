@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../src/theme.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@source "../src";
+@source "../stories";
+@source "../.storybook";
+@source "../../pages/src";

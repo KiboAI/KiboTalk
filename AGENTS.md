@@ -92,6 +92,7 @@ pnpm install
 pnpm dev:api          # Hono proxy (loads .env from repo root)
 pnpm dev:playground   # Vite dev panel
 pnpm dev:web          # PWA shell
+pnpm dev:ui           # Storybook 组件/Token/生产页面预览（packages/ui）
 pnpm build            # turbo build (all)
 pnpm test             # turbo test (vitest per package)
 pnpm typecheck        # turbo typecheck

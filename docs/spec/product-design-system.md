@@ -3,6 +3,8 @@
 - **状态**：已落地——本文档描述 `packages/ui` 现状，不是待办
 - **性质**：**记录**，不是决策文档；token/组件如有变化，改代码后回来同步本文，而不是先改文档再改代码
 - **范围**：`packages/ui/src/theme.css` + `packages/ui/src/components/{ui,product}` — `apps/playground`、`apps/web`、`apps/desktop` 共用同一份
+- **预览**：`pnpm dev:ui` 启动 Storybook（`packages/ui/stories`），包含全部组件、
+  Design Tokens 与生产页面（含假会话状态）；不需要 `.env` 或后端
 - **关联**：
   - [Playground 视觉重构 spec](./playground-visual-refactor.md)（视觉决议的原始讨论）
   - [桌面 Island 头脑风暴](../brainstorm/2026-07-24-desktop-island-and-reply-stickies.md)

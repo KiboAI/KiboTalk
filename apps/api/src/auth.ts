@@ -95,7 +95,7 @@ export async function authenticateRequest(context: Context): Promise<RequestAuth
   if (isTestAuthBypass()) {
     return {
       userId: '00000000-0000-0000-0000-000000000001',
-      email: 'test@kibotalk.app',
+      email: 'test@superpowerlulu.win',
       deviceSessionId: '00000000-0000-0000-0000-000000000002',
       platform: 'web',
       clientVersion: 'test',
@@ -162,7 +162,7 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
     throw new Error('RESEND_API_KEY is not set')
   }
   const fromName = process.env.RESEND_FROM_NAME ?? 'KiboTalk'
-  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'login@kibotalk.app'
+  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'noreply@mail.superpowerlulu.win'
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {

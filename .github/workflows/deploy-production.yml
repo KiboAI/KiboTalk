@@ -26,10 +26,12 @@ jobs:
           STT_IFLYTEK_APP_ID: ${{ secrets.STT_IFLYTEK_APP_ID }}
           STT_IFLYTEK_API_KEY: ${{ secrets.STT_IFLYTEK_API_KEY }}
           STT_IFLYTEK_API_SECRET: ${{ secrets.STT_IFLYTEK_API_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           for secret_name in \
             DEPLOY_SSH_KEY SERVER_HOST SERVER_USER \
-            STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY STT_IFLYTEK_API_SECRET; do
+            STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY STT_IFLYTEK_API_SECRET \
+            RESEND_API_KEY; do
             if [ -z "${!secret_name}" ]; then
               echo "::error::Missing Actions secret: ${secret_name}"
               exit 1
@@ -55,13 +57,15 @@ jobs:
           STT_IFLYTEK_APP_ID: ${{ secrets.STT_IFLYTEK_APP_ID }}
           STT_IFLYTEK_API_KEY: ${{ secrets.STT_IFLYTEK_API_KEY }}
           STT_IFLYTEK_API_SECRET: ${{ secrets.STT_IFLYTEK_API_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           APP_VERSION: ${{ env.APP_VERSION }}
           APP_PUBLISHED_AT: ${{ env.APP_PUBLISHED_AT }}
         run: |
-          printf '%s\n%s\n%s\n%s\n%s\n' \
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
             "$STT_IFLYTEK_APP_ID" \
             "$STT_IFLYTEK_API_KEY" \
             "$STT_IFLYTEK_API_SECRET" \
+            "$RESEND_API_KEY" \
             "$APP_VERSION" \
             "$APP_PUBLISHED_AT" \
             | ssh -i ~/.ssh/id_ed25519_primary "${SERVER_USER}@${SERVER_HOST}" '
@@ -69,6 +73,7 @@ jobs:
                 IFS= read -r stt_app_id
                 IFS= read -r stt_api_key
                 IFS= read -r stt_api_secret
+                IFS= read -r resend_api_key
                 IFS= read -r app_version
                 IFS= read -r app_published_at
                 set_env() {
@@ -87,6 +92,10 @@ jobs:
                 set_env STT_IFLYTEK_API_KEY "$stt_api_key"
                 set_env STT_IFLYTEK_API_SECRET "$stt_api_secret"
                 set_env STT_IFLYTEK_WS_URL "wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1"
+                set_env RELAY_PRIMARY_ORIGIN "https://kibotalk.superpowerlulu.win"
+                set_env RESEND_API_KEY "$resend_api_key"
+                set_env RESEND_FROM_EMAIL "noreply@mail.superpowerlulu.win"
+                set_env RESEND_FROM_NAME "Superpower Lulu"
                 set_env APP_VERSION "$app_version"
                 set_env APP_DMG_URL "https://github.com/KiboAI/KiboTalk/releases/download/v${app_version}/KiboTalk-${app_version}-arm64.dmg"
                 set_env APP_RELEASE_NOTES_URL "https://github.com/KiboAI/KiboTalk/releases/tag/v${app_version}"
@@ -106,7 +115,8 @@ jobs:
               RELAY_TOKEN_PRIVATE_KEY RELAY_TOKEN_PUBLIC_KEY RELAY_NODE_SECRET \
               STT_ACTIVE STT_IFLYTEK_APP_ID STT_IFLYTEK_API_KEY \
               STT_IFLYTEK_API_SECRET STT_IFLYTEK_WS_URL \
-              LLM_ACTIVE APP_VERSION APP_DMG_URL APP_RELEASE_NOTES_URL APP_PUBLISHED_AT; do
+              LLM_ACTIVE RESEND_API_KEY RESEND_FROM_EMAIL RESEND_FROM_NAME \
+              APP_VERSION APP_DMG_URL APP_RELEASE_NOTES_URL APP_PUBLISHED_AT; do
               grep -q "^${name}=." /opt/kibotalk/.env
             done
           '
@@ -210,17 +220,13 @@ jobs:
       - name: Verify deployment
         run: |
           for _attempt in $(seq 1 24); do
-            if curl --fail --silent --show-error https://app.kibotalk.app/health \
+            if curl --fail --silent --show-error https://kibotalk.superpowerlulu.win/health \
               && curl --fail --silent --show-error \
-                https://app.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json \
+                https://kibotalk.superpowerlulu.win/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json \
                 >/dev/null \
               && curl --fail --silent --show-error --range 0-0 \
-                https://app.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx \
-                >/dev/null \
-              && curl --fail --silent --show-error https://kibotalk.app/en/ >/dev/null \
-              && test "$(curl --silent --output /dev/null --write-out '%{redirect_url}' https://www.kibotalk.app/)" = "https://kibotalk.app/" \
-              && curl --fail --silent --show-error https://advx.kibotalk.app/ \
-                | grep --quiet '正在清理旧版网页数据'; then
+                https://kibotalk.superpowerlulu.win/models/onnx-community/wespeaker-voxceleb-resnet34-LM/onnx/model_quantized.onnx \
+                >/dev/null; then
               exit 0
             fi
             sleep 5

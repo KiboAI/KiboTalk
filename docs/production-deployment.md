@@ -1,6 +1,6 @@
 # Production deployment
 
-Production currently runs on one Japanese primary server:
+Production currently runs on one Japanese primary server (Tokyo, `216.23.82.211`):
 
 - Web, API, authentication, PostgreSQL, quota, and sync;
 - browser-direct realtime STT through iFlytek;
@@ -20,7 +20,7 @@ node settings are:
 ```dotenv
 SERVER_ROLE=primary
 RELAY_NODE_ID=jp-primary
-RELAY_PRIMARY_ORIGIN=https://app.kibotalk.app
+RELAY_PRIMARY_ORIGIN=https://kibotalk.superpowerlulu.win
 RELAY_NODES_JSON=[]
 ```
 
@@ -45,13 +45,12 @@ PCM directly to iFlytek; the Japanese server never carries STT audio.
 The workflow verifies:
 
 ```bash
-curl --fail https://app.kibotalk.app/health
-curl --fail https://app.kibotalk.app/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json
-curl --fail https://kibotalk.app/en/
+curl --fail https://kibotalk.superpowerlulu.win/health
+curl --fail https://kibotalk.superpowerlulu.win/models/onnx-community/wespeaker-voxceleb-resnet34-LM/config.json
 ```
 
-It also checks the model binary, the `www` redirect, and the legacy-origin
-cleanup page before reporting success.
+It also checks the model binary before reporting success. The landing page is
+not deployed to production.
 
 ## Optional relay nodes
 
@@ -63,7 +62,7 @@ and LLM traffic, and reports usage to the primary.
 Configure one or more nodes on the primary with JSON:
 
 ```dotenv
-RELAY_NODES_JSON=[{"id":"sg-relay","origin":"https://sg-relay.kibotalk.app"}]
+RELAY_NODES_JSON=[{"id":"sg-relay","origin":"https://sg-relay.superpowerlulu.win"}]
 ```
 
 Each relay uses the generic `infra/relay/compose.yaml` adapter and must set its

@@ -4,6 +4,9 @@
 - **日期**：2026-07-25
 - **覆盖**：ADR 0001 中 Railway / Supabase / 无账号的部署假设；ADR 0004 中 realtime-only STT
 
+> **2026-08-08 更新**：生产入口迁至 `https://kibotalk.superpowerlulu.win`
+> （旧 `kibotalk.app` DNS 记录已被原持有人删除）；落地页不再部署到生产。
+>
 > **2026-07-26 更新**：单 VPS 数据面、生产 realtime-only STT 和免费 10 分钟规则已由
 > [ADR 0006](./0006-session-pinned-api-relay.md) 覆盖。日本 VPS 仍是唯一控制面。
 >

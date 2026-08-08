@@ -27,14 +27,14 @@ describe('model source fallback', () => {
   })
 
   it('uses immutable Hugging Face paths by default', () => {
-    useHuggingFaceModels('https://advx.kibotalk.app')
+    useHuggingFaceModels('https://kibotalk.superpowerlulu.win')
 
     expect(env.remoteHost).toBe('https://huggingface.co/')
     expect(env.remotePathTemplate).toBe('{model}/resolve/{revision}/')
   })
 
   it('retries a failed Hugging Face load once against the VPS mirror', async () => {
-    useHuggingFaceModels('https://advx.kibotalk.app/')
+    useHuggingFaceModels('https://kibotalk.superpowerlulu.win/')
     const load = vi.fn(async () => {
       if (env.remoteHost === 'https://huggingface.co/') {
         throw new Error('hub unavailable')
@@ -43,7 +43,7 @@ describe('model source fallback', () => {
     })
 
     await expect(loadModelWithFallback(load)).resolves.toBe(
-      'https://advx.kibotalk.app/models/',
+      'https://kibotalk.superpowerlulu.win/models/',
     )
     expect(load).toHaveBeenCalledTimes(2)
   })

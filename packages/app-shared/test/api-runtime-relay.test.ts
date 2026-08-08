@@ -12,13 +12,13 @@ import {
 
 const primary: RelayNode = {
   id: 'jp-primary',
-  origin: 'https://app.kibotalk.app',
+  origin: 'https://kibotalk.superpowerlulu.win',
   role: 'primary',
   acceptingNewSessions: true,
 }
 const relay: RelayNode = {
   id: 'sg-relay',
-  origin: 'https://sg-relay.kibotalk.app',
+  origin: 'https://sg-relay.superpowerlulu.win',
   role: 'relay',
   acceptingNewSessions: true,
 }
@@ -102,7 +102,7 @@ describe('relay API runtime', () => {
     const response = await relayFetch('/api/llm', { method: 'POST' })
     expect(response.ok).toBe(true)
     expect(calls).toContainEqual({
-      url: 'https://sg-relay.kibotalk.app/api/llm',
+      url: 'https://sg-relay.superpowerlulu.win/api/llm',
       authorization: 'Bearer short-token',
     })
 

@@ -8,7 +8,7 @@
 > **比赛生产补充（2026-07-25）**：本文件中早期的 Railway、Supabase、
 > “MVP 无账号”描述已被
 > [ADR 0005](../adr/0005-competition-production-platform.md) 覆盖。正式入口为
-> `https://app.kibotalk.app`，账号、强制加密同步、额度和发布要求以 ADR 0005
+> `https://kibotalk.superpowerlulu.win`，账号、强制加密同步、额度和发布要求以 ADR 0005
 > 及本文新增 F12–F15 为准。
 >
 > **双节点生产补充（2026-07-26）**：日本主服务器继续作为唯一控制面，国内
@@ -92,7 +92,7 @@
 | F12 | 账号与设备 | 新邮箱 OTP 注册；已有账户直接登录；Web 安全 cookie、桌面 safeStorage token；设备列表 / 撤销 / 封禁 | 未登录不能调用云 STT/LLM；同账号仅一个活跃 AI 会话 |
 | F13 | 云同步 | session / turn / suggestion / review / prefs 自动同步且无关闭开关；服务端 AES-256-GCM；不上传音频或声纹 | 本地先持久化并后台补同步；同步故障不阻塞新会话；支持单会话和账户删除 |
 | F14 | 额度与兑换 | 免费 30 分钟/月；Pro ¥30/30 天/600 分钟；永久分钟；兑换码与后台赠送 | 按实际 STT 秒数记账、分钟展示；免费 → Pro → 永久；上游失败不扣 |
-| F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `app.kibotalk.app` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
+| F15 | 生产发布 | 日本 VPS + Caddy HTTPS + Postgres；Apple Silicon ad-hoc DMG；GitHub Actions CI/CD | `kibotalk.superpowerlulu.win` 健康；macOS 13+ arm64；Web Q8 模型首选固定 revision 的 Hugging Face、失败回退同源，桌面模型内置 |
 
 #### P1 — 演示加分
 
@@ -625,7 +625,7 @@ app.post('/llm', streamSSE(async (c) => {
 - `packages/audio` 仍暴露 `encodeWav`（调试 / 录音导出等）；STT 路径不依赖 WAV 上传
 
 **静态托管（`apps/web` 产物）**：Web 与 API 打进同一生产镜像，由 Caddy 在
-`app.kibotalk.app` 前置 TLS。Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用
+`kibotalk.superpowerlulu.win` 前置 TLS。Web 的 WeSpeaker ResNet34-LM 与 Silero 都使用
 Q8：首选固定 commit 的 Hugging Face 文件并进入浏览器缓存，加载失败自动重试 VPS 同源镜像；
 桌面模型打进 DMG。DMG 仅通过 GitHub Release 分发，VPS 不托管安装包。
 

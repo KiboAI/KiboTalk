@@ -4,13 +4,13 @@ import { probeRelayNodes, relayNodeLabelKind } from '../src/relay-routing'
 
 const primary: RelayNode = {
   id: 'jp-primary',
-  origin: 'https://app.kibotalk.app',
+  origin: 'https://kibotalk.superpowerlulu.win',
   role: 'primary',
   acceptingNewSessions: true,
 }
 const relay: RelayNode = {
   id: 'sg-relay',
-  origin: 'https://sg-relay.kibotalk.app',
+  origin: 'https://sg-relay.superpowerlulu.win',
   role: 'relay',
   acceptingNewSessions: true,
 }

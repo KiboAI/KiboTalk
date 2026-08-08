@@ -1,6 +1,6 @@
 import { app, net, Notification, shell } from 'electron'
 
-const VERSION_URL = 'https://app.kibotalk.app/app-version'
+const VERSION_URL = 'https://kibotalk.superpowerlulu.win/app-version'
 
 type VersionManifest = {
   version: string

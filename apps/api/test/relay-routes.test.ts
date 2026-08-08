@@ -19,7 +19,7 @@ afterEach(() => {
 
 describe('relay control plane', () => {
   it('publishes only the primary node when the relay is disabled', async () => {
-    process.env.RELAY_PRIMARY_ORIGIN = 'https://app.kibotalk.app'
+    process.env.RELAY_PRIMARY_ORIGIN = 'https://kibotalk.superpowerlulu.win'
     process.env.RELAY_NODES_JSON = '[]'
 
     const response = await app.request('/api/relay/nodes')
@@ -28,7 +28,7 @@ describe('relay control plane', () => {
       nodes: [
         expect.objectContaining({
           id: 'jp-primary',
-          origin: 'https://app.kibotalk.app',
+          origin: 'https://kibotalk.superpowerlulu.win',
         }),
       ],
       primaryNodeId: 'jp-primary',
@@ -36,9 +36,9 @@ describe('relay control plane', () => {
   })
 
   it('publishes both configured nodes and signs a node-bound session grant', async () => {
-    process.env.RELAY_PRIMARY_ORIGIN = 'https://app.kibotalk.app'
+    process.env.RELAY_PRIMARY_ORIGIN = 'https://kibotalk.superpowerlulu.win'
     process.env.RELAY_NODES_JSON = JSON.stringify([
-      { id: 'sg-relay', origin: 'https://sg-relay.kibotalk.app' },
+      { id: 'sg-relay', origin: 'https://sg-relay.superpowerlulu.win' },
     ])
     process.env.STT_ACTIVE = 'dashscope-realtime'
     process.env.LLM_ACTIVE = 'openrouter'
@@ -51,10 +51,10 @@ describe('relay control plane', () => {
       probe: { attempts: number }
     }
     expect(nodes.nodes).toEqual([
-      expect.objectContaining({ id: 'jp-primary', origin: 'https://app.kibotalk.app' }),
+      expect.objectContaining({ id: 'jp-primary', origin: 'https://kibotalk.superpowerlulu.win' }),
       expect.objectContaining({
         id: 'sg-relay',
-        origin: 'https://sg-relay.kibotalk.app',
+        origin: 'https://sg-relay.superpowerlulu.win',
       }),
     ])
     expect(nodes.probe).toMatchObject({ attempts: 5 })

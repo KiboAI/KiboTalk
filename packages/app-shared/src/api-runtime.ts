@@ -5,7 +5,7 @@ import type {
 } from '@kibotalk/shared'
 import type { RelayProbeResult } from './relay-routing'
 
-const PRODUCTION_API_ORIGIN = 'https://app.kibotalk.app'
+const PRODUCTION_API_ORIGIN = 'https://kibotalk.superpowerlulu.win'
 
 type DesktopBridge = {
   auth?: {

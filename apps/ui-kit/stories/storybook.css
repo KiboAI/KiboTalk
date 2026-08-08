@@ -1,10 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "../src/theme.css";
+@import "../../../packages/ui/src/theme.css";
 
 @custom-variant dark (&:is(.dark *));
 
-@source "../src";
 @source "../stories";
 @source "../.storybook";
-@source "../../pages/src";
+@source "../../../packages/ui/src";
+@source "../../../packages/pages/src";

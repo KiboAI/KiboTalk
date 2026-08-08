@@ -9,7 +9,7 @@
     "dev:web": "pnpm -F @kibotalk/web dev",
     "dev:desktop": "pnpm -F @kibotalk/desktop dev",
     "dev:playground": "pnpm -F @kibotalk/playground dev",
-    "dev:ui": "pnpm -F @kibotalk/ui story:dev",
+    "dev:ui": "pnpm -F @kibotalk/ui-kit story:dev",
     "dev:prototypes": "pnpm -F @kibotalk/playground exec vite ../../prototypes --host --port 5175",
     "eval": "vieval run --config ./vieval.config.ts --report-out .vieval/reports --workspace local --experiment multi-turn-ruby --attempt attempt-a",
     "eval:report": "vieval report analyze .vieval/reports --format json",

@@ -46,7 +46,7 @@ packages/
   audio/      VAD state machine + encodeWav. Silero via transformers.js.
   llm/        LLM client (xsai).
   prompts/    Reply-suggestion prompts (Velin TSX → markdown).
-  speaker/    Speaker verification (wavlm-base-plus-sv, WASM + IndexedDB);
+  speaker/    Speaker verification (wespeaker-voxceleb-resnet34-LM Q8, WASM + IndexedDB);
               `verify` returns raw `similarity` plus label `confidence`.
   stt/        DashScope realtime mapper helpers (server-side); `apps/api` relays
               `WS /stt-realtime` only.
@@ -63,7 +63,8 @@ These are spec-named choices. **Do not rewrite or substitute them** with hand-ro
 - **Prompts → Velin** (`@velin-dev/core-react`). Render TSX components to markdown strings; don't template with raw string concat.
 - **STT → DashScope realtime** via `packages/stt` mapper helpers, reached through the `apps/api` `WS /stt-realtime` relay. **Never browser-direct** to upstream (ADR 0004).
 - **VAD → Silero** via `@huggingface/transformers`. v6.2 needs a 64-sample context prepended to each 512-sample chunk (576 input), carried across calls; v5 takes 512 raw. See `apps/playground/src/audio/silero-vad.ts`.
-- **Speaker → `Xenova/wavlm-base-plus-sv`** via transformers.js in a Web Worker; embeddings persist in IndexedDB.
+- **Speaker → `onnx-community/wespeaker-voxceleb-resnet34-LM` (Q8)** via transformers.js in a Web Worker; embeddings persist in IndexedDB.
+- **Python deps → `uv`**: repo-local `.venv` (gitignored); install with `uv pip install -r <path>/requirements.txt`, never bare `pip`. Keep helper scripts in the repo so GitHub workflows can run them; invoke with `.venv/bin/python`.
 
 ## Audio pipeline specifics
 

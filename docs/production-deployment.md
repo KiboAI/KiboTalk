@@ -52,6 +52,9 @@ curl --fail https://kibotalk.superpowerlulu.win/models/onnx-community/wespeaker-
 It also checks the model binary before reporting success. The landing page is
 not deployed to production.
 
+The models directory is swapped as a whole (`mv`), so every release recreates
+the Caddy container afterwards to re-establish the `/srv/models` bind mount.
+
 ## Optional relay nodes
 
 The runtime retains a generic relay module for a future HTTPS node in a region

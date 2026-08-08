@@ -216,6 +216,10 @@ jobs:
               printf '\nKIBOTALK_API_IMAGE=kibotalk-api:${GITHUB_SHA}\n' >> .env
             fi
             docker compose --env-file .env -f compose.yaml up -d --pull never
+            # Models are swapped as a whole directory (mv), so the Caddy bind
+            # mount must be re-established or it keeps serving the deleted
+            # inode and returns 404 for /models/*.
+            docker compose --env-file .env -f compose.yaml up -d --force-recreate --no-deps caddy
           "
       - name: Verify deployment
         run: |
